@@ -148,15 +148,17 @@ def test_there_is_no_sun_and_moon_button_on_the_bar_once_signed_in(client, speci
 
 
 def test_haldus_seaded_holds_every_personal_setting(client, specialist):
-    """Haldus → Seaded: the switch, «Teavituste seaded» and the blocks' reset."""
+    """Isiklikud seaded (docs/adr/0221): Kuvamine holds the switch and the blocks'
+    reset, and its sibling item is «Teavitused»."""
     client.force_login(specialist)
-    body = client.get(reverse("haldus:index")).content.decode()
-    start = body.index('aria-labelledby="seaded"')
-    seaded = body[start : body.index("</section>", start)]
-    assert body.count("data-theme-toggle") == 1 and "data-theme-toggle" in seaded
-    assert "themetoggle--setting" in seaded
-    assert f'href="{SETTINGS_URL}"' in seaded
-    assert reverse("accounts:reset_disclosures") in seaded
+    body = client.get(reverse("haldus:settings")).content.decode()
+    start = body.index('aria-labelledby="kujundus"')
+    kujundus = body[start : body.index("</section>", start)]
+    assert body.count("data-theme-toggle") == 1 and "data-theme-toggle" in kujundus
+    assert "themetoggle--setting" in kujundus
+    nav = body[body.index('id="haldusnav-seaded"') :]
+    nav = nav[: nav.index("</ul>")]
+    assert f'href="{SETTINGS_URL}">Teavitused' in nav
     assert body.count(reverse("accounts:reset_disclosures")) == 1
 
 

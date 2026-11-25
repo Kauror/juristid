@@ -328,7 +328,16 @@ note "  the target database is empty"
 CONTAINER_PATH="/tmp/juristid-restore-$$.dump"
 # The host lock, before the first byte reaches the container: a backup or a
 # release that starts under a restore would read a database that is being
-# replaced (security review 2026-10-29, E-04).
+# replaced (security review 2026-10-29, E-04). Before it, the nightly cycle's
+# lock (docs/adr/0229 §5, lock order: cycle lock, then host lock): a restore
+# never runs beside the night's monitoring, and the night never starts under it.
+cycle_rc=0
+take_cycle_lock restore || cycle_rc=$?
+case "$cycle_rc" in
+  0) ;;
+  1) die "the nightly cycle holds $JURISTID_CYCLE_LOCK ($(cycle_lock_owner)). Wait for it to end (nightly/last-cycle.txt) and run the restore again." ;;
+  *) die "could not take $JURISTID_CYCLE_LOCK (is flock installed?). A restore beside the nightly cycle cannot be trusted." ;;
+esac
 take_host_lock restore || die "another operation holds $JURISTID_HOST_LOCK ($(host_lock_owner)). A restore under a backup or a release cannot be trusted; wait for it to finish."
 cleanup() {
   juristid_compose exec -T db rm -f "$CONTAINER_PATH" >/dev/null 2>&1 || true

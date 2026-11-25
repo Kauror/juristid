@@ -1,0 +1,11 @@
+{# One committee agenda item (docs/adr/0226 §2): an external event, never a task. `item`, and `item.teemad_shown`: the Teemad the reader may see. #}
+<li class="regwatch__row">
+  <span class="regwatch__date">{{ item.sitting_at|date:"d.m. H:i" }}</span>
+  <div class="regwatch__body">
+    <span class="regwatch__title">{{ item.title }}</span>
+    <span class="regwatch__meta">{{ item.committee }}{% if item.state == "MOVED" %} · <span class="rkinv__changed">aeg muutus (oli {{ item.previous_sitting_at|date:"d.m. H:i" }})</span>{% endif %}{% if item.signal %} · varajane signaal{% endif %}{% if item.bill.url %} · <a href="{{ item.bill.url }}" target="_blank" rel="noopener noreferrer">{{ item.bill.label|default:"Eelnõu" }}<span class="visually-hidden"> — avaneb uues aknas</span></a>{% endif %}</span>
+    {% for matter in item.teemad_shown %}
+      {% if forloop.first %}<span class="regwatch__meta">Teema: {% endif %}<a href="{% url 'matters:matter_registers' pk=matter.pk %}">{{ matter.display_reference }} {{ matter.title }}</a>{% if not forloop.last %}; {% else %}</span>{% endif %}
+    {% endfor %}
+  </div>
+</li>

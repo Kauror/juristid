@@ -18,6 +18,21 @@
  * - **Saved means 204.** A redirect to the sign-in page, a refusal or a network
  *   error leaves `data-disclosure-saved` as it was; nothing claims a state was
  *   kept that was not.
+ *
+ * And three ways a block is shown open or closed for one view without that
+ * being a choice (UX-004, 2026-11-25). Each marks the block
+ * `data-disclosure-shown` with the state it drew; a toggle that agrees with it
+ * is the page's, not the reader's, and is not saved. The reader's first toggle
+ * away from it clears the mark and is handled as usual.
+ *
+ * - The server draws it open for a view the reader asked for (the tag's
+ *   `force_open`, e.g. the next page of a list inside it).
+ * - A link to an element that is, or directly holds, a closed remembered block
+ *   (`#varasemad`) opens it.
+ * - `data-disclosure-keep`: when an htmx swap *replaces* the block, the new one
+ *   is shown as the reader had the old one on screen rather than as the server
+ *   drew it — the server's markup may predate a save still in flight, or a
+ *   view-only state from above. Swaps that do not replace it change nothing.
  */
 (function () {
   "use strict";
@@ -84,6 +99,13 @@
       if (!block || !block.matches || !block.matches("details[data-disclosure]")) {
         return;
       }
+      var shown = block.getAttribute("data-disclosure-shown");
+      if (shown !== null) {
+        if (block.open === (shown === "1")) {
+          return;
+        }
+        block.removeAttribute("data-disclosure-shown");
+      }
       var key = block.getAttribute("data-disclosure");
       var saved = block.getAttribute("data-disclosure-saved") === "1";
       var queued = Object.prototype.hasOwnProperty.call(wanted, key);
@@ -95,4 +117,94 @@
     },
     true
   );
+
+  function showFor(block, opened) {
+    if (block.open === opened) {
+      return;
+    }
+    block.setAttribute("data-disclosure-shown", opened ? "1" : "0");
+    block.open = opened;
+  }
+
+  function openTarget() {
+    var id = window.location.hash.slice(1);
+    if (!id) {
+      return;
+    }
+    var target = null;
+    try {
+      target = document.getElementById(decodeURIComponent(id));
+    } catch (error) {
+      return;
+    }
+    if (!target) {
+      return;
+    }
+    var block = target.matches("details[data-disclosure]")
+      ? target
+      : target.querySelector(":scope > details[data-disclosure]");
+    if (block) {
+      showFor(block, true);
+    }
+  }
+
+  openTarget();
+  window.addEventListener("hashchange", openTarget);
+
+  // `data-disclosure-keep`, scoped to the swap that replaces the block: the
+  // on-screen state is taken just before *that* response is swapped in — the
+  // latest thing the reader did, whatever stale state the server drew — and
+  // given back to the block that replaced it. A swap elsewhere on the page
+  // records nothing and touches nothing, and a block the swap did not replace
+  // (the same node is still there) is left alone.
+  var kept = typeof WeakMap === "function" ? new WeakMap() : null;
+
+  document.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail || {};
+    var target = detail.target;
+    if (!kept || !detail.xhr || !target || !target.querySelectorAll) {
+      return;
+    }
+    var blocks = [];
+    if (target.matches && target.matches("details[data-disclosure-keep][data-disclosure]")) {
+      blocks.push(target);
+    }
+    var inner = target.querySelectorAll("details[data-disclosure-keep][data-disclosure]");
+    for (var i = 0; i < inner.length; i += 1) {
+      blocks.push(inner[i]);
+    }
+    if (!blocks.length) {
+      return;
+    }
+    kept.set(
+      detail.xhr,
+      blocks.map(function (block) {
+        return { key: block.getAttribute("data-disclosure"), open: block.open, node: block };
+      })
+    );
+  });
+
+  // Given back in `afterSwap`, in the same task that inserted the new block and
+  // so before the browser's own `toggle` for a block parsed `open` is
+  // dispatched. The mark is set even when the drawn state already agrees: that
+  // queued toggle — or one for stale markup the reader has since reversed —
+  // must never reach the save as a choice, least of all while the reader's own
+  // save is still in flight.
+  document.addEventListener("htmx:afterSwap", function (event) {
+    var detail = event.detail || {};
+    if (!kept || !detail.xhr || !kept.has(detail.xhr)) {
+      return;
+    }
+    var records = kept.get(detail.xhr);
+    kept.delete(detail.xhr);
+    records.forEach(function (record) {
+      var now = document.querySelectorAll("details[data-disclosure-keep][data-disclosure]");
+      for (var i = 0; i < now.length; i += 1) {
+        if (now[i].getAttribute("data-disclosure") === record.key && now[i] !== record.node) {
+          now[i].setAttribute("data-disclosure-shown", record.open ? "1" : "0");
+          now[i].open = record.open;
+        }
+      }
+    });
+  });
 })();

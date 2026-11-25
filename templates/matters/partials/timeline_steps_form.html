@@ -137,3 +137,32 @@ audit row — whatever mix of phases and steps a person changed together.
     <button class="button button--primary" type="submit">Salvesta</button>
   </div>
 </form>
+
+{% if rail_removals %}
+  {% comment %}
+    **The rail's removals live here** (UX-001, 2026-11-25). The rail is read far
+    more often than it is corrected, so its items carry no ✕; an expected
+    commencement a colleague recorded is taken off here, with the confirmation
+    `Teema käik` uses (`row_remove.html`, which re-checks role, closure,
+    visibility and revision on the server). One from Lovable is listed with
+    where it is changed, and has no control. Outside the form above: a removal
+    is its own POST, not part of `Salvesta`.
+  {% endcomment %}
+  <section class="kulgform__removals" aria-labelledby="kulg-eeldatavad">
+    <h3 class="kulgform__subhead" id="kulg-eeldatavad">Eeldatavad jõustumised</h3>
+    <ul class="kulgform__rows">
+      {% for item in rail_removals %}
+        {% with record=item.record %}
+          <li class="kulgform__removal" id="kulg-eemalda-{{ record.pk }}">
+            <span class="kulgform__removalwhat"><span id="{{ item.named_by }}">{{ record.title }}</span> <span class="kulgform__stepdate">{{ record.display_date }}</span></span>
+            {% if item.lovable %}
+              <span class="kulgform__protected">Lovable'i kirje — eemalda see Lovable'is.</span>
+            {% elif rail_can_remove %}
+              {% include "matters/partials/row_remove.html" with record=record remove_kind="tahtaeg" remove_label="eeldatav jõustumine" remove_genitive="eeldatava jõustumise" remove_where="teemalt" remove_revision=record.updated_at.isoformat remove_named_by=item.named_by %}
+            {% endif %}
+          </li>
+        {% endwith %}
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}

@@ -89,9 +89,15 @@ def _missing(user, matters) -> set:
 # ---------------------------------------------------------------------------
 
 
-def test_only_the_two_commencement_kinds_are_informational():
+def test_only_the_commencement_and_parliamentary_kinds_are_informational():
     estimated = ImportantDateKind.ESTIMATED_COMMENCEMENT
-    assert INFORMATIONAL_IMPORTANT_DATE_KINDS == {PLANNED.value, estimated.value}
+    # The Riigikogu's dates are external facts, never koda's work (ADR 0225 §3).
+    parliamentary = {
+        ImportantDateKind.RK_OPINION_REQUEST.value,
+        ImportantDateKind.RK_AMENDMENTS_DEADLINE.value,
+        ImportantDateKind.RK_COMMITTEE_SITTING.value,
+    }
+    assert INFORMATIONAL_IMPORTANT_DATE_KINDS == {PLANNED.value, estimated.value} | parliamentary
     assert is_informational_milestone(PLANNED)
     assert is_informational_milestone(estimated)
     # Two labels, so a source's estimate is never attributed to a bill's text.

@@ -52,8 +52,9 @@ def _footer(body: str) -> str:
 
 
 def _rakendus(body: str) -> str:
-    start = body.index('aria-labelledby="rakendus"')
-    return body[start : body.index("</section>", start)]
+    """Haldus → Ülevaade's one line about the running build (docs/adr/0221)."""
+    start = body.index('id="rakenduse-versioon"')
+    return body[start : body.index("</p>", start)]
 
 
 @pytest.mark.django_db
@@ -114,4 +115,5 @@ def test_haldus_rakendus_invents_no_build_time(client: Client, settings) -> None
     section = _rakendus(client.get("/haldus/").content.decode())
 
     assert "eile" not in section
-    assert re.search(r"<dt>Ehitatud</dt>\s*<dd>—</dd>", section)
+    # No time is said rather than a wrong one.
+    assert "ehitatud" not in section

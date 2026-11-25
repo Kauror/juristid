@@ -350,7 +350,8 @@ proposals until the owner approves them for production.
   (`NO_ROW_COUNT`, `PAGES_INCONSISTENT`, `TRUNCATED`). Nothing is written.
 - **Breaker overrides** (`--max-changed`, `--max-restored`) are a person's
   decision for one `--trigger manual` run, never negative; `0` is zero. The
-  nightly limits stay 20 Teemad changed and 100 restored.
+  nightly limits stay 20 Teemad changed and 100 restored. (The changed-Teemad limit
+  is 100 since 25.11.2026: ADR 0213 §14.)
 - **Holds breaker.** `MAX_NEW_HOLDS` (25) replaces `MAX_NEW_CONFLICTS`: more
   held fields than the previous finished run by over 25 holds the night
   (`CIRCUIT_BREAKER`).

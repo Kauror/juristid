@@ -1,0 +1,213 @@
+/* riigikogu.css: Monitooring → Riigikogu and the Teema's Riigikogu sections (docs/adr/0226).
+ * Loaded after historical-reading.css from templates/base.html. The rows reuse the register
+ * watch's `.regwatch__*` grammar (app.css); only what that grammar lacks is defined here:
+ * a deadline that needs checking, the quoted source sentence, a changed date, and the
+ * analysis tables. Tokens only, so light and dark modes follow tokens.css. */
+
+.rkpage__section {
+  margin-bottom: var(--spacing-6);
+}
+
+.rkpage__health {
+  margin: 0 0 var(--spacing-4);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-left: 3px solid var(--status-warning-border);
+  background: var(--status-warning-soft);
+  color: var(--text-primary);
+  font-size: var(--typography-size-meta);
+}
+
+.rkpage__filter {
+  display: inline-flex;
+  gap: var(--spacing-3);
+  font-size: var(--typography-size-meta);
+}
+
+.rkpage__filter a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 2px solid transparent;
+}
+
+.rkpage__filter a.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+.rkinv__due {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.rkinv__due--check {
+  color: var(--status-warning);
+}
+
+.rkinv__time {
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+}
+
+.rkinv__status {
+  display: block;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.rkinv__status--check,
+.rkinv__status--not_found,
+.rkinv__status--unreadable {
+  color: var(--status-warning);
+}
+
+.rkinv__changed {
+  display: block;
+  font-size: var(--typography-size-meta);
+  color: var(--status-warning);
+}
+
+.rkinv__evidence {
+  margin: var(--spacing-1) 0;
+  padding: var(--spacing-1) var(--spacing-2);
+  border-left: 2px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+  overflow-wrap: anywhere;
+}
+
+.rkinv__candidate {
+  color: var(--status-info);
+}
+
+.rkinv__more > summary {
+  cursor: pointer;
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+}
+
+.rkinv__more form {
+  display: grid;
+  gap: var(--spacing-1);
+  margin-top: var(--spacing-1);
+}
+
+.rkteema {
+  margin: var(--spacing-5) 0;
+}
+
+.rkteema__head {
+  margin: var(--spacing-4) 0 var(--spacing-1);
+  font-size: var(--typography-size-label);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.rkteema__inline {
+  display: inline;
+}
+
+.rkanalysis {
+  margin: var(--spacing-2) 0 var(--spacing-3);
+}
+
+.rkanalysis__label {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--status-info);
+}
+
+.rkanalysis__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--typography-size-meta);
+}
+
+.rkanalysis__table th,
+.rkanalysis__table td {
+  padding: var(--spacing-1) var(--spacing-2);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.rkanalysis__quote > summary {
+  cursor: pointer;
+  color: var(--accent-link);
+}
+
+.rkanalysis__relation--same,
+.rkoutcome--reflected {
+  color: var(--status-success);
+}
+
+.rkanalysis__relation--partial,
+.rkoutcome--partial {
+  color: var(--status-info);
+}
+
+.rkanalysis__relation--different,
+.rkoutcome--not_reflected,
+.rkoutcome--reversed {
+  color: var(--status-danger);
+}
+
+.rkanalysis__relation--additional,
+.rkanalysis__relation--no_position,
+.rkanalysis__relation--insufficient,
+.rkoutcome--insufficient {
+  color: var(--text-muted);
+}
+
+.rkdiff--before {
+  text-decoration: line-through;
+  text-decoration-color: var(--status-danger);
+}
+
+.rkdiff--after {
+  border-left-color: var(--status-success-border);
+}
+
+@media (max-width: 40rem) {
+  .rkanalysis__table thead {
+    display: none;
+  }
+
+  .rkanalysis__table tr,
+  .rkanalysis__table th,
+  .rkanalysis__table td {
+    display: block;
+  }
+}
+
+/* Hooks the templates name for structure and tests; they add only what is stated. */
+.rkpage {
+  min-width: 0;
+}
+
+.rkinv {
+  scroll-margin-top: var(--spacing-8);
+}
+
+.rkinv--check {
+  background: var(--status-warning-soft);
+}
+
+.rkteema__bills {
+  margin-bottom: var(--spacing-2);
+}
+
+.rkoutcome {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.rkanalysis__relation {
+  white-space: nowrap;
+}
+
+/* A changed time inside a row's meta line reads inline with it. */
+.regwatch__meta .rkinv__changed {
+  display: inline;
+}

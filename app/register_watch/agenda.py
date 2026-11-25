@@ -1,7 +1,8 @@
 """«Valitsuse info»: the Government's weekly commented agenda, read and judged (ADR 0219).
 
-Every half hour from Wednesday 12:00 to Thursday 12:00 Tallinn time the host runs
-`watch_government_agenda`. A run looks for this week's agenda on valitsus.ee
+Every night at 00:00 Tallinn time the nightly cycle (ADR 0229) runs
+`watch_government_agenda`; there is no daytime reading. A run looks for this
+week's agenda on valitsus.ee
 (`sources.valitsus`), stores it once with every item as published, lets Claude say
 which items may matter to the Chamber (`judge`), and tells the Monitooring audience in
 the bell. A week whose agenda is stored is done: later runs that week read nothing.
@@ -36,8 +37,12 @@ logger = logging.getLogger("app.register_watch")
 TALLINN = ZoneInfo("Europe/Tallinn")
 #: The days of a week a session falls on: Wednesday, Thursday, Friday (Monday = 0).
 SESSION_WEEKDAYS = (2, 3, 4)
-#: When the week's watch ends: Thursday 12:00 Tallinn. An agenda not found by then is missing.
-WINDOW_END = (3, dt.time(12, 0))
+#: The last nightly cycle that reads a week's agenda for its session days starts on
+#: Friday (Monday = 0): an agenda published on Wednesday is found by the cycle going
+#: into Thursday, one published later by the one going into Friday (owner, 25.11.2026:
+#: accepted, no daytime reading). The week's agenda is missing only once that
+#: Friday cycle's finish-by for the agenda has passed.
+LAST_CYCLE_WEEKDAY = 4
 SHOWN = (Strength.STRONG, Strength.POSSIBLE)
 #: The model's «Kontrollimist vajavad võimalikud seosed».
 CHECK = (Strength.WEAK,)
@@ -65,14 +70,20 @@ def agenda_of_week(monday: dt.date) -> GovernmentAgenda | None:
     )
 
 
+def window_end(monday: dt.date) -> dt.datetime:
+    """When the week's last nightly reading should have finished: the agenda step's
+    finish-by in the cycle starting at 00:00 on the week's Friday (Tallinn)."""
+    from app.core import nightly_schedule
+
+    friday = nightly_schedule.cycle_start_on(monday + dt.timedelta(days=LAST_CYCLE_WEEKDAY))
+    return nightly_schedule.after_start(friday, nightly_schedule.FINISH_BY["government-agenda"])
+
+
 def missing_this_week(now: dt.datetime | None = None) -> bool:
-    """The week's window has closed (Thursday 12:00 Tallinn) and no agenda was stored."""
+    """The week's last nightly reading is over (`window_end`) and no agenda was stored."""
     local = (now or timezone.now()).astimezone(TALLINN)
     monday = week_monday(local.date())
-    end = dt.datetime.combine(
-        monday + dt.timedelta(days=WINDOW_END[0]), WINDOW_END[1], tzinfo=TALLINN
-    )
-    return local >= end and agenda_of_week(monday) is None
+    return local >= window_end(monday) and agenda_of_week(monday) is None
 
 
 # -- storing -----------------------------------------------------------------------

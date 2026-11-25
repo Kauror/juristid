@@ -10,6 +10,8 @@
       (static/js/theme.js, docs/adr/0147).
     {% endcomment %}
     <script src="{% static 'js/theme.js' %}"></script>
+    {# Its twin for the text size, for the same reason (docs/adr/0221). #}
+    <script src="{% static 'js/text-size.js' %}"></script>
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
 
@@ -35,6 +37,8 @@
     <link rel="stylesheet" href="{% static 'css/register-search.css' %}">
     <link rel="stylesheet" href="{% static 'css/matter-actions.css' %}">
     <link rel="stylesheet" href="{% static 'css/historical-reading.css' %}">
+    <link rel="stylesheet" href="{% static 'css/matter-preview.css' %}">
+    <link rel="stylesheet" href="{% static 'css/riigikogu.css' %}">
     <script src="{% static 'vendor/htmx.min.js' %}" defer></script>
     <script src="{% static 'js/app.js' %}" defer></script>
     {% comment %}
@@ -48,6 +52,8 @@
     <script src="{% static 'js/header-menu.js' %}" defer></script>
     <script src="{% static 'js/matter-actions.js' %}" defer></script>
     <script src="{% static 'js/work-filter.js' %}" defer></script>
+    <script src="{% static 'js/matter-preview.js' %}" defer></script>
+    <script src="{% static 'js/chart-download.js' %}" defer></script>
     {% if user.is_authenticated %}
       {% comment %}
         Remembered blocks (docs/adr/0194): where a reader's open/closed choice
@@ -320,5 +326,6 @@
         </p>
       </footer>
     </div>
+    {% block preview_drawer %}{% endblock %}
   </body>
 </html>

@@ -163,6 +163,15 @@ def started_on(page, matter_url: str) -> str:
     return stamps[0].strip().split()[0]
 
 
+def in_reading_order(boxes, width: int) -> bool:
+    """Two items do not overlap and read in order: left to right on a row, top to
+    bottom on a phone, where the rail is a vertical list (UX-001, below 720px)."""
+    first, second = boxes[0], boxes[1]
+    if width <= 720:
+        return first["y"] + first["height"] <= second["y"] + 0.5
+    return first["x"] + first["width"] <= second["x"] + 0.5
+
+
 def assert_fits(page, width: int) -> None:
     """No sideways scroll, every column real, and nothing clipped away.
 
@@ -406,7 +415,11 @@ def test_a_closed_matter_draws_two_columns(page, base_url, width):
     # `MONITORING_STOPPED`, which reads «Koda ei tegele edasi» (docs/adr/0131 §10,
     # amendment of 2026-10-25). One reading of a closure, not a strip-local
     # second one.
-    expect(page.locator('.tl-step[title="Koda ei tegele edasi"]')).to_have_count(1)
+    # UX-001: one visible line under the date, and the whole in the popover.
+    expect(
+        page.locator(".tl-step .tl-step__note", has_text=re.compile(r"^Koda ei tegele edasi$"))
+    ).to_have_count(1)
+    expect(page.locator(".tl-step .tl-tip__text", has_text="Koda ei tegele edasi")).to_have_count(1)
     assert_fits(page, width)
 
 
@@ -481,7 +494,7 @@ def test_a_deadline_and_a_sent_opinion_read_in_date_order(page, base_url, width)
         page.locator(".tl-step").nth(index).bounding_box()
         for index in range(page.locator(".tl-step").count())
     ]
-    assert boxes[0]["x"] < boxes[1]["x"], "the send and the deadline columns overlap"
+    assert in_reading_order(boxes, width), "the send and the deadline columns overlap"
     assert_fits(page, width)
 
 
@@ -496,27 +509,24 @@ def test_a_commencement_is_the_rightmost_destination(page, base_url, width):
     add_a_commencement(page, what="põhiosa", when=et(400))
 
     assert labels(page) == ["Arvamuse tähtaeg", "Jõustumine"]
-    expect(page.locator('.tl-step[title="põhiosa"]')).to_have_count(1)
+    # UX-001: «mis jõustub» is the column's one visible line, whole in its popover.
+    expect(page.locator(".tl-step .tl-step__note", has_text="põhiosa")).to_have_count(1)
     # The noun, never the chronology's tensed wording.
     for tensed in ("Jõustub", "Jõustus"):
         expect(page.locator(".tl-step__what", has_text=tensed)).to_have_count(0)
     assert_fits(page, width)
 
 
-def test_a_long_strip_scrolls_itself_and_never_the_page(page, base_url):
-    """**420px, §H.** Where the rail stops fitting, and what it does then.
+def test_a_long_rail_on_a_phone_is_a_vertical_list_and_never_scrolls_sideways(page, base_url):
+    """**420px.** Where the rail stops fitting a row, and what it does then.
 
-    Four columns are exactly what 420px holds — the seeded Matter's own shape,
-    and `396 / 4` is a whisker over the 96px floor. A **fifth** does not fit, and
-    the design's answer is neither to drop one nor to abbreviate it: below 720px
-    every column takes that floor, and `.tl-strip` is its own `overflow-x: auto`
-    container. Every milestone stays, at a legible width, and
-    the reader reaches the rightmost by scrolling the rail rather than the page
-    (TEEMA_TARGET_SPEC §H).
+    Since UX-001 (coordinator decision N-A2, 2026-11-25) a phone reads the rail as
+    a vertical list: every item stays, in the same order, at a legible width, and
+    neither the page nor the rail scrolls sideways. At 1024 the same items are one
+    row that fits, so the rail has nothing to scroll there.
 
-    Five columns from a deadline and three commencements, which is a real shape
-    — one law commencing in stages against one answer deadline — and needs no
-    file upload to reach.
+    Five items from a deadline and three commencements, which is a real shape —
+    one law commencing in stages against one answer deadline.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": 420, "height": 900})
@@ -532,20 +542,17 @@ def test_a_long_strip_scrolls_itself_and_never_the_page(page, base_url):
         "Jõustumine",
     ]
     narrow = strip(page).evaluate(
-        "node => ({ overflowX: getComputedStyle(node).overflowX,"
-        " clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })"
+        "node => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })"
     )
-    assert narrow["overflowX"] == "auto"
-    assert narrow["scrollWidth"] > narrow["clientWidth"], (
-        "the rail is not scrollable, so its fifth column is unreachable"
-    )
+    assert narrow["scrollWidth"] <= narrow["clientWidth"] + 1, narrow
     assert not overflows(page), "the rail took the whole document sideways with it"
-    # Nothing dropped and nothing clipped: every column has a real box, and the
-    # last one is fully inside the rail once it is scrolled to the end.
+    tops = [
+        page.locator(".tl-step").nth(index).bounding_box()["y"]
+        for index in range(page.locator(".tl-step").count())
+    ]
+    assert tops == sorted(tops) and len(set(tops)) == len(tops), tops
     assert_fits(page, 420)
 
-    # And the rule does not fire where it is not needed: the same five columns
-    # fit at 1024, so the rail has nothing to scroll there.
     page.set_viewport_size({"width": 1024, "height": 900})
     page.wait_for_timeout(200)
     wide = strip(page).evaluate(
@@ -625,7 +632,7 @@ def test_two_sent_opinions_draw_two_identical_columns(page, base_url, width):
         page.locator(".tl-step").nth(index).bounding_box()
         for index in range(page.locator(".tl-step").count())
     ]
-    assert boxes[0]["x"] < boxes[1]["x"], "the two sent-opinion columns overlap"
+    assert in_reading_order(boxes, width), "the two sent-opinion columns overlap"
     assert_fits(page, width)
 
 
@@ -667,7 +674,12 @@ def test_no_retired_source_has_left_a_label_on_the_strip(page, base_url, width):
     # the procedure and what Koda sent; they read in `Teema käik`.
     assert dated_labels(page) == ["Koja arvamus"]
     assert labels(page).count("Jõustumine") == 1
-    notes = page.locator(".tl-step__note").all_inner_texts()
+    # The commencements folded onto `Jõustumine`, one line each (UX-001: other
+    # items now print their one line of description too, so count this node's).
+    joustumine = page.locator(".tl-step").filter(
+        has=page.locator(".tl-step__what", has_text="Jõustumine")
+    )
+    notes = joustumine.locator(".tl-step__note").all_inner_texts()
     assert len(notes) == 2, notes
     for gone in RETIRED:
         expect(strip(page).get_by_text(gone, exact=False)).to_have_count(0)

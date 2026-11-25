@@ -1,0 +1,11 @@
+{# One Riigikogu amendment deadline (docs/adr/0226 §3): the members' deadline, never koda's. `deadline`. #}
+<li class="regwatch__row">
+  <span class="regwatch__date">{{ deadline.due_on|date:"d.m.Y" }}{% if deadline.due_time %}<span class="rkinv__time"> kell {{ deadline.due_time|time:"H.i" }}</span>{% endif %}</span>
+  <div class="regwatch__body">
+    <span class="regwatch__title">{% if deadline.bill.url %}<a href="{{ deadline.bill.url }}" target="_blank" rel="noopener noreferrer">{{ deadline.bill.title }}<span class="visually-hidden"> — avaneb uues aknas</span></a>{% else %}{{ deadline.bill.title }}{% endif %}</span>
+    <span class="regwatch__meta">{{ deadline.bill.label }}{% if deadline.bill.leading_committee %} · {{ deadline.bill.leading_committee }}{% endif %}{% if deadline.supersedes %} · <span class="rkinv__changed">tähtaeg muutus (oli {{ deadline.supersedes.due_on|date:"d.m.Y" }})</span>{% endif %}</span>
+    {% for matter in deadline.teemad_shown %}
+      {% if forloop.first %}<span class="regwatch__meta">Teema: {% endif %}<a href="{% url 'matters:matter_registers' pk=matter.pk %}">{{ matter.display_reference }} {{ matter.title }}</a>{% if not forloop.last %}; {% else %}</span>{% endif %}
+    {% endfor %}
+  </div>
+</li>

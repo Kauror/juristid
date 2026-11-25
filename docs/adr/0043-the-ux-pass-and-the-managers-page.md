@@ -47,6 +47,12 @@ are pinned by a test instead.
 
 ### 2. A saved view is a named URL, and nothing is stored
 
+> **Superseded in part by ADR 0222** (Proposed, 25.11.2026, subject to owner
+> review). A person may now keep up to twenty named views of their own; what is
+> stored is the register address as a canonical query, never rows, counts or an
+> access decision, so «the address is the view» still holds. The four named
+> views below and the copy-link popover are unchanged.
+
 The register has kept its whole state in the address since Stage 2E.1: a
 narrowing is bookmarkable, pasteable and reachable with Back (master
 specification 7.4). Four named views therefore introduce **no model, no

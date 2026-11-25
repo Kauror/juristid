@@ -49,14 +49,15 @@ created once through the machine reader and the importer's own CREATE writer,
 enrolled in the register with a ``NEW_TOPIC`` membership (`create_new_topic`)
 and mirrored the same night (`_converge_created`).
 
-**The limits** (docs/adr/0213 §10.8): ``MAX_CHANGED_MATTERS`` (20 Teemad with a
-source or derived change a night; over it the whole night is REVIEW_ONLY);
+**The limits** (docs/adr/0213 §10.8, §14): ``MAX_CHANGED_MATTERS`` (100 Teemad with
+a source or derived change a night, 20 until 25.11.2026; over it the whole night is
+REVIEW_ONLY, `over_teemad_limits`);
 ``MAX_RESTORED_MATTERS`` (100 restore-only Teemad; over it only the restores
 wait, `RESTORE_BREAKER`); both may be raised for one supervised run
 (`run_sync(max_changed=…, max_restored=…)`, recorded in the run's counts).
 ``MAX_HANDOVER_MATTERS`` (150) is the hand-overs' own limit: a Teema whose only
 source change is an owner Lovable recorded as handed over counts there, not
-against the 20 (`is_handover`, docs/adr/0220 §2).
+against `MAX_CHANGED_MATTERS` (`is_handover`, docs/adr/0220 §2).
 ``MAX_MISSING`` (5) separates a deleted topic from a broken read and fails the
 run; ``MAX_NEW_TOPICS`` (10) holds the night's creations. ``MAX_NEW_HOLDS``
 (25 more held fields than the previous run) replaced ``MAX_NEW_CONFLICTS``,
@@ -183,8 +184,14 @@ ACTIVITIES = (
 FINISHED_STAGES = frozenset({"joustunud", "rohkem ei tegele"})
 
 #: Circuit breakers (docs/adr/0192 §7): a night that would touch more Teemad than
-#: this, or raise more conflicts, writes nothing and waits for a person.
-MAX_CHANGED_MATTERS = 20
+#: this, or raise more conflicts, writes nothing and waits for a person. 100 since
+#: the owner's decision of 25.11.2026 (docs/adr/0213 §14): 20 was too tight for a
+#: department's ordinary week; the first r92 night reached 19.
+MAX_CHANGED_MATTERS = 100
+#: The limit every run used before it was recorded in its counts (``breaker_limit``
+#: since 11.11.2026, the limit then being 20). A run's summary shows its own
+#: recorded limit, and this for an older run, never today's default.
+CHANGED_LIMIT_BEFORE_RECORDING = 20
 #: Teemad one night may *restore* (owner decision 11.11): ordinary lawyer edits
 #: Lovable is put back over. Separate from `MAX_CHANGED_MATTERS`, so a busy day
 #: of local edits never stops the source's own changes; over it, the restores
@@ -663,6 +670,18 @@ def recorded_handover(bundle: dict[str, Any] | None) -> str:
 #: The fields a hand-over may change: the owner, and the «Endine vastutaja»
 #: the owner's earlier hold left behind (`_former_owner_decision`).
 HANDOVER_FIELDS = frozenset({"owner", FORMER_OWNER})
+
+
+def over_teemad_limits(ordinary: int, handovers: int, change_limit: int) -> bool:
+    """Whether tonight's Teemad trip the Teemad-written breaker (docs/adr/0213 §10.8).
+
+    The two limits are separate (docs/adr/0220 §2): ``ordinary`` Teemad — any
+    source or derived change that is not only a recorded hand-over, a hand-over
+    mixed with anything else included — against ``change_limit`` (the run's
+    `MAX_CHANGED_MATTERS` or its supervised override); recorded hand-overs against
+    `MAX_HANDOVER_MATTERS`. Either over its own limit holds the whole night
+    (`BREAKER`). Restores, held fields and new topics have their own breakers."""
+    return ordinary > change_limit or handovers > MAX_HANDOVER_MATTERS
 
 
 def is_handover(plan: MatterPlan) -> bool:
@@ -6602,8 +6621,7 @@ def _execute(
     if run.mode != SyncMode.APPLY or check:
         hold = COMPARE_ONLY
     elif (
-        len(ordinary) > change_limit
-        or len(handovers) > MAX_HANDOVER_MATTERS
+        over_teemad_limits(len(ordinary), len(handovers), change_limit)
         or held - held_before > MAX_NEW_HOLDS
     ):
         hold = BREAKER
@@ -7551,7 +7569,8 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
     if c.get("changed_source") or c.get("changed_restores"):
         lines.append(
             f"Lovable'i muudatusega teemasid: {c.get('changed_source', 0)}"
-            f"/{c.get('breaker_limit', MAX_CHANGED_MATTERS)}; Lovable'i väärtuse taastamisi: "
+            f"/{c.get('breaker_limit', CHANGED_LIMIT_BEFORE_RECORDING)}; "
+            "Lovable'i väärtuse taastamisi: "
             f"{c.get('changed_restores', 0)}/{c.get('restore_limit', MAX_RESTORED_MATTERS)}"
         )
     if c.get("changed_handovers"):
@@ -7638,8 +7657,9 @@ def sync_health(*, now: dt.datetime | None = None) -> SyncHealth:
 def due(*, trigger: str, now: dt.datetime | None = None) -> str:
     """``DUE APPLY``, ``DUE COMPARE`` or ``NOT_DUE <reason>``.
 
-    The host's cron fires at 21:15 and 22:15 UTC; exactly one of them is 00:15 in
-    Tallinn, summer or winter, and only that one is due. The run key then makes a
+    The host starts it from the nightly cycle (ADR 0229), fired at 21:00 and 22:00
+    UTC: exactly one firing is in Tallinn's hour 00, summer or winter, and only that
+    one is due. The run key then makes a
     second attempt on the same date refuse."""
     moment = now or timezone.now()
     ctl = control()

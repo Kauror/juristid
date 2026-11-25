@@ -785,10 +785,27 @@ def trends(
 
 
 @dataclass(frozen=True)
+class RecordPeriod:
+    """One year or month that holds a record: what a record card links to (UX-008).
+
+    ``month`` is set for the record month and ``None`` for a year.
+    """
+
+    label: str
+    year: int
+    month: int | None = None
+
+
+@dataclass(frozen=True)
 class Record:
     title: str
     value: str
     when: str
+    #: The trend the record was read from (``sent``, ``ontime``, ``days``,
+    #: ``koda``, ``eu``), or ``month`` for the record month.
+    source: str = ""
+    #: Every period that holds the record, in order: a tie keeps them all.
+    periods: tuple[RecordPeriod, ...] = ()
 
 
 def _best(
@@ -806,8 +823,24 @@ def _when(keys: list[Any]) -> str:
     return shown if len(keys) <= 3 else f"{shown} +{len(keys) - 3}"
 
 
+def _years(keys: list[Any]) -> tuple[RecordPeriod, ...]:
+    return tuple(RecordPeriod(str(year), int(year)) for year in keys)
+
+
 def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[Record]:
-    """The six records, over the same years the trends show; a tie names every year."""
+    """The six records, over the same years the trends show; a tie names every year.
+
+    Each record keeps every year or month that holds it (`Record.periods`), so
+    the page can link each of them, a tie included.
+
+    Zero and unknown are kept apart (ADR 0214 §7, «Zero and unknown»):
+    a year whose value is unknown (``None``, «andmed puuduvad») never holds a
+    record, but a measured zero is a value like any other. It decides the
+    lowest record — a median of 0 days (the deadline fell on the day the topic
+    arrived) is the shortest time given. A highest record needs a positive
+    value: when every year's count or share is 0 nothing was achieved and no
+    year is named, while the trend itself still prints each 0.
+    """
     by_key = {trend.key: trend for trend in found}
     out: list[Record] = []
 
@@ -815,16 +848,22 @@ def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[R
         return {
             bar.year: bar.value
             for bar in by_key[key].bars
-            if bar.value and (not complete or bar.year < today.year)
+            if bar.value is not None and (not complete or bar.year < today.year)
         }
 
-    best = _best(values("sent", complete=False))
+    def highest(key: str, *, complete: bool) -> tuple[float, list[Any]] | None:
+        best = _best(values(key, complete=complete))
+        return best if best and best[0] > 0 else None
+
+    best = highest("sent", complete=False)
     if best:
         out.append(
             Record(
                 "Välja saadetud arvamuste rekordaasta",
                 _plural(int(best[0]), "arvamus", "arvamust"),
                 _when(best[1]),
+                "sent",
+                _years(best[1]),
             )
         )
     years = {bar.year for bar in by_key["sent"].bars}
@@ -836,21 +875,29 @@ def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[R
     )
     best_month = _best({key: float(count) for key, count in months.items()})
     if best_month:
-        labels = [f"{MONTHS_LONG[month - 1]} {year}" for year, month in sorted(best_month[1])]
+        held = sorted(best_month[1])
+        labels = [f"{MONTHS_LONG[month - 1]} {year}" for year, month in held]
         out.append(
             Record(
                 "Välja saadetud arvamuste rekordkuu",
                 _plural(int(best_month[0]), "arvamus", "arvamust"),
                 _when(labels),
+                "month",
+                tuple(
+                    RecordPeriod(label, year, month)
+                    for label, (year, month) in zip(labels, held, strict=True)
+                ),
             )
         )
-    best = _best(values("ontime", complete=True))
+    best = highest("ontime", complete=True)
     if best:
         out.append(
             Record(
                 "Suurima tähtaegselt esitatud arvamuste osakaaluga aasta",
                 f"{best[0]:.1f}%".replace(".", ","),
                 _when(best[1]),
+                "ontime",
+                _years(best[1]),
             )
         )
     best = _best(values("days", complete=True), lowest=True)
@@ -860,16 +907,30 @@ def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[R
                 "Lühima arvamuse esitamiseks antud tähtajaga aasta",
                 f"{round(best[0])} päeva",
                 _when(best[1]),
+                "days",
+                _years(best[1]),
             )
         )
-    best = _best(values("koda", complete=False))
-    if best:
-        out.append(Record("Koja omaalgatuste rekordaasta", str(int(best[0])), _when(best[1])))
-    best = _best(values("eu", complete=False))
+    best = highest("koda", complete=False)
     if best:
         out.append(
             Record(
-                "ELiga otseselt seotud teemade rekordaasta", f"{round(best[0])}%", _when(best[1])
+                "Koja omaalgatuste rekordaasta",
+                str(int(best[0])),
+                _when(best[1]),
+                "koda",
+                _years(best[1]),
+            )
+        )
+    best = highest("eu", complete=False)
+    if best:
+        out.append(
+            Record(
+                "ELiga otseselt seotud teemade rekordaasta",
+                f"{round(best[0])}%",
+                _when(best[1]),
+                "eu",
+                _years(best[1]),
             )
         )
     return out

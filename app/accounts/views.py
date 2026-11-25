@@ -467,7 +467,11 @@ def act_as(request: HttpRequest) -> HttpResponse:
     shared_gate.note_persona_chosen(request)
     _record_persona_change(request, previous=previous, chosen=person)
     messages.success(request, f"Vaatad rakendust nüüd kasutajana {person.display_name}.")
-    return HttpResponseRedirect(_safe_next(request) or reverse("matters:my_work"))
+    # An explicit `next` wins; else the persona's own landing page, re-checked
+    # for this persona now, Minu asjad by default (docs/adr/0221).
+    from app.accounts.landing import landing_url
+
+    return HttpResponseRedirect(_safe_next(request) or landing_url(person))
 
 
 def _record_persona_change(request: HttpRequest, *, previous: Any, chosen: Any) -> None:

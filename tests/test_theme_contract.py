@@ -265,7 +265,7 @@ def test_the_switch_is_on_haldus_signed_in_and_behind_the_gear_signed_out():
 
     Since 2026-11-16 (second round) the switch is not in the account menu any
     more: it is one of the personal settings on Haldus → Seaded
-    (templates/haldus/index.html), which every signed-in reader opens; before
+    (templates/haldus/settings.html), which every signed-in reader opens; before
     signing in it is the only thing behind the gear
     (components/settings_menu.html). Never loose on the bar, and still wherever
     somebody meets the default again: signing out clears the browser's storage
@@ -287,4 +287,5 @@ def test_the_switch_is_on_haldus_signed_in_and_behind_the_gear_signed_out():
         for path in (ROOT / "templates").rglob("*.html")
         if "components/theme_toggle.html" in TEMPLATE_COMMENT.sub("", path.read_text("utf-8"))
     )
-    assert includes == ["components/settings_menu.html", "haldus/index.html"]
+    # Isiklikud seaded → Kuvamine since UX-002 (docs/adr/0221).
+    assert includes == ["components/settings_menu.html", "haldus/settings.html"]

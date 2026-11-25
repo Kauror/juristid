@@ -25,7 +25,8 @@
 #                   application logs, an optional heartbeat ping
 #   --tier daily    once a day: backup age against the RPO, unfinished
 #                   backup runs, the nightly dump's age, the Lovable sync's
-#                   last scheduled night, production_status, log error
+#                   last scheduled night, the nightly cycle's last night
+#                   (docs/adr/0229 §6), production_status, log error
 #                   counts, authentication failure counts
 #   --tier weekly   once a week: evidence integrity (structural), a level-2
 #                   verification of the newest set, and an INFO digest
@@ -86,6 +87,9 @@ The environment file (root, mode 600) names the deployment and the thresholds:
   MONITOR_HEALTHZ_URL        the public /healthz (optional; skipped if empty)
   MONITOR_DUMP_DIR           the host's nightly pg_dump directory (optional)
   MONITOR_SYNC_LOG_DIR       the Lovable sync's log directory (optional)
+  MONITOR_NIGHTLY_DIR        the nightly cycle's directory, nightly/ (optional; set it
+                             when the cycle is installed — then a night that never
+                             started is reported)
   MONITOR_APPDATA_BACKUP_DIR the Unraid Appdata Backup tree (optional)
   MONITOR_HEARTBEAT_URL      a dead-man's-switch URL to ping after a fast run (optional)
   MONITOR_APP_LOG_DIR        where the application logs are kept (default: MONITOR_DATA_ROOT/app-logs, 30 days)
@@ -163,6 +167,7 @@ MONITOR_BACKUP_ROOT="$(monitor_setting MONITOR_BACKUP_ROOT)"
 MONITOR_HEALTHZ_URL="$(monitor_setting MONITOR_HEALTHZ_URL)"
 MONITOR_DUMP_DIR="$(monitor_setting MONITOR_DUMP_DIR)"
 MONITOR_SYNC_LOG_DIR="$(monitor_setting MONITOR_SYNC_LOG_DIR)"
+MONITOR_NIGHTLY_DIR="$(monitor_setting MONITOR_NIGHTLY_DIR)"
 MONITOR_APPDATA_BACKUP_DIR="$(monitor_setting MONITOR_APPDATA_BACKUP_DIR)"
 MONITOR_HEARTBEAT_URL="$(monitor_setting MONITOR_HEARTBEAT_URL)"
 MONITOR_MCP_PROFILE_ON="$(monitor_setting MONITOR_MCP_PROFILE_ON)"
@@ -496,6 +501,65 @@ check_lovable() {
   fi
 }
 
+#: The nightly cycle (docs/adr/0229 §6). The night judged is the newest one whose
+#: cycle should have completed: the Tallinn date of (now − NIGHTLY_COMPLETE_HOURS),
+#: so a run at 04:05 UTC (06:05 or 07:05 in Tallinn) judges the night that began
+#: at 00:00 that day. NIGHTLY_COMPLETE_HOURS is the application's
+#: `app.core.nightly_schedule.CYCLE_COMPLETE_BY` (6 h: the register sweep's
+#: finish-by, after the watch, the Riigikogu cycle with its 90-minute limit and
+#: every step's 20-minute lock wait; tests/test_nightly_schedule.py holds the
+#: two equal). A winter cycle (22:00 UTC) is due complete at 04:00 UTC, a summer
+#: one (21:00 UTC) at 03:00 UTC, so the 04:05 UTC look comes after both; it must
+#: stay after 04:00 UTC, or in winter it would judge the night before.
+#: Never started, refused by a release, started but never completed
+#: (interrupted, or still running past its time: overdue), and a completed night with a PARTIAL, FAILED, INTERRUPTED or SKIPPED_UNEXPECTED step
+#: are each a WARN naming the night and the steps. A paused cycle is ok on purpose;
+#: an authorised --manual recovery of the night stands in for it.
+#: JURISTID_MONITOR_NOW (epoch seconds) is a test seam; cron sets none.
+NIGHTLY_COMPLETE_HOURS=6
+check_nightly() {
+  [ -n "$MONITOR_NIGHTLY_DIR" ] || return 0
+  local now night state verdict bad pid steps
+  now="${JURISTID_MONITOR_NOW:-$(date -u +%s)}"
+  read -r night _ _ <<<"$(tallinn_clock "$((now - NIGHTLY_COMPLETE_HOURS * 3600))")"
+  state="$MONITOR_NIGHTLY_DIR/state"
+  if [ -e "$MONITOR_NIGHTLY_DIR/PAUSED" ]; then
+    report nightly ok "the nightly cycle is paused on purpose ($MONITOR_NIGHTLY_DIR/PAUSED)."
+    return 0
+  fi
+  for verdict in "$state/$night.recovered" "$state/$night.completed"; do
+    [ -f "$verdict" ] || continue
+    if grep -q '^paused ' "$verdict"; then
+      report nightly ok "night $night: the cycle was paused on purpose."
+      return 0
+    fi
+    bad="$(awk '$2 ~ /^(PARTIAL|FAILED|INTERRUPTED|SKIPPED_UNEXPECTED)$/ { printf "%s%s %s", sep, $1, $2; sep = ", " }' "$verdict")"
+    if [ -n "$bad" ]; then
+      report nightly WARN "night $night: $bad. Read $MONITOR_NIGHTLY_DIR/last-cycle.txt and the night's log."
+    elif [ "$verdict" = "$state/$night.recovered" ]; then
+      report nightly ok "night $night recovered by an authorised manual run."
+    else
+      report nightly ok "night $night completed; every step succeeded or was skipped on purpose."
+    fi
+    return 0
+  done
+  if [ -f "$state/$night.refused" ]; then
+    report nightly WARN "night $night: the cycle refused to start ($(cut -c1-160 "$state/$night.refused")). A release or a restore held the cycle lock at 00:00 Tallinn."
+    return 0
+  fi
+  if [ -f "$state/$night.started" ]; then
+    pid="$(sed -nE 's/.* pid=([0-9]+).*/\1/p' "$state/$night.started")"
+    steps="$(awk '{ printf "%s%s %s", sep, $1, $2; sep = ", " } END { if (!NR) printf "none" }' "$state/$night.outcomes" 2>/dev/null || printf 'none')"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      report nightly WARN "night $night: the cycle is still running past ${NIGHTLY_COMPLETE_HOURS}h (overdue); steps so far: $steps."
+    else
+      report nightly WARN "night $night: the cycle was interrupted (started, never completed); steps recorded: $steps. Recover it by hand (--manual), never by re-running cron."
+    fi
+    return 0
+  fi
+  report nightly WARN "night $night: the nightly cycle never started (cron line missing, host down at 00:00 Tallinn, or lock state). See docs/adr/0229."
+}
+
 check_status() {
   local output status failing
   output="$(juristid_compose exec -T web python manage.py production_status 2>&1)" && status=0 || status=$?
@@ -633,6 +697,7 @@ case "$TIER" in
     check_partials
     check_dump_age
     check_lovable
+    check_nightly
     check_status
     check_errors
     check_auth

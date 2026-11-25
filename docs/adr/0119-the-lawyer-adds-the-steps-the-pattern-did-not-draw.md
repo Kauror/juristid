@@ -177,3 +177,29 @@ vocabulary, `title` empty).
 * **An integer order over the whole rail.** The rail is a projection that
   gains and loses items as records change; a stored index into it goes stale
   the first time a `Koja arvamus` is recorded.
+
+## Amendment 2026-11-25 (coordinator review): a closed file gets no `Muuda`, enforced at three layers
+
+*Accepted by the owner on 25.11.2026 with the r93 release.*
+
+§1 says «a reader, and a closed file, still get nothing». The template's
+condition was `can_write and legal_process or can_write and matter.is_open`,
+which still offered `Muuda` on a closed file that had a procedure — a panel
+whose every save the service then refused. Now:
+
+1. **Page.** `Muuda` and the per-step date shortcut are drawn only for a writer
+   on an open file (`can_write and matter.is_open`).
+2. **Route.** The `Muuda` panel's GET answers a closed file 404, as the date
+   shortcut's GET and POST already did (`_rail_step`).
+3. **Service — the boundary.** `set_timeline_steps` and `set_rail_step_date`
+   take `lock_open_matter_for_business_write`, which re-reads the closure from
+   the locked Matter row and refuses with `CLOSED_MATTER_REFUSAL`. A panel
+   opened before the closure, a crafted POST, or a caller holding an instance
+   from before the closure writes nothing: no row, no `TIMELINE_STEPS_CHANGED`
+   event. (The overnight delivery report of 25.11 said `set_timeline_steps` had
+   no closure check; that was wrong — it has had one since R2-02.)
+
+Permissions (`business_write_required`, `can_write`), the revision check
+(`timeline_steps_revision_token`), the audit event and source ownership of
+Lovable commencements are unchanged. Reopening (`Ava uuesti`) gives the editing
+back. Tests: `tests/test_closed_teema_rail_editing.py`.

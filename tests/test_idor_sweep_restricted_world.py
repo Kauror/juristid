@@ -80,6 +80,16 @@ from tests.test_read_side_existence_oracles import (  # noqa: F401 - `world` is 
 
 pytestmark = pytest.mark.django_db
 
+
+@pytest.fixture(autouse=True)
+def riigikogu_actions_switched_on(settings):
+    """The sweep proves who may reach a route, so the Riigikogu routes are swept as
+    they are once activated. Switched off they answer 404 to everybody before any
+    read (docs/adr/0224 «What the switch disables»), which
+    tests/test_riigikogu_disabled_boundaries.py holds on its own."""
+    settings.RIIGIKOGU_MONITORING = True
+
+
 #: Words that exist only on hidden records.
 TOKENS = (
     HIDDEN_TITLE,
@@ -123,6 +133,16 @@ NOT_MATTER_DATA = {
     # A Government agenda item: public text; it acts only on an open Teema the
     # reader may see, else 404 (ADR 0219, amendment 2026-11-22).
     "register_watch:agenda_decide": "Government agenda item",
+    # A Riigikogu invitation to koda: a public letter; a decision acts only on a
+    # Teema the reader may see that follows the letter's bill, else 404, and the
+    # Monitooring page names a Teema only through `visible_to` (ADR 0225 §6).
+    "register_watch:riigikogu_decide": "Riigikogu invitation",
+    # A model analysis of public Riigikogu text; a work-victory candidate is added
+    # only on a Teema the reader may see that follows the bill (ADR 0227 §6).
+    "register_watch:riigikogu_victory": "Riigikogu analysis",
+    # A bill tie (`WatchTarget`): ended only when its Teema is visible to the reader,
+    # else 404 (ADR 0224 §2).
+    "register_watch:riigikogu_unlink": "Riigikogu bill tie",
     "legacy_import:opinion_archive_file": "archive",
     "legacy_import:opinion_archive_link": "archive",
     "legacy_import:opinion_decide": "archive",
@@ -137,6 +157,11 @@ NOT_MATTER_DATA = {
     "matters:person_work": "person",
     # A metric slug, not an id (tests/test_reporting_*).
     "reporting:export": "metric",
+    # A chart's panel key, not an id: the file holds exactly what the page shows
+    # this reader — the same `matter_facts(user)` scope — and is audited
+    # (UX-005, docs/adr/0214 §8, tests/test_statistika_chart_downloads.py).
+    "reporting:chart_svg": "chart",
+    "reporting:chart_xlsx": "chart",
     # Reference data: an institution, a tag or a vocabulary key — rows with no
     # visibility of their own, behind `reference.manage`, 404 for everybody
     # without it (docs/adr/0187, tests/test_reference_data_views.py).
@@ -179,6 +204,11 @@ PERSONAL_INBOX = {
     "notifications:candidates_read": "the recipient's own new-topics notice (ADR 0218 §7)",
     "notifications:candidates_unread": "the recipient's own new-topics notice (ADR 0218 §7)",
     "notifications:personal_remove": "the recipient's own reminder",
+    # «Minu vaated» (docs/adr/0222): a saved view is its owner's own row, keyed
+    # by its own id; the swept id is a Matter's, never a view's, so it is a 404
+    # for everybody, the owner too (tests/test_saved_register_views.py).
+    "matters:rename_view": "the signed-in person's own saved view",
+    "matters:remove_view": "the signed-in person's own saved view",
 }
 
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.
@@ -316,7 +346,11 @@ def _key_for(route: str, param: str) -> str | None:
         return "suggestion"
     if route == "register_watch:decide":
         return "finding"
-    if route in ("register_watch:phrase", "register_watch:dismiss_all"):
+    if route in (
+        "register_watch:phrase",
+        "register_watch:dismiss_all",
+        "register_watch:riigikogu_link",
+    ):
         # «Otsingusõnad» name the Teema they search for (ADR 0217 §7); «Jäta kõik
         # vahele» the Teema whose waiting documents it skips (ADR 0219).
         return "matter"

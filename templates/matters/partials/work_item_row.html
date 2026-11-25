@@ -77,6 +77,7 @@ control on this row: the row itself is the link.
       <span class="workrow2__matter">
         {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
       </span>
+      {% if item.consistency_alert %}{% include "matters/partials/consistency_mark.html" with alert=item.consistency_alert %}{% endif %}
     </span>
 
     <span class="workrow2__stage">{{ item.stage_label }}</span>

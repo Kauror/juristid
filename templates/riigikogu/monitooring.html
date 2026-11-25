@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% load disclosures %}
+{% block title %}Riigikogu · Monitooring · {{ application_name }}{% endblock %}
+
+{% comment %}
+Monitooring → Riigikogu (docs/adr/0226). Four sections in order: the invitations
+koda received (always first, whatever the model thinks), the coming fortnight in
+the committees («Meie teemad» by default), the Riigikogu's amendment deadlines —
+which are the members' and factions' deadlines, never koda's — and the earlier
+invitations, folded. Read nightly; everything here is the public record, and a
+Teema is named only where the reader may see it.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--monitooring rkpage">
+  {% include "register_watch/_monitooring_head.html" %}
+
+  {% if not actions_on %}<p class="regwatch__meta">Riigikogu jälgimine ei ole sisse lülitatud: siin ei saa praegu midagi otsustada ega teemaga siduda. Allpool on viimati loetud andmed.</p>
+  {% elif not watch_on %}<p class="regwatch__meta">Riigikogu öine jälgimine on välja lülitatud. Allpool on viimati loetud andmed.</p>
+  {% else %}<p class="regwatch__meta">Andmed loetakse kord ööl öise tsükli osana, alates kella 01:00 Tallinna aja järgi. Päeval Riigikogu andmeid uuesti ei loeta.</p>{% endif %}
+  {% if health %}
+    <p class="rkpage__health" role="status">
+      {% for stage in health %}{{ stage.label }}: {{ stage.line }}{% if not forloop.last %} · {% endif %}{% endfor %}
+    </p>
+  {% endif %}
+
+  <section class="rkpage__section" aria-labelledby="rk-kutsed">
+    <h2 class="regtab__subhead" id="rk-kutsed">Kojale saadetud kutsed</h2>
+    <p class="regwatch__meta">Riigikogu dokumendiregistri järgi. Register on teine kaitseliin: e-kiri jääb esimeseks.</p>
+    <ul class="regwatch__list">
+      {% for row in page.open_rows %}{% include "riigikogu/_invitation.html" with row=row can_act=may_decide %}
+      {% empty %}<li class="regwatch__empty">Uusi kutseid ei ole.</li>{% endfor %}
+    </ul>
+    {% if page.response_rows %}
+      <h3 class="regtab__subhead">Kutsele vastamine vajab kontrollimist ({{ page.response_rows|length }})</h3>
+      <p class="regwatch__meta">Tähtaeg on möödas ja registris ei ole koja arvamust. See ei tähenda, et koda ei vastanud: vastus võib olla ühispöördumises, istungil või teise pealkirja all.</p>
+      <ul class="regwatch__list">
+        {% for row in page.response_rows %}{% include "riigikogu/_invitation.html" with row=row can_act=may_decide %}{% endfor %}
+      </ul>
+    {% endif %}
+  </section>
+
+  <section class="rkpage__section" aria-labelledby="rk-komisjonid">
+    <div class="regtab__headrow">
+      <h2 class="regtab__subhead" id="rk-komisjonid">Komisjonides eesolev</h2>
+      <nav class="rkpage__filter" aria-label="Komisjonide päevakorra valik">
+        <a href="{% url 'register_watch:riigikogu' %}" {% if not everything %}aria-current="true" class="is-active"{% endif %}>Meie teemad</a>
+        <a href="{% url 'register_watch:riigikogu' %}?komisjonid=koik" {% if everything %}aria-current="true" class="is-active"{% endif %}>Kõik komisjonid</a>
+      </nav>
+    </div>
+    <ul class="regwatch__list">
+      {% if everything %}{% for item in page.agenda_all %}{% include "riigikogu/_agenda_item.html" %}{% empty %}<li class="regwatch__empty">Kahe nädala jooksul pole komisjonide päevakorras punkte.</li>{% endfor %}
+      {% else %}{% for item in page.agenda_ours %}{% include "riigikogu/_agenda_item.html" %}{% empty %}<li class="regwatch__empty">Kahe nädala jooksul ei aruta komisjonid ühtki teie teema eelnõu.</li>{% endfor %}{% endif %}
+    </ul>
+    {% if page.signals and not everything %}
+      <details class="regwatch__unrelated" {% disclosure "riigikogu.signals" %}>
+        <summary>Varajased signaalid: eelnõu algatamine või kavandi tutvustamine ({{ page.signals|length }})</summary>
+        <ul class="regwatch__list">{% for item in page.signals %}{% include "riigikogu/_agenda_item.html" %}{% endfor %}</ul>
+      </details>
+    {% endif %}
+  </section>
+
+  <section class="rkpage__section" aria-labelledby="rk-tahtajad">
+    <h2 class="regtab__subhead" id="rk-tahtajad">Muudatusettepanekute tähtajad</h2>
+    <p class="regwatch__meta">Riigikogu liikmete, fraktsioonide ja juhtivkomisjoni tähtaeg muudatusettepanekuteks. Koda ise muudatusettepanekut esitada ei saa: see on viimane aeg ettepanek kellelegi edasi anda, kes saab.</p>
+    <ul class="regwatch__list">
+      {% for deadline in page.deadlines_ours %}{% include "riigikogu/_amendment_deadline.html" %}
+      {% empty %}<li class="regwatch__empty">Teie teemade eelnõudel ei ole lähiajal tähtaegu.</li>{% endfor %}
+    </ul>
+    {% if page.deadlines_other %}
+      <details class="regwatch__unrelated" {% disclosure "riigikogu.other_bills" %}>
+        <summary>Muud eelnõud ({{ page.deadlines_other|length }})</summary>
+        <ul class="regwatch__list">{% for deadline in page.deadlines_other %}{% include "riigikogu/_amendment_deadline.html" %}{% endfor %}</ul>
+      </details>
+    {% endif %}
+  </section>
+
+  <details class="regwatch__unrelated rkpage__section" {% disclosure "riigikogu.previous" %}>
+    <summary>Varasemad kutsed ({{ page.previous_rows|length }})</summary>
+    <ul class="regwatch__list">
+      {% for row in page.previous_rows %}{% include "riigikogu/_invitation.html" with row=row can_act=False %}
+      {% empty %}<li class="regwatch__empty">Varasemaid kutseid ei ole.</li>{% endfor %}
+    </ul>
+  </details>
+
+  {% if page.mentions %}
+    <details class="regwatch__unrelated rkpage__section" {% disclosure "riigikogu.mentions" %}>
+      <summary>Muud koja mainimised täiskogus ({{ page.mentions|length }})</summary>
+      <p class="regwatch__meta">Stenogrammist, mitte eelnõuga seotud päevakorrapunktist. Ainult lugemiseks; teemasid siit ei teki.</p>
+      <ul class="regwatch__list">{% for mention in page.mentions %}{% include "riigikogu/_mention.html" %}{% endfor %}</ul>
+    </details>
+  {% endif %}
+</div>
+{% endblock %}

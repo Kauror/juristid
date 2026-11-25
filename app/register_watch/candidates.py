@@ -401,8 +401,15 @@ def waiting() -> QuerySet[TopicCandidate]:
 
 
 def worth_telling() -> QuerySet[TopicCandidate]:
-    """What the bell and Osakond count: not folded, and named (a title that says which draft)."""
-    return waiting().exclude(strength__in=FOLDED).exclude(match_key="")
+    """What the bell and Osakond count: not folded, and named (a title that says which draft).
+
+    A candidate the Riigikogu invited koda on is always worth telling, whatever the
+    model's verdict and whether the model ran at all (ADR 0225 §6).
+    """
+    from django.db.models import Q
+
+    invited = Q(invitations__isnull=False)
+    return waiting().filter((~Q(strength__in=FOLDED) & ~Q(match_key="")) | invited).distinct()
 
 
 def _lock_new(candidate: TopicCandidate) -> TopicCandidate:
@@ -454,11 +461,47 @@ def _link_items(candidate: TopicCandidate, matter: Any, actor: Any) -> int:
     return written
 
 
+def _tie_bills(candidate: TopicCandidate, matter: Any, actor: Any) -> None:
+    """A candidate's Riigikogu bills become the Teema's followed bills (ADR 0224 §2).
+
+    The person's «Seo» or «Uus teema» is the confirmation: the tie is by the bill's
+    UUID, so the Teema is followed whatever its title says.
+
+    **Nothing while the Riigikogu monitoring is off** (`bills.switched_on`, ADR 0224
+    «What the switch disables»): a `LINKED` tie is read every night by the existing
+    register watch, so tying here would switch the new following on through the
+    candidate workflow. The candidate is attached or adopted exactly as before.
+    """
+    import uuid as uuid_module
+
+    from app.riigikogu import bills
+    from app.riigikogu.models import Bill
+
+    if not bills.switched_on():
+        return
+
+    for external in candidate.items.filter(source=WatchSource.RIIGIKOGU).values_list(
+        "external_id", flat=True
+    ):
+        try:
+            key = uuid_module.UUID(external.removeprefix("draft:"))
+        except ValueError:
+            continue
+        bill = Bill.objects.filter(uuid=key).first()
+        if bill is None:
+            bill = Bill.objects.create(uuid=key, title=candidate.title[:1000])
+        try:
+            bills.link(matter, bill, actor=actor)
+        except DomainError:
+            continue
+
+
 @transaction.atomic
 def attach(candidate: TopicCandidate, matter: Any, *, actor: Any) -> TopicCandidate:
     """«Seo olemasolevaga»: the documents become the existing Teema's `Menetluse link`s."""
     locked = _lock_new(candidate)
     _link_items(locked, matter, actor)
+    _tie_bills(locked, matter, actor)
     _decide(locked, CandidateStatus.ATTACHED, actor, matter)
     return locked
 
@@ -475,6 +518,7 @@ def adopt_if_new(candidate: TopicCandidate, matter: Any, *, actor: Any) -> bool:
     if locked.status != CandidateStatus.NEW:
         return False
     _link_items(locked, matter, actor)
+    _tie_bills(locked, matter, actor)
     _decide(locked, CandidateStatus.ADDED, actor, matter)
     return True
 
@@ -567,10 +611,11 @@ def at_riigikogu(candidate: TopicCandidate) -> bool:
 
 # -- is it working ------------------------------------------------------------------
 
-#: The host's cron line: every day at 04:20 UTC (deploy/unraid-main/cron).
-SWEEP_AT_UTC = dt.time(4, 20)
-STALE_AFTER = dt.timedelta(hours=30)
-FIRST_RUN_GRACE = dt.timedelta(hours=6)
+#: The sweep is a step of the nightly cycle (ADR 0229), after the register watch;
+#: its first run is due by `nightly_schedule.step_due`. A finished run older than
+#: this is missed: a night is 23-25 hours across a change of offset, and the sweep may
+#: finish up to its finish-by after the cycle starts, so 25 h + 6 h = 31 h.
+STALE_AFTER = dt.timedelta(hours=25) + dt.timedelta(hours=6)
 #: A run unfinished after this long was stopped from outside.
 ABANDONED_AFTER = dt.timedelta(hours=3)
 
@@ -589,11 +634,10 @@ def _installed_at() -> dt.datetime | None:
 
 
 def _first_run_due(since: dt.datetime) -> dt.datetime:
-    moment = since.astimezone(dt.UTC)
-    slot = dt.datetime.combine(moment.date(), SWEEP_AT_UTC, tzinfo=dt.UTC)
-    if slot < moment:
-        slot += dt.timedelta(days=1)
-    return slot + FIRST_RUN_GRACE
+    """The sweep's finish-by in the first nightly cycle at or after ``since``."""
+    from app.core import nightly_schedule
+
+    return nightly_schedule.step_due("register-sweep", since)
 
 
 def sweep_health(now: dt.datetime | None = None) -> Any:

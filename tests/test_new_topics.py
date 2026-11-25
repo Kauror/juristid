@@ -591,7 +591,7 @@ def test_a_stopped_or_missing_sweep_is_red(registers):
     candidates.sweep(use_ai=False, today=TODAY)
     assert candidates.sweep_health().ok
 
-    assert candidates.sweep_health(now + dt.timedelta(hours=31)).ok is False
+    assert candidates.sweep_health(now + candidates.STALE_AFTER + dt.timedelta(hours=1)).ok is False
     SweepRun.objects.create(started_at=timezone.now(), errors=[{"viga": "x", "katkes": True}])
     assert candidates.sweep_health().detail == "last run stopped before its end"
 

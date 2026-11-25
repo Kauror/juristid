@@ -1,0 +1,340 @@
+"""What each step of the nightly cycle actually did, from its own records (ADR 0229 §4).
+
+An exit code of 0 is not success: the Lovable script exits 0 when it was paused,
+not due or locked out, and the register commands exit 0 with registers they could
+not read. So the cycle asks this module, once per step, after the step ended
+(`manage.py nightly_outcome`), and records the answer, never a log line.
+
+The sources are the steps' own ledgers:
+
+* ``lovable`` — `LovableSyncRun` (trigger SCHEDULED, started since the cycle began):
+  its status, error and aggregate counts; with no run, the control row (OFF or cut
+  over is deliberate) and the night's run key (already ran tonight is deliberate);
+* ``register-watch`` — `WatchRun` (`finished_at`, the ``katkes`` error, errors,
+  targets checked, new findings, model failures);
+* ``register-sweep`` — `SweepRun` (the same, with sources read and new candidates);
+* ``government-agenda`` — it keeps no run ledger, so `watch_government_agenda
+  --outcome-json` ends with one machine line of counts, handed over here
+  (``reported``);
+* ``riigikogu`` — `StageRun` (docs/adr/0224 §5), one row per stage of the cycle
+  that began since the step started; the ANALYSIS stage is off under its own
+  authorisation (docs/adr/0227) and never decides the outcome.
+
+Outcomes: SUCCEEDED, SUCCEEDED_NO_NEW, PARTIAL (ran, with source errors, model
+failures or held writes), SKIPPED_DELIBERATE (off, paused or already done by
+design), SKIPPED_UNEXPECTED (no record and no reason: a lock, a missing run),
+FAILED, INTERRUPTED (a record that never finished). Counts only, never a title.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
+SUCCEEDED = "SUCCEEDED"
+SUCCEEDED_NO_NEW = "SUCCEEDED_NO_NEW"
+PARTIAL = "PARTIAL"
+SKIPPED_DELIBERATE = "SKIPPED_DELIBERATE"
+SKIPPED_UNEXPECTED = "SKIPPED_UNEXPECTED"
+FAILED = "FAILED"
+INTERRUPTED = "INTERRUPTED"
+OUTCOMES = (
+    SUCCEEDED,
+    SUCCEEDED_NO_NEW,
+    PARTIAL,
+    SKIPPED_DELIBERATE,
+    SKIPPED_UNEXPECTED,
+    FAILED,
+    INTERRUPTED,
+)
+#: The outcomes the host's daily monitor reports (the others are a good night).
+PROBLEMS = frozenset({PARTIAL, SKIPPED_UNEXPECTED, FAILED, INTERRUPTED})
+STEPS = ("lovable", "register-watch", "riigikogu", "register-sweep", "government-agenda")
+#: An unfinished run older than this was stopped from outside (as `WatchRun.aborted`).
+ABANDONED_AFTER = dt.timedelta(hours=3)
+#: The machine line's prefix, for the host script.
+PREFIX = "NIGHTLY-OUTCOME "
+
+
+@dataclass(frozen=True)
+class StepOutcome:
+    step: str
+    outcome: str
+    reason: str = ""
+    counts: dict[str, int] = field(default_factory=dict)
+
+    def line(self) -> str:
+        return PREFIX + json.dumps(
+            {
+                "step": self.step,
+                "outcome": self.outcome,
+                "reason": self.reason,
+                "counts": self.counts,
+            },
+            sort_keys=True,
+        )
+
+
+def classify(
+    step: str,
+    *,
+    since: dt.datetime,
+    rc: int,
+    reported: dict[str, Any] | None = None,
+    manual: bool = False,
+) -> StepOutcome:
+    """``manual``: the cycle was a person's recovery run (`--manual`), whose Lovable
+    synchronisation is recorded with trigger MANUAL, not SCHEDULED."""
+    if step == "lovable":
+        return _lovable(since, rc, manual=manual)
+    if step == "register-watch":
+        return _watch(since, rc)
+    if step == "register-sweep":
+        return _sweep(since, rc)
+    if step == "government-agenda":
+        return _agenda(rc, reported)
+    if step == "riigikogu":
+        return _riigikogu(since, rc)
+    raise ValueError(f"unknown step: {step}")
+
+
+def _lovable(since: dt.datetime, rc: int, *, manual: bool = False) -> StepOutcome:
+    from django.utils import timezone
+
+    from app.legacy_import import lovable_sync
+    from app.legacy_import.lovable_sync_models import (
+        LovableSyncRun,
+        SyncMode,
+        SyncRunStatus,
+        SyncTrigger,
+    )
+
+    step = "lovable"
+    # A recovery (`juristid-nightly-cycle.sh --manual`) runs the sync script with
+    # --manual: its record is MANUAL and has no night key, so «already ran tonight»
+    # does not apply to it. The newest such run since the cycle began is the
+    # recovery's own; the runner's flock keeps an on-demand run from overlapping it.
+    trigger = SyncTrigger.MANUAL if manual else SyncTrigger.SCHEDULED
+    run = (
+        LovableSyncRun.objects.filter(trigger=trigger, started_at__gte=since)
+        .order_by("-started_at")
+        .first()
+    )
+    if run is None:
+        ctl = lovable_sync.control()
+        if ctl.cut_over:
+            return StepOutcome(step, SKIPPED_DELIBERATE, "cut over: the nightly sync has ended")
+        if ctl.mode == SyncMode.OFF:
+            return StepOutcome(step, SKIPPED_DELIBERATE, "the sync is off (control mode OFF)")
+        key = lovable_sync.run_key_for(SyncTrigger.SCHEDULED, timezone.now())
+        if not manual and LovableSyncRun.objects.filter(run_key=key).exists():
+            return StepOutcome(step, SKIPPED_DELIBERATE, f"already ran for {key}")
+        if rc != 0:
+            return StepOutcome(step, FAILED, f"exit {rc} with no run record")
+        return StepOutcome(
+            step, SKIPPED_UNEXPECTED, "no run record: the script skipped (a lock or not due)"
+        )
+    counts = run.counts or {}
+    kept = {
+        k: int(counts.get(k) or 0)
+        for k in (
+            "checked",
+            "updated",
+            "failed",
+            "verify_failed",
+            "new_topics_created",
+            "new_topics_failed",
+            "retired",
+            "search_refresh_pending",
+        )
+    }
+    if run.status == SyncRunStatus.RUNNING:
+        return StepOutcome(step, INTERRUPTED, "the run never finished", kept)
+    if run.status == SyncRunStatus.FAILED or rc != 0:
+        return StepOutcome(step, FAILED, run.error or f"exit {rc}", kept)
+    if run.status == SyncRunStatus.REVIEW_ONLY:
+        return StepOutcome(step, PARTIAL, run.error or "held for review: nothing written", kept)
+    if kept["failed"] or kept["verify_failed"] or kept["new_topics_failed"]:
+        return StepOutcome(step, PARTIAL, "some Teemad failed or did not verify", kept)
+    if kept["search_refresh_pending"]:
+        return StepOutcome(step, PARTIAL, "search rows left to refresh", kept)
+    if not (kept["updated"] or kept["new_topics_created"] or kept["retired"]):
+        return StepOutcome(step, SUCCEEDED_NO_NEW, "", kept)
+    return StepOutcome(step, SUCCEEDED, "", kept)
+
+
+def _ledger(
+    step: str,
+    run: Any,
+    rc: int,
+    *,
+    read: int,
+    new: int,
+    other_running: bool,
+) -> StepOutcome:
+    if run is None:
+        if other_running:
+            return StepOutcome(step, SKIPPED_UNEXPECTED, "another run held the lock")
+        if rc != 0:
+            return StepOutcome(step, FAILED, f"exit {rc} with no run record")
+        return StepOutcome(step, SKIPPED_UNEXPECTED, "no run record")
+    errors = list(run.errors or [])
+    counts = {
+        "read": read,
+        "new": new,
+        "errors": len(errors),
+        "ai_failures": int(run.ai_failures or 0),
+    }
+    if any(isinstance(e, dict) and e.get("katkes") for e in errors):
+        return StepOutcome(step, FAILED, "the run stopped before its end (katkes)", counts)
+    if run.finished_at is None:
+        return StepOutcome(step, INTERRUPTED, "the run never finished", counts)
+    if rc != 0:
+        return StepOutcome(step, FAILED, f"exit {rc}", counts)
+    if errors and read == 0:
+        return StepOutcome(step, FAILED, "read no source", counts)
+    if errors or counts["ai_failures"]:
+        return StepOutcome(step, PARTIAL, "source errors or model failures", counts)
+    if new == 0:
+        return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
+    return StepOutcome(step, SUCCEEDED, "", counts)
+
+
+def _watch(since: dt.datetime, rc: int) -> StepOutcome:
+    from django.conf import settings
+
+    from app.register_watch.models import WatchRun
+
+    if not getattr(settings, "REGISTER_WATCH_FETCH", False):
+        return StepOutcome("register-watch", SKIPPED_DELIBERATE, "reading is off")
+    run = WatchRun.objects.filter(started_at__gte=since).order_by("-started_at").first()
+    other = (
+        run is None
+        and WatchRun.objects.filter(
+            started_at__lt=since, started_at__gte=since - ABANDONED_AFTER, finished_at__isnull=True
+        )
+        .exclude(errors__contains=[{"katkes": True}])
+        .exists()
+    )
+    return _ledger(
+        "register-watch",
+        run,
+        rc,
+        read=int(run.targets_checked) if run else 0,
+        new=int(run.findings_new) if run else 0,
+        other_running=other,
+    )
+
+
+def _sweep(since: dt.datetime, rc: int) -> StepOutcome:
+    from django.conf import settings
+
+    from app.register_watch import candidates
+    from app.register_watch.models import SweepRun
+
+    if not candidates.enabled() or not getattr(settings, "REGISTER_WATCH_FETCH", False):
+        return StepOutcome("register-sweep", SKIPPED_DELIBERATE, "the sweep is off")
+    run = SweepRun.objects.filter(started_at__gte=since).order_by("-started_at").first()
+    other = (
+        run is None
+        and SweepRun.objects.filter(
+            started_at__lt=since, started_at__gte=since - ABANDONED_AFTER, finished_at__isnull=True
+        )
+        .exclude(errors__contains=[{"katkes": True}])
+        .exists()
+    )
+    return _ledger(
+        "register-sweep",
+        run,
+        rc,
+        read=int(run.sources_read) if run else 0,
+        new=int(run.candidates_new) if run else 0,
+        other_running=other,
+    )
+
+
+#: A Riigikogu stage's counts that mean something new was recorded (app/riigikogu/*.Counts).
+_RIIGIKOGU_NEW = ("new", "changed", "moved", "cancelled")
+
+
+def _riigikogu(since: dt.datetime, rc: int) -> StepOutcome:
+    """The Riigikogu cycle from its own stage records (integration of #723 and #726).
+
+    `watch_riigikogu` exits 0 when the cycle ran even if a stage failed (the failure
+    is in that stage's record), and 1 when another cycle holds its lock.
+    """
+    from app.riigikogu import cycle
+    from app.riigikogu.enums import RunStatus, Stage
+    from app.riigikogu.models import StageRun
+
+    step = "riigikogu"
+    if not cycle.enabled():
+        return StepOutcome(step, SKIPPED_DELIBERATE, "the Riigikogu cycle is off")
+    started = StageRun.objects.filter(started_at__gte=since).order_by("-started_at")
+    latest = started.first()
+    if latest is None:
+        if rc == 1:
+            return StepOutcome(step, SKIPPED_UNEXPECTED, "another Riigikogu cycle held the lock")
+        if rc:
+            return StepOutcome(step, FAILED, f"exit {rc} with no run record")
+        return StepOutcome(step, SKIPPED_UNEXPECTED, "no run record")
+    # One cycle, the one this step started (the newest since the step began; the
+    # cycle's advisory lock keeps two from overlapping), judged on every stage a
+    # nightly cycle runs (`cycle.ORDER`), not on whatever rows happen to exist.
+    this_cycle = list(StageRun.objects.filter(cycle=latest.cycle))
+    analysis = [run for run in this_cycle if run.stage == Stage.ANALYSIS]
+    runs = [run for run in this_cycle if run.stage != Stage.ANALYSIS]
+    expected = [stage for stage in cycle.ORDER if stage != Stage.ANALYSIS]
+    missing = [stage for stage in expected if stage not in {run.stage for run in runs}]
+    if not cycle.analysis_enabled() and any(run.status != RunStatus.DISABLED for run in analysis):
+        return StepOutcome(step, FAILED, "document analysis ran while it is switched off")
+    statuses = [run.status for run in runs]
+    new = sum(
+        int(value)
+        for run in runs
+        for key, value in (run.counts or {}).items()
+        if isinstance(value, int) and any(word in key for word in _RIIGIKOGU_NEW)
+    )
+    counts = {
+        "stages": len(runs),
+        "missing": len(missing),
+        "failed": statuses.count(RunStatus.FAILED),
+        "partial": statuses.count(RunStatus.PARTIAL),
+        "new": new,
+        "requests": sum(int(run.requests or 0) for run in runs),
+    }
+    if RunStatus.RUNNING in statuses:
+        return StepOutcome(step, INTERRUPTED, "a stage never finished", counts)
+    if missing:
+        return StepOutcome(step, INTERRUPTED, "stages not recorded: " + ", ".join(missing), counts)
+    if all(status == RunStatus.FAILED for status in statuses):
+        return StepOutcome(step, FAILED, "every stage failed", counts)
+    if counts["failed"] or counts["partial"]:
+        return StepOutcome(step, PARTIAL, "a stage failed or read its source in part", counts)
+    if rc:
+        return StepOutcome(step, FAILED, f"exit {rc}", counts)
+    if not new:
+        return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
+    return StepOutcome(step, SUCCEEDED, "", counts)
+
+
+def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
+    from app.register_watch import agenda
+
+    step = "government-agenda"
+    if not agenda.enabled():
+        return StepOutcome(step, SKIPPED_DELIBERATE, "reading is off")
+    if reported is None:
+        if rc != 0:
+            return StepOutcome(step, FAILED, f"exit {rc} with no outcome line")
+        return StepOutcome(step, SKIPPED_UNEXPECTED, "no outcome line")
+    counts = {k: int(reported.get(k) or 0) for k in ("stored", "judged", "errors", "ai_failures")}
+    if rc != 0:
+        return StepOutcome(step, FAILED, f"exit {rc}", counts)
+    if counts["errors"] or counts["ai_failures"]:
+        return StepOutcome(step, PARTIAL, "valitsus.ee errors or model failures", counts)
+    if not (counts["stored"] or counts["judged"]):
+        return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
+    return StepOutcome(step, SUCCEEDED, "", counts)

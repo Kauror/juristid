@@ -332,11 +332,9 @@ class Health:
     problem: str = ""
 
 
-#: The host's cron line (deploy/unraid-main/cron/juristid.cron.example): every
-#: day at 03:30 UTC. The first run is due at the first such moment after the
-#: watch was switched on, and missed once `FIRST_RUN_GRACE` has passed after it.
-SCHEDULED_AT_UTC = dt.time(3, 30)
-FIRST_RUN_GRACE = dt.timedelta(hours=6)
+#: The watch is a step of the nightly cycle (ADR 0229, `app.core.nightly_schedule`):
+#: the first run is due in the first cycle at or after the moment the watch was
+#: switched on, and missed once that cycle's finish-by for the watch has passed.
 
 
 class WatchSwitchError(ValueError):
@@ -376,13 +374,12 @@ def watch_switched_on_at(now: dt.datetime | None = None) -> dt.datetime | None:
 
 
 def first_run_due(switched_on: dt.datetime) -> dt.datetime:
-    """The moment the first scheduled run counts as missed: the first 03:30 UTC
-    at or after ``switched_on``, plus `FIRST_RUN_GRACE`."""
-    moment = switched_on.astimezone(dt.UTC)
-    slot = dt.datetime.combine(moment.date(), SCHEDULED_AT_UTC, tzinfo=dt.UTC)
-    if slot < moment:
-        slot += dt.timedelta(days=1)
-    return slot + FIRST_RUN_GRACE
+    """The moment the first scheduled run counts as missed: the finish-by of the
+    register watch in the first nightly cycle (00:00 Tallinn) at or after
+    ``switched_on`` (`nightly_schedule.step_due`)."""
+    from app.core import nightly_schedule
+
+    return nightly_schedule.step_due("register-watch", switched_on)
 
 
 def watch_health(now: dt.datetime | None = None) -> Health:
@@ -405,8 +402,7 @@ def watch_health(now: dt.datetime | None = None) -> Health:
     finished = WatchRun.objects.filter(finished_at__isnull=False).order_by("-finished_at").first()
     if finished is None:
         # No run has finished yet: the first one is not late before it was due —
-        # whether it has not started or is still running (the daily monitor
-        # looks at 04:05 UTC, 35 minutes after the 03:30 run; review of #659).
+        # whether it has not started or is still running (review of #659).
         try:
             switched_on = watch_switched_on_at(now)
         except WatchSwitchError as error:

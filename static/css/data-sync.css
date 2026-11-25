@@ -15,14 +15,11 @@
   align-items: start;
 }
 
-@media (min-width: 1100px) {
-  .dsync {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
+/* One integration per page since UX-002 (docs/adr/0221): one panel, kept to a
+   readable width beside the Haldus sidebar rather than half the row. */
 .dsync__panel {
   min-width: 0;
+  max-width: 60rem;
 }
 
 .dsync__subnav {
@@ -48,6 +45,16 @@
   font-size: var(--typography-size-base);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
+}
+
+/* OneNote's purely diagnostic counts, folded (corrections round 25.11): the
+   remembered block keeps its own frame; its first heading needs no top gap. */
+.dsync__details {
+  margin-top: var(--spacing-4);
+}
+
+.dsync__details > .dsync__subtitle:first-of-type {
+  margin-top: 0;
 }
 
 .dsync__warnings {

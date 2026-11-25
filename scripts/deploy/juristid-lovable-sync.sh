@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # The nightly Lovable → Juristid synchronisation, host side (docs/adr/0192).
 #
-#   juristid-lovable-sync.sh             # from cron: 15 21,22 * * * (UTC)
+#   juristid-lovable-sync.sh             # the nightly run: step «lovable» of the coordinated
+#                                        # cycle (scripts/deploy/juristid-nightly-cycle.sh,
+#                                        # cron 0 21,22 * * * UTC; docs/adr/0229)
 #   juristid-lovable-sync.sh --manual    # now, with every check the nightly run makes
-#   juristid-lovable-sync.sh --on-demand # from the same cron file every few minutes:
+#   juristid-lovable-sync.sh --on-demand # from juristid-lovable-sync.cron every few minutes:
 #                                        # runs only an administrator's waiting request
 #
 # A short-lived container of the image the site is serving now runs
 # `manage.py lovable_sync`; nothing stays running and no compose service changes.
-# The host keeps UTC and has no Tallinn zone, so cron fires twice and the
-# container says which firing is 00:15 Europe/Tallinn (`lovable_sync due`).
+# The host keeps UTC and has no Tallinn zone: the cycle fires at 21:00 and 22:00
+# UTC and runs at 00:00 Europe/Tallinn, and the container checks that the run
+# falls in Tallinn's hour 00 (`lovable_sync due`).
 #
 # Order: one runner (flock) → no release in progress (host lock) → web healthy →
 # the observation's retention (`lovable_sync prune-observations`, docs/adr/0201
@@ -54,8 +57,9 @@
 # a backup set is taken and verified to level 2 and handed to the run as
 # LOVABLE_SYNC_BACKUP_SET. The on-demand mode skips the observation's retention
 # and the wider observation (both are the night's), and a firing with nothing to
-# do leaves no log file behind. It is the same cron file, one more line; there is
-# no second scheduler.
+# do leaves no log file behind. Its `2-59/5` line is the only line left in
+# juristid-lovable-sync.cron (docs/adr/0229 §7); the nightly run comes from the
+# cycle, and the two never run side by side (the runner's flock).
 #
 # The OneNote lane (brief §7 «Impordi OneNote'i materjalid» / «OneNote'i impordi
 # kontroll») is asked first. If a request waits, it takes a backup set and
@@ -76,11 +80,17 @@
 #
 # Pause: `touch $SYNC_DIR/PAUSED` (host) or `lovable_sync control --mode off`
 # (database; also what Haldus shows). Final cutover: `lovable_sync control
-# --cut-over …`, then remove the cron file. The credentials stay on the host:
+# --cut-over …`, then take the `lovable` step out of the nightly cycle (and, if
+# on-demand Lovable runs end too, its line from juristid-lovable-sync.cron).
+# The credentials stay on the host:
 # Docker reads them as root (--env-file) and the container sees only the values.
 # Never `set -x`: the environment carries the service login. Docker's --env-file
 # takes values literally: write KEY=value with no quotes.
 set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+. "$SCRIPT_DIR/lib.sh" # lock_fd_proven (the inherited-lock contract)
 
 APPDATA=${JURISTID_SYNC_APPDATA:-/mnt/user/appdata/juristid-main}
 REPO=$APPDATA/repo
@@ -123,8 +133,27 @@ trap cleanup EXIT
 exec >>"$LOG" 2>&1
 say() { echo "$(date -u +%FT%TZ) $*"; }
 
-exec 9>"$SYNC_LOCK"
-flock -n 9 || { say "SKIP another synchronisation is running"; exit 0; }
+# One runner: the runner's flock. The nightly cycle waits for it (bounded), KEEPS
+# it and starts this script with the descriptor inherited and named in
+# JURISTID_SYNC_LOCK_FD (docs/adr/0229 §5), so no on-demand firing can take it in
+# between and leave the night SKIPPED. The name alone is never enough: the lock
+# counts as the caller's only when lib.sh `lock_fd_proven` proves the descriptor
+# is this very lock file and holds its lock; otherwise this script takes the lock
+# itself, exactly as it always did. An on-demand firing never takes a handed lock.
+RUNNER_FD=""
+if [ "$ON_DEMAND" = 0 ] && [ -n "${JURISTID_SYNC_LOCK_FD:-}" ]; then
+  if lock_fd_proven "$SYNC_LOCK" "$JURISTID_SYNC_LOCK_FD"; then
+    RUNNER_FD=$JURISTID_SYNC_LOCK_FD
+    say "runner lock held by the caller on fd $RUNNER_FD (inherited, proven)"
+  else
+    say "WARN JURISTID_SYNC_LOCK_FD=$JURISTID_SYNC_LOCK_FD is not a proven hold of $SYNC_LOCK; taking the lock here"
+  fi
+fi
+unset JURISTID_SYNC_LOCK_FD
+if [ -z "$RUNNER_FD" ]; then
+  exec 9>"$SYNC_LOCK"
+  flock -n 9 || { say "SKIP another synchronisation is running"; exit 0; }
+fi
 
 # The release lock, taken (not only looked at): a release cannot start under a run.
 if ! mkdir "$HOST_LOCK" 2>/dev/null; then

@@ -8,7 +8,7 @@ and, for a section that opens «Näita veel N ▾», the rest of the same list i
 second `tbody` of the same table. Two copies of a row are two rows that drift.
 {% endcomment %}
 {% with action=matter.open_actions|first %}
-<tr>
+<tr data-matter-row="{{ matter.pk }}">
   {% comment %}
     The title truncates; the state badges beside it never do. A row that
     drops "Piiratud" to fit a long title has hidden the one thing about
@@ -54,6 +54,23 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
           {% endif %}
         </span>
       {% endif %}
+      {% comment %}
+        «Eelvaade» (UX-006): the step, the date, the procedure and the last few
+        acts in a drawer beside the list, without leaving it. A quiet icon at
+        the cell's end rather than a button per row in words; the title beside
+        it still opens the whole Teema. The drawer, its focus and its Escape
+        are static/js/matter-preview.js's; the fragment is
+        `matters:matter_preview`, read only when asked for.
+      {% endcomment %}
+      <button class="table__preview" type="button"
+              data-mpreview-open="{% url 'matters:matter_preview' pk=matter.pk %}"
+              aria-haspopup="dialog" title="Eelvaade"
+              aria-label="Eelvaade: {{ matter.title }}">
+        <svg class="table__previewglyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+          <rect x="3" y="4.5" width="18" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+          <path d="M14.5 4.5v15M17 9h1.5M17 12h1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </button>
     </span>
     {% include "matters/partials/continuation_line.html" with line=continuation_lines|get_item:matter.pk %}
   </td>

@@ -262,7 +262,7 @@
 .searchfield__group {
   margin: 0;
   padding: var(--spacing-15) var(--spacing-2) var(--spacing-1);
-  font-size: 11px;
+  font-size: var(--typography-size-label);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -351,6 +351,23 @@
 
 .settingslist__form {
   margin: 0;
+}
+
+/* Haldus → Kuvamine (docs/adr/0221): the four text sizes as one row of
+   buttons, the chosen one pressed; the landing page's choice beside «Salvesta». */
+.textsize {
+  gap: var(--spacing-1);
+}
+
+.textsize__option[aria-pressed="true"] {
+  border-color: var(--accent-primary);
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.settingslist .landingpick {
+  width: auto;
+  min-width: 12rem;
 }
 
 .themetoggle:hover {
@@ -1217,6 +1234,26 @@ p.formnote {
   width: 132px;
 }
 
+/* The two date columns hold their widest real content at Tavaline (above); at
+   Suur and Väga suur the same dates are wider, so the columns grow with the
+   type instead of running into the next one (docs/adr/0221, text size).
+   Tavaline and Väike keep the widths above. */
+:root[data-text-size="suur"] .table--register .table__date {
+  width: 220px;
+}
+
+:root[data-text-size="suur"] .table--register .table__lastactivity {
+  width: 152px;
+}
+
+:root[data-text-size="vaga-suur"] .table--register .table__date {
+  width: 250px;
+}
+
+:root[data-text-size="vaga-suur"] .table--register .table__lastactivity {
+  width: 174px;
+}
+
 /* Columns added with «Vali veerud». Each has a width, and the table's
    minimum grows by that width per added column (`--extra-columns`, the count
    the template writes), so the layout stays fixed and the title keeps what is
@@ -1951,7 +1988,7 @@ th[aria-sort="descending"] .colhead__mark::after {
   border-radius: 999px;
   background: var(--accent-primary);
   color: var(--text-inverse);
-  font-size: 11px;
+  font-size: var(--typography-size-label);
   font-weight: 700;
   line-height: 1.6;
   text-align: center;
@@ -3649,7 +3686,7 @@ button.personaoption:focus-visible {
 
 .personahead__title {
   margin: 0;
-  font-size: 21px;
+  font-size: calc(var(--typography-size-page-title) + 1px);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: var(--typography-tracking-title);
 }
@@ -3796,7 +3833,7 @@ button.personarow:focus-visible .personarow__action {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-medium);
 }
 
@@ -6869,7 +6906,7 @@ fieldset,
 }
 
 .teema .matterhead__title {
-  font-size: 21px;
+  font-size: calc(var(--typography-size-page-title) + 1px);
   letter-spacing: var(--typography-tracking-title);
   /* 76ch, so a formal legislative title wraps where a reader's eye can follow
      it rather than running the width of a 1440px screen. */
@@ -6896,7 +6933,7 @@ fieldset,
   display: inline-flex;
   align-items: baseline;
   gap: var(--spacing-15);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
   min-width: 0;
   /* The anchor for this fact's inline editor. `.inlineedit__form` is
@@ -7041,7 +7078,7 @@ fieldset,
 }
 
 .summary__action {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
   color: var(--accent-link);
   white-space: nowrap;
@@ -7056,7 +7093,7 @@ fieldset,
    summarised yet should look short, not unfinished. */
 .summary__prompt {
   display: inline-block;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
   border-bottom: 1px dashed var(--border-strong);
   padding-bottom: 1px;
@@ -7190,14 +7227,14 @@ fieldset,
 
 .accordion__title {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
   flex: none;
 }
 
 .accordion__summary {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-body);
   min-width: 0;
   overflow: hidden;
@@ -7211,7 +7248,7 @@ fieldset,
 }
 
 .accordion__action {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-secondary);
   flex: none;
@@ -7230,7 +7267,7 @@ button.accordion__action {
   margin: 0;
   padding: 0;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
   line-height: inherit;
   color: var(--text-secondary);
@@ -7271,7 +7308,7 @@ button.accordion__action:focus-visible {
 .webrow {
   padding: var(--spacing-3) var(--spacing-8);
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
 }
 
 .webrow__list {
@@ -7301,7 +7338,7 @@ button.accordion__action:focus-visible {
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
-  font-size: 10.5px;
+  font-size: calc(var(--typography-size-label) - 0.5px);
   letter-spacing: 0.04em;
 }
 
@@ -7394,7 +7431,7 @@ button.accordion__action:focus-visible {
 }
 
 .teema .railcard__row {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   align-items: baseline;
 }
 
@@ -7508,7 +7545,7 @@ button.accordion__action:focus-visible {
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.55;
   color: var(--text-body);
   resize: vertical;
@@ -7572,7 +7609,7 @@ button.accordion__action:focus-visible {
 
 .docsection__title {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
 }
@@ -8337,7 +8374,7 @@ button.opinionmenu__item {
   list-style: none;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   line-height: 1;
   padding: 2px var(--spacing-1);
   border-radius: var(--radius-chip);
@@ -8422,7 +8459,7 @@ button.opinionmenu__item {
 }
 
 .railcard__none {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
 }
 
@@ -8464,7 +8501,7 @@ button.opinionmenu__item {
 .workhead__title,
 .ovhead__title {
   margin: 0;
-  font-size: 21px;
+  font-size: calc(var(--typography-size-page-title) + 1px);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: var(--typography-tracking-title);
 }
@@ -8539,7 +8576,7 @@ button.opinionmenu__item {
 }
 
 .seis__number {
-  font-size: 19px;
+  font-size: var(--typography-size-matter-title);
   font-weight: var(--typography-weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -8554,7 +8591,7 @@ button.opinionmenu__item {
 }
 
 .seis__caption {
-  font-size: 13.5px;
+  font-size: var(--typography-size-row);
   color: var(--text-secondary);
 }
 
@@ -8695,7 +8732,7 @@ button.opinionmenu__item {
 .workband__title,
 .ovsection__title {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
 }
@@ -8941,7 +8978,7 @@ button.opinionmenu__item {
 
 .workrow2__meaning,
 .interrow__meaning {
-  font-size: 10.5px;
+  font-size: calc(var(--typography-size-label) - 0.5px);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: 0.03em;
   line-height: 1.25;
@@ -8974,6 +9011,27 @@ button.opinionmenu__item {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The docs/adr/0161 alert on a step row (Minu asjad, Osakond's «Vajab
+   sekkumist»): the Teema page's `.notice--warning` reduced to a line under
+   the row's text — the same warning edge, no box. It wraps rather than cuts:
+   the reason is the part a reader needs, and a narrow row would lose it. */
+.consistency-mark {
+  display: block;
+  margin-top: 2px;
+  padding-left: var(--spacing-2);
+  border-left: 3px solid var(--status-warning);
+  font-size: var(--typography-size-meta);
+  line-height: 1.3;
+  color: var(--text-secondary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.consistency-mark strong {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-semibold);
 }
 
 .workrow2__stage,
@@ -9214,7 +9272,7 @@ button.opinionmenu__item {
 }
 
 .foldout__label {
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
 }
@@ -9233,14 +9291,16 @@ button.opinionmenu__item {
 
 /* ---- Viimased tegevused ---------------------------------------------- */
 
-/* The Teema on the first line, because it is what a reader scans for; the
-   date, the person and the act on the second, quieter one
-   (templates/matters/partials/activity_row.html). */
+/* One line per activity (UX-003, 2026-11-25): the Teema, and straight after
+   it — not at the far edge of a wide screen — the date, the person and the
+   act, smaller and quieter (templates/matters/partials/activity_row.html).
+   A long title gives way with an ellipsis; the date and the act never do. */
 .actline {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: var(--spacing-1) var(--spacing-3);
+  align-items: baseline;
+  gap: var(--spacing-15);
+  padding: var(--spacing-05) var(--spacing-3);
+  line-height: 1.35;
   text-decoration: none;
   color: inherit;
   border-radius: var(--radius-sm);
@@ -9253,6 +9313,7 @@ button.opinionmenu__item {
 }
 
 .actline__matter {
+  flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -9260,10 +9321,28 @@ button.opinionmenu__item {
 }
 
 .actline__meta {
+  flex: 0 0 auto;
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
-  min-width: 0;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+/* A narrow screen wraps rather than cutting: the whole title, then the
+   date and the act after it, as running text. */
+@media (max-width: 720px) {
+  .actline {
+    display: block;
+    padding-block: var(--spacing-1);
+  }
+
+  .actline__matter {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .actline__meta {
+    white-space: normal;
+  }
 }
 
 .actline__when {
@@ -9568,6 +9647,9 @@ button.opinionmenu__item {
 
 .feedfilter {
   display: flex;
+  /* Wraps at Suur and Väga suur on a phone instead of pushing the page sideways;
+     at Tavaline the four filters fit one line, as before (docs/adr/0221). */
+  flex-wrap: wrap;
   gap: var(--spacing-1);
   padding-bottom: var(--spacing-2);
 }
@@ -10016,7 +10098,7 @@ button.opinionmenu__item {
 }
 
 .seis--compact .seis__number {
-  font-size: 20px;
+  font-size: var(--typography-size-page-title);
 }
 
 .seis--compact .seis__caption {
@@ -10229,8 +10311,15 @@ button.opinionmenu__item {
 
 /* ---- Aktiivsed teemad ----------------------------------------------- */
 
+/* At Väga suur on a 320px phone the heading beside it grows; the search gives
+   way rather than pushing the page sideways. Tavaline keeps its 200px. */
+.pw-search {
+  min-width: 0;
+}
+
 .pw-search input {
   width: 200px;
+  max-width: 100%;
   padding: 5px var(--spacing-25);
   border: 1px solid var(--border-input);
   border-radius: var(--radius-md);
@@ -10580,6 +10669,23 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: var(--typography-size-chip);
   font-weight: var(--typography-weight-bold);
   letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+}
+
+/* The way from the foldout to Minu statistika's own page (docs/adr/0223). */
+.pw-stats__more {
+  display: inline-block;
+  margin-top: var(--spacing-2);
+  padding: 0 var(--spacing-2);
+  font-size: var(--typography-size-meta);
+}
+
+/* The foldout counts by the owner now; the page by the person who did it. */
+.pw-stats__rule {
+  display: block;
+  margin-top: var(--spacing-1);
+  padding: 0 var(--spacing-2);
+  font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
 }
 
@@ -11129,7 +11235,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 .teemamain .factsection__head .sectionlabel,
 .teemamain .accordion--timeline .accordion__title,
 .teema .rail .railcard__label {
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-bold);
   letter-spacing: var(--typography-tracking-label);
   line-height: 1.2;
@@ -11355,7 +11461,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .cx-f__lab {
-  font-size: 10px;
+  font-size: var(--typography-size-chip);
   font-weight: var(--typography-weight-bold);
   line-height: 1.2;
   letter-spacing: var(--typography-tracking-label);
@@ -11382,7 +11488,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: flex;
   align-items: center;
   gap: var(--spacing-15);
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.4;
   color: var(--text-secondary);
 }
@@ -11421,7 +11527,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .cx-note {
   margin: 0;
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.5;
   color: var(--text-muted);
 }
@@ -11603,7 +11709,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .cx-drop__text,
 .uploadpanel .cx-drop__text {
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   line-height: 1.4;
   color: var(--text-muted);
   /* A chosen file's name is often one token —
@@ -11765,7 +11871,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   list-style: none;
   padding-bottom: 1px;
   border-bottom: 1px dashed var(--border-strong);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-regular);
   color: var(--text-muted);
 }
@@ -11882,7 +11988,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .uxtl__audit {
   margin: var(--spacing-4) 0 0;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
 }
 
 #teema-vaade-wrap .changelog__head {
@@ -11891,14 +11997,14 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .changelog__title {
   margin: 0 0 var(--spacing-2);
-  font-size: 20px;
+  font-size: var(--typography-size-page-title);
   line-height: 1.3;
 }
 
 #teema-vaade-wrap .changelog__matter,
 #teema-vaade-wrap .changelog__note {
   margin: 0 0 var(--spacing-1);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
 }
 
@@ -11916,7 +12022,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   gap: var(--spacing-2);
   padding: 6px 0;
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.45;
 }
 
@@ -11951,7 +12057,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .changelog__none {
   padding: var(--spacing-3) 0;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
 }
 
 #teema-vaade-wrap .changelog__older,
@@ -11996,7 +12102,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: baseline;
   gap: var(--spacing-2);
   margin: 0 0 var(--spacing-2);
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -12009,12 +12115,12 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: baseline;
   gap: var(--spacing-2);
   margin: var(--spacing-2) 0 0;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-body);
 }
 
 #teema-vaade-wrap .lprail__asidelabel {
-  font-size: 11px;
+  font-size: var(--typography-size-label);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -12140,7 +12246,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .kulgform__lede {
   margin: 0 0 var(--spacing-3);
   max-width: 62ch;
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   line-height: 1.45;
   color: var(--text-muted);
 }
@@ -12172,7 +12278,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * beside it is `disabled`, and this is the word that makes that legible
  * instead of merely unresponsive. */
 #teema-vaade-wrap .kulgform__protected {
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.3;
   color: var(--text-muted);
 }
@@ -12228,7 +12334,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .kulgform__stepdate {
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -12237,7 +12343,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * row reads as a record first and a control second. */
 #teema-vaade-wrap .kulgform__stepmuuda {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   color: var(--accent-link);
 }
 
@@ -12341,17 +12447,13 @@ section:has(.pw-more[open]) tbody.uxextra {
  * record's own words at the body weight. The column is capped so a long title
  * wraps between its words instead of widening the rail, and it never clips:
  * what a marker says is read without a mouse. */
-#teema-vaade-wrap .tl-step--event {
-  max-width: 11rem;
-}
-
 #teema-vaade-wrap .tl-step--event .tl-step__dot {
   border-radius: 1px;
   transform: rotate(45deg) scale(0.85);
 }
 
 #teema-vaade-wrap .tl-step__type {
-  font-size: 10.5px;
+  font-size: calc(var(--typography-size-label) - 0.5px);
   font-weight: var(--typography-weight-semibold);
   line-height: 1.2;
   letter-spacing: 0.04em;
@@ -12364,78 +12466,130 @@ section:has(.pw-more[open]) tbody.uxextra {
   overflow-wrap: break-word;
 }
 
-/* **No column is narrower than its own longest word, and the strip scrolls
- * itself when that does not fit.**
+/* **One track, one component per item** (UX-001, 2026-11-25).
  *
- * The columns used to be `minmax(0, 1fr)`: equal shares, as narrow as the row
- * demanded. A label is one or two words and cannot wrap inside a word, so once
- * a share fell below the longest one the word ran on into the next column. A
- * `Seadus` on `Kooskõlastusringil` that had sent three `Koja arvamus` and was
- * waiting on an `Arvamuse tähtaeg` draws nine columns; at 768px each was 78px,
- * and the current phase's semibold «Kooskõlastusring» — about 95px — printed
- * straight over «Arvamuse tähtaeg» beside it.
+ * The rail used to draw each column's connector from its dot to the column's
+ * own right edge, and an event column was capped at 11rem inside a wider grid
+ * track, so on a file with several expected commencements its connector
+ * stopped short of the next dot and the line came apart. Now every item is the
+ * same component in a grid of equal columns (spacing is the procedure's order,
+ * never elapsed time):
  *
- * `min-content` is that longest word (or date), so a label may still wrap
- * between its words and never runs out of its column. Where every floor fits,
- * `1fr` shares out the rest and the columns are equal exactly as before; where
- * one is longer, that column alone is wider. Where the floors together do not
- * fit, the row is wider than its box and the strip scrolls itself rather than
- * the page, which is what it already did on a phone (TEEMA_TARGET_SPEC §H).
- * Nothing changes for a row that fitted: at 1024 and 1440 the nine-column file
- * renders pixel-identical to the old rule.
+ *   - the dot is the item's first box, at the same height in every item;
+ *   - the item's segment runs from its own dot's centre to the next dot's
+ *     centre (left 6px, right -6px, the columns having no gap), so the
+ *     segments meet exactly, whatever any item's text does;
+ *   - --tl-reach is still how much of that one segment today has covered;
+ *   - the name takes at most two lines and every other line one, cut with an
+ *     ellipsis; the whole text is in the popover and in the name's title.
  *
- * A scroller clips at its padding edge, and the first column's dot sits on that
- * edge: the 3px ring of a `Praegu` or today node there would lose its left
- * side. So the strip reaches 4px out to the left and pads the same 4px back —
- * every column stays where it was — and the hairline under it is a background
- * drawn from that 4px onwards instead of a border, which would have started 4px
- * left of the page's one left edge. The extra pixel of bottom padding is the
- * border's own height, so the strip keeps its height too. */
+ * Too many items for the width: the strip scrolls itself, never the page. The
+ * 4px reach to the left keeps the first dot's 3px ring inside the scroll box. */
 #teema-vaade-wrap .tl-strip {
   display: grid;
   grid-auto-flow: column;
+  /* No column narrower than the longest word of its name (a name never breaks
+     inside a word), and otherwise equal shares: nine items fit at 768px, more
+     than fit scroll the strip itself. The one-line date and fact lines do not
+     widen a column (`contain: inline-size` below); they take what it has and
+     are cut with an ellipsis. */
   grid-auto-columns: minmax(min-content, 1fr);
   overflow-x: auto;
-  /* No side margin. The design export inset the strip by 32px itself because
-     its accordion body had none; production's body is already padded by the
-     one-edge rule above, and keeping both put the strip at 64 — the single
-     most visible rule of the redesign, visibly broken by the element that
-     leads the section (TEEMA_TARGET_SPEC, VISUAL PRECISION). The -4px is the
-     ring's room (see above), not an inset: the columns start where they did. */
+  list-style: none;
   margin: 0 0 14px -4px;
   padding: var(--spacing-3) 0 calc(var(--spacing-2) + 1px) 4px;
   background: linear-gradient(var(--border-subtle), var(--border-subtle)) left 4px bottom /
     calc(100% - 4px) 1px no-repeat;
 }
 
+/* More than fits (UX-001 refinement). The strip is the scroller; its holder
+ * marks which side has more (`data-more-left` / `data-more-right`, set by
+ * `bindRailScroll`), fades that edge and shows the button that moves it. */
+#teema-vaade-wrap .tl-scroll {
+  position: relative;
+}
+
+#teema-vaade-wrap .tl-scroll[data-more-right] > .tl-strip {
+  mask-image: linear-gradient(to right, currentColor calc(100% - 48px), transparent 100%);
+}
+
+#teema-vaade-wrap .tl-scroll[data-more-left] > .tl-strip {
+  mask-image: linear-gradient(to left, currentColor calc(100% - 48px), transparent 100%);
+}
+
+#teema-vaade-wrap .tl-scroll[data-more-left][data-more-right] > .tl-strip {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    currentColor 48px,
+    currentColor calc(100% - 48px),
+    transparent 100%
+  );
+}
+
+#teema-vaade-wrap .tl-strip:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+#teema-vaade-wrap .tl-scroll__btn {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--spacing-3) + 16px - 6px);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-secondary);
+  font: 600 14px/1 var(--typography-font-sans);
+  cursor: pointer;
+}
+
+#teema-vaade-wrap .tl-scroll__btn[hidden] {
+  display: none;
+}
+
+#teema-vaade-wrap .tl-scroll__btn:hover {
+  color: var(--accent-link);
+}
+
+#teema-vaade-wrap .tl-scroll__btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+#teema-vaade-wrap .tl-scroll__btn--prev {
+  left: -4px;
+}
+
+#teema-vaade-wrap .tl-scroll__btn--next {
+  right: 0;
+}
+
 #teema-vaade-wrap .tl-step {
-  /* How far along this column's own segment today has come. The template
-     overrides it per step from `ProcessStep.reach_percent`; the default here is
-     what the rail looked like before the reached/today/ahead amendment, so a
-     strip rendered without the value is a flat accent line rather than a
-     colourless one — and so the token has a definition in the stylesheet, which
-     is the house rule for every `var()` read (tests/test_ui_contract.py). */
+  /* How far along this item's own segment today has come; the template writes
+     it on every item. */
   --tl-reach: 100%;
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
-  padding-right: var(--spacing-2);
+  gap: 2px;
+  margin: 0;
+  padding: 0 var(--spacing-3) 0 0;
   min-width: 0;
 }
 
 #teema-vaade-wrap .tl-step::before {
   content: "";
   position: absolute;
-  left: 12px;
-  right: 0;
+  left: 6px;
+  right: -6px;
   top: 5px;
   height: 2px;
-  /* One hard stop at `--tl-reach`, so the rail is accent as far as today has
-     come and muted after it. A segment wholly behind us gets 100%, one wholly
-     ahead 0%, and neither needs a rule of its own. The fallback-free `var()`
-     is the house rule; `--tl-reach` is written by the template on every step. */
   background: linear-gradient(
     to right,
     var(--accent-link) var(--tl-reach),
@@ -12447,8 +12601,14 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: none;
 }
 
+/* The dot has 4px of room under it before the name, the same in every item. */
+#teema-vaade-wrap .tl-step > .tl-step__dot {
+  flex: none;
+  margin-bottom: 4px;
+}
+
 /* The year, above the first item of each year (owner, 2026-11-23). Out of the
- * column's flow, so every dot stays on the one line the connector runs along. */
+ * column's flow, so every dot stays on the one line the track runs along. */
 #teema-vaade-wrap .tl-strip:has(.tl-step__year) {
   padding-top: calc(var(--spacing-3) + 16px);
 }
@@ -12457,19 +12617,19 @@ section:has(.pw-more[open]) tbody.uxextra {
   position: absolute;
   top: -18px;
   left: 0;
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-muted);
 }
 
-/* A phase's acts: small dots along the stretch after it, each with its date and
- * name in the tooltip (owner, 2026-11-23, after the Riigikogu's strip). */
+/* A phase's acts: small dots on its segment, after its own dot (owner,
+ * 2026-11-23), each with its date and name in the tooltip. */
 #teema-vaade-wrap .tl-step__acts {
   position: absolute;
   z-index: 1;
   top: 0;
-  left: 24px;
-  right: var(--spacing-3);
+  left: 20px;
+  right: 0;
   display: flex;
   justify-content: space-evenly;
   align-items: center;
@@ -12491,7 +12651,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step__actslink {
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.3;
 }
 
@@ -12535,7 +12695,14 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step__what {
-  font-size: 12.5px;
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: break-word;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
   line-height: 1.3;
   color: var(--text-primary);
@@ -12568,7 +12735,12 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step__date {
-  font-size: 11.5px;
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.3;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -12630,7 +12802,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   background: none;
   cursor: pointer;
   list-style: none;
-  font: 400 11.5px/1.3 var(--typography-font-sans);
+  font: 400 var(--typography-size-meta-sm)/1.3 var(--typography-font-sans);
   color: var(--text-muted);
 }
 
@@ -12665,26 +12837,158 @@ section:has(.pw-more[open]) tbody.uxextra {
   vertical-align: middle;
 }
 
+/* One line per fact under the name (a commencement under Jõustumine, a note
+ * under an estimate) cut with an ellipsis rather than wrapped. The whole text
+ * is the popover's (UX-001); a wrap here is what pushed the neighbours' dates
+ * out of line. */
 #teema-vaade-wrap .tl-step__note {
   display: block;
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
-/* Whose expectation an estimated commencement is, and its ✕ (owner,
- * 2026-11-23): one quiet line under the date, the icon under it. An open
- * confirmation stays inside the column and wraps there. */
-#teema-vaade-wrap .tl-step__source {
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--text-muted);
-}
-
-#teema-vaade-wrap .tl-step > .uxtl__remove {
   max-width: 100%;
-  font-size: 11.5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--typography-size-meta-sm);
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+/* The item's lines are the popover's trigger: hover, keyboard focus or a tap
+ * (data-uxpopover and data-railtip, static/js/ux.js). */
+#teema-vaade-wrap .tl-step__more {
+  align-self: stretch;
+  max-width: 100%;
+  min-width: 0;
+  contain: inline-size;
+}
+
+/* A line outside a popover takes its column's width and no more. */
+#teema-vaade-wrap .tl-step > .tl-step__date,
+#teema-vaade-wrap .tl-step > .tl-step__note {
+  align-self: stretch;
+  contain: inline-size;
+}
+
+/* As wide as its words, not as its column, so the popover anchors at the text
+ * that opened it (`data-uxfloat="fit-start"`). */
+#teema-vaade-wrap .tl-step__sum {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+#teema-vaade-wrap .tl-step__sum::-webkit-details-marker {
+  display: none;
+}
+
+#teema-vaade-wrap .tl-step__sum:hover > .tl-step__note,
+#teema-vaade-wrap .tl-step__sum:hover > .tl-step__date,
+#teema-vaade-wrap .tl-step__more[open] > .tl-step__sum > span {
+  color: var(--text-secondary);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+#teema-vaade-wrap .tl-step__sum:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* The popover. Fixed, so the strip's scroll box cannot clip it; placed under
+ * its trigger and kept inside the window by the popover contract
+ * (data-uxfloat="fit"). Selectable text and real links. */
+#teema-vaade-wrap .tl-tip {
+  position: fixed;
+  top: auto;
+  left: auto;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: max-content;
+  max-width: min(22rem, calc(100vw - var(--spacing-8)));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--spacing-2) var(--spacing-25);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+  font-size: var(--typography-size-sm);
+  font-weight: var(--typography-weight-regular);
+  line-height: 1.4;
+  color: var(--text-primary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: auto;
+}
+
+#teema-vaade-wrap .tl-tip__fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#teema-vaade-wrap .tl-tip__fact + .tl-tip__fact {
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The stored text as written, its own line breaks kept. */
+#teema-vaade-wrap .tl-tip__text {
+  white-space: pre-line;
+}
+
+/* An item with a popover says so to a pointer before it is hovered long
+ * enough to open. */
+#teema-vaade-wrap .tl-step--tip > .tl-step__more > .tl-step__sum {
+  cursor: help;
+}
+
+#teema-vaade-wrap .tl-tip__date {
+  font-weight: var(--typography-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+#teema-vaade-wrap .tl-tip__note,
+#teema-vaade-wrap .tl-tip__owner {
+  color: var(--text-secondary);
+}
+
+/* Allikas is always the fact's last line. */
+#teema-vaade-wrap .tl-tip__source {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+/* Muuda's own list of expected commencements and their removal (UX-001). */
+#teema-vaade-wrap .kulgform__removals {
+  margin-top: var(--spacing-3);
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+#teema-vaade-wrap .kulgform__subhead {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+#teema-vaade-wrap .kulgform__removal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: 2px 0;
+}
+
+#teema-vaade-wrap .kulgform__removalwhat {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* -- the chronology's two kinds -------------------------------------------
@@ -12975,7 +13279,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .uxtl__mssub {
   display: block;
   margin-top: 1px;
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   line-height: 1.45;
   color: var(--text-body);
   /* QA-10b. The same defect QA-10 fixed in `.richtext`, in the surfaces the
@@ -13008,7 +13312,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-top: var(--spacing-15);
   padding-left: var(--spacing-25);
   border-left: 2px solid var(--border-subtle);
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   line-height: 1.45;
   color: var(--text-body);
   /* QA-10b. The same defect QA-10 fixed in `.richtext`, in the surfaces the
@@ -13049,7 +13353,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   min-width: 0;
   overflow-wrap: anywhere;
   margin-top: 3px;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.4;
   color: var(--accent-link);
   text-decoration: none;
@@ -13099,7 +13403,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: center;
   gap: var(--spacing-1);
   margin-right: var(--spacing-3);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.4;
   color: var(--accent-link);
   text-decoration: none;
@@ -13116,7 +13420,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: baseline;
   gap: var(--spacing-1);
   margin-top: 2px;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.4;
   color: var(--text-body);
 }
@@ -13197,7 +13501,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * with the stylesheet off (docs/adr/0092 §6). */
 #teema-vaade-wrap .uxtl__next .uxtl__nextlabel {
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -13244,8 +13548,69 @@ section:has(.pw-more[open]) tbody.uxextra {
      minimum because the track's minimum is already its longest word, and a
      `min-content` track honours the item's `min-width` — so a column is the
      wider of the two and «Kooskõlastusring» still does not overprint here. */
+  /* A phone reads the rail as a vertical list (coordinator decision N-A2,
+     UX-001): the same items in the same order, the dot on a track down the
+     left, the segment from this dot's centre to the next one's. Nothing
+     scrolls sideways, the strip included. */
+  #teema-vaade-wrap .tl-strip {
+    display: block;
+    overflow-x: visible;
+    padding-top: var(--spacing-2);
+  }
+
+  #teema-vaade-wrap .tl-strip:has(.tl-step__year) {
+    padding-top: var(--spacing-2);
+  }
+
   #teema-vaade-wrap .tl-step {
-    min-width: 96px;
+    --tl-dot-top: 3px;
+    padding: 0 0 var(--spacing-25) 22px;
+  }
+
+  #teema-vaade-wrap .tl-step:has(> .tl-step__year) {
+    --tl-dot-top: 19px;
+  }
+
+  #teema-vaade-wrap .tl-step > .tl-step__dot {
+    position: absolute;
+    left: 0;
+    top: var(--tl-dot-top);
+    margin: 0;
+  }
+
+  #teema-vaade-wrap .tl-step::before {
+    left: 5px;
+    right: auto;
+    top: calc(var(--tl-dot-top) + 6px);
+    /* The next item's dot centre: its top plus 3px plus 6px. */
+    bottom: -9px;
+    width: 2px;
+    height: auto;
+    background: linear-gradient(
+      to bottom,
+      var(--accent-link) var(--tl-reach),
+      var(--border-strong) var(--tl-reach)
+    );
+  }
+
+  /* To the next dot's centre, which sits lower when that item opens a year. */
+  #teema-vaade-wrap .tl-step:has(+ .tl-step > .tl-step__year)::before {
+    bottom: -25px;
+  }
+
+  #teema-vaade-wrap .tl-step__year {
+    position: static;
+    margin-bottom: 2px;
+  }
+
+  #teema-vaade-wrap .tl-step__acts {
+    left: 2px;
+    right: auto;
+    top: calc(var(--tl-dot-top) + 16px);
+    bottom: 4px;
+    width: 8px;
+    height: auto;
+    flex-direction: column;
   }
 
   }
@@ -13434,7 +13799,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .curact__flag {
-  font-size: 11px;
+  font-size: var(--typography-size-label);
   letter-spacing: var(--typography-tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
@@ -13707,7 +14072,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 .teemamain .addzone .rowlabel {
   display: block;
   margin: 0 0 var(--spacing-2);
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-bold);
   letter-spacing: var(--typography-tracking-label);
   line-height: 1.2;
@@ -14137,7 +14502,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .kaikstage__stage {
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-secondary);
 }
@@ -14155,14 +14520,14 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 .kaikstage__repeat,
 .kaikstage__period {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .kaikstage__count {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   color: var(--text-muted);
 }
 
@@ -14701,6 +15066,33 @@ a.jcal__daynum {
   list-style: none;
   margin: var(--spacing-2) 0 0;
   padding: 0;
+}
+
+/* «Varasemad (N)» folds (UX-004): the section heading is the trigger, so it
+ * looks like the other section labels with the foldout's arrow before it. */
+.notifhistory > .foldout__trigger {
+  align-items: center;
+  gap: var(--spacing-15);
+  padding: 0 var(--spacing-3) var(--spacing-2);
+}
+
+.notifhistory > .foldout__trigger::before {
+  font-size: var(--typography-size-meta);
+  line-height: 1;
+}
+
+.notifhistory > .foldout__trigger > .sectionlabel {
+  margin: 0;
+  padding: 0;
+}
+
+.notifhistory__count {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-muted);
+}
+
+.notifhistory > .foldout__body {
+  padding-top: 0;
 }
 
 .notiflist--rail {
@@ -16037,7 +16429,7 @@ a.jcal__daynum {
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-menu);
   color: var(--text-primary);
-  font: 400 11.5px/1.3 var(--typography-font-sans);
+  font: 400 var(--typography-size-meta-sm)/1.3 var(--typography-font-sans);
   white-space: nowrap;
   pointer-events: none;
 }
@@ -16220,7 +16612,7 @@ a.jcal__daynum {
 }
 
 .chkpi__value {
-  font-size: 19px;
+  font-size: var(--typography-size-matter-title);
   font-weight: var(--typography-weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -16749,7 +17141,7 @@ a.jcal__daynum {
  * broken rather than pushing the page sideways at 375 px. */
 #teema-vaade-wrap .uxtl__histtext {
   margin-bottom: var(--spacing-15);
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   line-height: 1.45;
   color: var(--text-body);
   overflow-wrap: anywhere;
@@ -16822,7 +17214,7 @@ a.jcal__daynum {
 
 #teema-vaade-wrap .uxtl__histcomment {
   display: block;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.4;
   color: var(--text-body);
 }
@@ -17009,6 +17401,42 @@ a.jcal__daynum {
   color: var(--text-secondary);
 }
 
+/* A panel head's right side: its note or legend, then its downloads (UX-005). */
+.statpanel__tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--spacing-2) var(--spacing-3);
+  margin-left: auto;
+}
+
+.statdownload {
+  align-self: center;
+}
+
+.statdownload__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.statdownload__icon {
+  display: block;
+}
+
+.statdownload__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+}
+
+.opinionmenu > .statdownload__body {
+  width: 200px;
+}
+
 .statlegend {
   display: flex;
   flex-wrap: wrap;
@@ -17161,6 +17589,142 @@ a.statcol:hover .statcol__value {
 .statrecord__when {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
+}
+
+/* A record card opens what explains it (UX-008); a tie links each period. */
+.statrecord--link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.statrecord--link:hover {
+  background: var(--surface-hover);
+}
+
+.statrecord--link .statrecord__when,
+.statrecord__period {
+  color: var(--accent-link);
+}
+
+.statrecord__periods {
+  line-height: 1.5;
+}
+
+.statrecord__more {
+  display: inline;
+}
+
+.statrecord__toggle {
+  display: inline;
+  cursor: pointer;
+  color: var(--accent-link);
+  list-style: none;
+}
+
+.statrecord__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.statrecord__rest {
+  display: block;
+  margin-top: var(--spacing-05);
+}
+
+/* The year a record card opened, on its trend (`#trend-<key>-<year>`). */
+.statcol:target {
+  scroll-margin-top: var(--spacing-8);
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.statsection .statpanel:target {
+  scroll-margin-top: var(--spacing-8);
+}
+
+/* ---- Minu statistika (FUNC-003, docs/adr/0223) ---- */
+
+.mystats .stattiles {
+  margin-top: var(--spacing-4);
+}
+
+.mystats__table thead th {
+  vertical-align: bottom;
+}
+
+.mystats__table tbody th {
+  white-space: nowrap;
+}
+
+/* The month stays in view while a narrow screen scrolls the columns. */
+.mystats__table tbody th,
+.mystats__table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface-raised);
+}
+
+.mystats__basis {
+  display: block;
+  font-size: var(--typography-size-meta-sm);
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+}
+
+.mystats__unknown {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mystats__lead {
+  max-width: 72ch;
+  margin: var(--spacing-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.mystats__cell {
+  vertical-align: top;
+}
+
+.mystats__cell[data-coverage="partial"],
+.mystats__cell[data-coverage="at_least"] {
+  color: var(--text-secondary);
+}
+
+.mystats__note {
+  display: block;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mystats__legend {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.mystats__rules {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(10rem, max-content) 1fr;
+  gap: var(--spacing-2) var(--spacing-4);
+}
+
+.mystats__rules dt {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.mystats__rules dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+  .mystats__rules {
+    grid-template-columns: 1fr;
+  }
 }
 
 .statrows {
@@ -17877,6 +18441,155 @@ a.statpanel__note {
    the list follow one another (owner, 2026-11-22). */
 .page--monitooring {
   gap: var(--spacing-3);
+}
+
+/* Haldus (docs/adr/0221): a compact sidebar of seven groups beside the page
+   from 900 px up; narrower, the same list in a «Haldus» menu above the page.
+   Two renderings of one list, only one displayed at a time. */
+.haldus__layout {
+  display: grid;
+  grid-template-columns: 13.5rem minmax(0, 1fr);
+  gap: var(--spacing-6);
+  align-items: start;
+}
+
+.haldus__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-5);
+}
+
+.haldusnav {
+  position: sticky;
+  top: calc(var(--layout-topbar) + var(--spacing-4));
+  font-size: var(--typography-size-base);
+}
+
+.haldusnav__groups,
+.haldusnav__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.haldusnav__groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.haldusnav__grouplabel {
+  display: block;
+  padding: 0 var(--spacing-2) var(--spacing-1);
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+}
+
+.haldusnav__link {
+  display: block;
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  line-height: var(--typography-line-tight);
+  text-decoration: none;
+}
+
+.haldusnav__link:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.haldusnav__link.is-active {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+  box-shadow: inset 2px 0 0 0 var(--accent-primary);
+}
+
+/* Ülevaade's attention lines: the chip, one sentence, «Ava». */
+.haldusattn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-3);
+}
+
+.haldusattn__text {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.haldusattn__ok {
+  margin: var(--spacing-3) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-sm);
+}
+
+.haldusattn__build {
+  margin: 0;
+}
+
+.haldusmenu {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .haldus__layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-3);
+  }
+
+  .haldusnav {
+    display: none;
+  }
+
+  .haldusmenu {
+    display: block;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-panel);
+  }
+
+  .haldusmenu__summary {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    cursor: pointer;
+    font-weight: var(--typography-weight-semibold);
+  }
+
+  .haldusmenu__title {
+    color: var(--text-primary);
+  }
+
+  /* The flex summary drops the native marker: one chevron, turned when open. */
+  .haldusmenu__summary::after {
+    content: "\25BE";
+    margin-left: auto;
+    color: var(--text-secondary);
+  }
+
+  .haldusmenu[open] > .haldusmenu__summary::after {
+    content: "\25B4";
+  }
+
+  .haldusmenu__current {
+    color: var(--text-secondary);
+    font-weight: var(--typography-weight-regular);
+  }
+
+  .haldusmenu__panel {
+    padding: 0 var(--spacing-2) var(--spacing-3);
+  }
+
+  .haldusmenu__panel .haldusnav__groups {
+    gap: var(--spacing-2);
+  }
 }
 
 .haldus__switch {

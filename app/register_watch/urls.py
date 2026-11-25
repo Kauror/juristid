@@ -2,6 +2,7 @@ from django.urls import path
 from django.views.generic import RedirectView
 
 from app.register_watch import candidate_views, views
+from app.riigikogu import views as riigikogu_views
 
 app_name = "register_watch"
 
@@ -14,6 +15,16 @@ urlpatterns = [
     path("nahtavus/", candidate_views.audience, name="candidate_audience"),
     path("valitsus/", candidate_views.agenda_list, name="agendas"),
     path("valitsus/<uuid:pk>/", candidate_views.agenda_decide, name="agenda_decide"),
+    # Monitooring → Riigikogu (docs/adr/0226).
+    path("riigikogu/", riigikogu_views.monitooring, name="riigikogu"),
+    path("riigikogu/kutse/<uuid:pk>/", riigikogu_views.decide, name="riigikogu_decide"),
+    path("riigikogu/teema/<uuid:pk>/seo/", riigikogu_views.link_bill, name="riigikogu_link"),
+    path("riigikogu/seos/<uuid:pk>/lopeta/", riigikogu_views.unlink_bill, name="riigikogu_unlink"),
+    path(
+        "riigikogu/analuus/<uuid:pk>/<int:index>/toovoit/",
+        riigikogu_views.propose_victory,
+        name="riigikogu_victory",
+    ),
     path("registrid/", views.review, name="review"),
     path("registrid/<uuid:pk>/", views.decide, name="decide"),
     path("registrid/teema/<uuid:pk>/jata/", views.dismiss_all, name="dismiss_all"),

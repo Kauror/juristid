@@ -112,7 +112,10 @@ def test_the_page_shows_the_actual_mode(signed, mode):
 
 def test_with_no_runner_ever_seen_the_page_says_so_plainly(signed):
     body = _overview(signed)
-    assert body.count("Pole kunagi nähtud") == 2  # the Lovable lane and the OneNote lane
+    # Each lane on its own integration's page since UX-002 (docs/adr/0221).
+    onenote = signed.get(reverse("haldus:onenote")).content.decode()
+    assert body.count("Pole kunagi nähtud") == 1  # the Lovable lane
+    assert onenote.count("Pole kunagi nähtud") == 1  # the OneNote lane
     assert "Serveri käivitajat pole kunagi nähtud" in body
     assert not DataSyncRunnerBeat.objects.exists(), "a GET records no heartbeat"
 

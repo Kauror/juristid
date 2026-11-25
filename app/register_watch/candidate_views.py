@@ -47,6 +47,7 @@ def _visible_open_teema(user: Any, reference: str) -> Any:
 SECTIONS = (
     ("eelnoud", "Uued eelnõud", "register_watch:candidates"),
     ("valitsus", "Valitsuse info", "register_watch:agendas"),
+    ("riigikogu", "Riigikogu", "register_watch:riigikogu"),
     ("registrid", "Registrite dokumendid", "register_watch:review"),
 )
 
@@ -69,6 +70,8 @@ def section_counts(user: Any) -> dict[str, int]:
             if newest
             else 0
         ),
+        # Riigikogu invitations to koda nobody has decided yet (docs/adr/0226).
+        "riigikogu": _riigikogu_waiting(),
         "registrid": watch.pending_for(user)
         .exclude(relevance=Relevance.UNRELATED)
         .values("matter_id")
@@ -77,8 +80,15 @@ def section_counts(user: Any) -> dict[str, int]:
     }
 
 
+def _riigikogu_waiting() -> int:
+    from app.riigikogu import selectors
+
+    return selectors.counts(None)
+
+
 #: What a tab's count says on hover.
 COUNT_TITLES = {
+    "riigikogu": "Riigikogu kutset kojale ootab otsust",
     "eelnoud": "uut eelnõu ootab otsust",
     "valitsus": "olulist punkti viimases päevakorras",
     "registrid": "teemal on registrites uusi dokumente",

@@ -1,7 +1,13 @@
 from django.urls import path
 from django.views.generic import RedirectView
 
-from app.matters import department_views, export_views, views
+from app.matters import (
+    department_views,
+    export_views,
+    preview_views,
+    saved_view_views,
+    views,
+)
 
 urlpatterns = [
     # The department page. One route where there were two: `/ulevaade/` and
@@ -32,6 +38,8 @@ urlpatterns = [
         name="department_work",
     ),
     path("minu-asjad/", views.my_work, name="my_work"),
+    # The signed-in person's own figures (docs/adr/0223); self only, no person in the path.
+    path("minu-asjad/statistika/", views.my_statistics, name="my_statistics"),
     # The address the page had until the v2 rebuild renamed the surface.
     # A permanent redirect rather than a second view: every bookmark, every
     # message somebody pasted and every historical link still lands on the
@@ -64,6 +72,11 @@ urlpatterns = [
     path("saabunud/", views.inbox, name="inbox"),
     path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),
+    # «Minu vaated» (docs/adr/0222): a person's own named Teemad views. Three
+    # POSTs about the sender's own rows only; each redirects back into Teemad.
+    path("teemad/vaated/", saved_view_views.save_view, name="save_view"),
+    path("teemad/vaated/<uuid:pk>/nimi/", saved_view_views.rename_view, name="rename_view"),
+    path("teemad/vaated/<uuid:pk>/eemalda/", saved_view_views.remove_view, name="remove_view"),
     # The register as Excel (owner's brief of 2026-11-02): the table as shown,
     # and every supported field. Reads; app/matters/export_views.py.
     path("teemad/eksport/tabel.xlsx", export_views.export_table, name="export_table"),
@@ -89,6 +102,10 @@ urlpatterns = [
     # round trips through four Matters (design handoff 2d).
     path("teemad/<uuid:pk>/vastutaja/", views.assign_owner, name="assign_owner"),
     path("teemad/<uuid:pk>/", views.matter_detail, name="matter_detail"),
+    # «Eelvaade» (UX-006): the read-only fragment the register's preview drawer
+    # loads beside the list, so the list's address, filters, page and scroll
+    # stay where they were (app/matters/preview.py).
+    path("teemad/<uuid:pk>/eelvaade/", preview_views.matter_preview, name="matter_preview"),
     # `Arvamused` on one Matter. No longer a tab — the Matter has exactly two —
     # but still a destination, reached from the position block and the sent-
     # opinion strip on the main view. It is where a formal Submission is

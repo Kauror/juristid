@@ -45,7 +45,8 @@ open Teema; it is not built here.
    (newest `alates`, the later row on a tie) names that same lawyer
    (`lovable_sync.is_handover`, `recorded_handover`). Hand-overs count against
    `MAX_HANDOVER_MATTERS` = 150, not against `MAX_CHANGED_MATTERS`; over 150 the night is
-   REVIEW_ONLY (`BREAKER`) exactly as over 20. Anything else on the same Teema, a
+   REVIEW_ONLY (`BREAKER`) exactly as over the ordinary limit (20 then; 100 since ADR 0213 §14, 25.11.2026,
+   which leaves this 150 unchanged). Anything else on the same Teema, a
    hand-over to «Vastutaja puudub», an owner cell edited with no responsible-change row,
    or a name that does not resolve is an ordinary change or a hold, as before. The run's
    counts record `changed_handovers` and `handover_limit`; `changed_source` no longer

@@ -21,6 +21,8 @@ from app.haldus import (
 
 urlpatterns = [
     path("", views.index, name="index"),
+    # -- Isiklikud seaded → Kuvamine (docs/adr/0221) --
+    path("seaded/", views.settings_page, name="settings"),
     path("osakond/", views.osakond, name="osakond"),
     path("susteem/", views.susteem, name="susteem"),
     path("lovable/", views.lovable, name="lovable"),
@@ -53,6 +55,8 @@ urlpatterns = [
     ),
     path("andmete-sunkroonimine/ajalugu/", data_sync_views.history, name="data_sync_history"),
     path("andmete-sunkroonimine/nimed/", data_sync_views.owner_names, name="data_sync_names"),
+    # -- Integratsioonid → OneNote: its own overview since UX-002 (docs/adr/0221) --
+    path("andmete-sunkroonimine/onenote/", data_sync_views.onenote, name="onenote"),
     path(
         "andmete-sunkroonimine/onenote/kontrolli/",
         data_sync_views.onenote_verify,

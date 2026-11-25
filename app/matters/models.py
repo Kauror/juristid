@@ -3671,3 +3671,50 @@ class MatterSaveOnce(models.Model):
 
     def __str__(self) -> str:
         return f"{self.purpose} {self.token}"
+
+
+class SavedRegisterView(BaseModel):
+    """One person's named Teemad view: a name and the register address it opens.
+
+    docs/adr/0222 (superseding docs/adr/0043 §2). **The address is still the
+    view**: what is stored is a canonical query string of the register's own
+    parameters (`app.matters.saved_views.canonical_query`), and opening the view
+    runs the ordinary register path for whoever opens it — the reader's own
+    visibility, today's data. Never a result set, a count, a Matter id list or
+    anything authorization decided.
+
+    Personal to the person the request is signed in as (the selected persona
+    under the shared gate), like a remembered block (docs/adr/0194): every read
+    and write is keyed on `request.user`, so another person's view is a 404.
+    At most :data:`app.matters.saved_views.MAX_VIEWS` per person, enforced by
+    the service under a lock on the person's row.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="saved_register_views",
+        verbose_name="kasutaja",
+    )
+    name = models.CharField(max_length=60, verbose_name="nimi")
+    #: The register parameters, canonical and without `leht` — never a URL.
+    query = models.CharField(max_length=2000, blank=True, verbose_name="filtrid")
+    #: Display order among the person's views: the order they were saved in.
+    position = models.PositiveSmallIntegerField(default=0, verbose_name="järjekord")
+
+    class Meta:
+        verbose_name = "salvestatud vaade"
+        verbose_name_plural = "salvestatud vaated"
+        ordering = ["position", "created_at"]
+        constraints = [
+            # One name once per person, whatever its case: «Minu eelnõud» and
+            # «minu eelnõud» are one chip to a reader.
+            models.UniqueConstraint(
+                "user",
+                models.functions.Lower("name"),
+                name="matters_savedview_user_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name

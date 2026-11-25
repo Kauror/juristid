@@ -1,4 +1,4 @@
-"""Haldus → Andmete sünkroonimine → OneNote'i ootel kirjed: held readings, one decision each.
+"""Haldus → Integratsioonid → OneNote → Ootel kirjed: held readings, one decision each.
 
 A small review path, not a document-management tool (live-sync round 2). The
 importer holds what it cannot decide (``onenote_capture``); this page lists those
@@ -35,12 +35,12 @@ from django.views.decorators.http import require_http_methods
 
 from app.accounts import admin_session
 from app.core.client_ip import client_ip
-from app.haldus.data_sync_views import sync_pages
+from app.haldus.data_sync_views import onenote_pages
 from app.haldus.sections import visible_sections
 from app.legacy_import import onenote_coverage
 from app.legacy_import.onenote_coverage_models import HoldDecisionKind
 
-SECTION = "andmed"
+SECTION = "onenote"
 NOT_HERE = "Lehte ei leitud."
 FRESH_PROOF = "Kinnita enne otsustamist uuesti oma isik."
 PER_PAGE = 50
@@ -83,7 +83,8 @@ def _context(request: HttpRequest, **extra: Any) -> dict[str, Any]:
         "haldus_sections": visible_sections(request),
         "haldus_active": SECTION,
         "nav_active": "haldus",
-        "sync_pages": sync_pages(""),
+        "sync_pages": onenote_pages("ootel"),
+        "sync_label": "OneNote'i lehed",
         **extra,
     }
 

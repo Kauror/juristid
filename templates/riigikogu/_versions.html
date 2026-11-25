@@ -1,0 +1,25 @@
+{% comment %}
+«Eelnõu redaktsioonid» (docs/adr/0227 §4): the changes were found by comparing
+the texts provision by provision; the model only explains them. Text facts and
+interpretation stay apart: wording first, the explanation under it, labelled.
+{% endcomment %}
+<div class="rkanalysis">
+  <p class="rkanalysis__label">Võrreldud: {{ analysis.result.from_label }} → {{ analysis.result.to_label }} · muudatused leitud tekstide võrdlusest{% if analysis.mocked %}; selgitused on simuleeritud näidis{% else %}; selgitused koostas mudel{% endif %}.</p>
+  {% if not analysis.result.reliable %}<p class="rkinv__changed">{{ analysis.result.note }}</p>{% endif %}
+  <ul class="regwatch__list">
+    {% for change in analysis.result.changes %}
+      <li class="regwatch__row">
+        <span class="regwatch__date">{{ change.provision }}</span>
+        <div class="regwatch__body">
+          <span class="regwatch__meta">{% if change.kind == "added" %}Lisatud{% elif change.kind == "removed" %}Välja jäetud{% elif change.kind == "moved" %}Ümber nummerdatud ({{ change.before }}){% else %}Muudetud{% endif %}</span>
+          {% if change.before and change.kind != "moved" %}<blockquote class="rkinv__evidence rkdiff--before">{{ change.before|truncatechars:600 }}</blockquote>{% endif %}
+          {% if change.after and change.kind != "moved" %}<blockquote class="rkinv__evidence rkdiff--after">{{ change.after|truncatechars:600 }}</blockquote>{% endif %}
+          {% if change.explanation %}<span class="regwatch__note">Selgitus: {{ change.explanation }}{% if change.uncertain %} (ebakindel){% endif %}</span>{% endif %}
+          {% if change.relevance %}<span class="regwatch__meta">Kojale: {{ change.relevance }}</span>{% endif %}
+        </div>
+      </li>
+    {% empty %}
+      <li class="regwatch__empty">Sisulisi muudatusi ei leitud.</li>
+    {% endfor %}
+  </ul>
+</div>

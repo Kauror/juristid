@@ -1793,6 +1793,18 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # bounded by a registry of keys, with no parameter that names anybody else.
     "accounts:save_disclosure": "C: the signed-in person's own block states",
     "accounts:reset_disclosures": "C: resets the signed-in person's own block states",
+    # C — «Minu vaated» (docs/adr/0222): the signed-in person's own named Teemad
+    # views — a name and a canonical register query, never business content.
+    # Saved for `request.user`; renamed and removed only as the sender's own
+    # (another person's id is a 404). No business service, no `ChangeEvent`
+    # (tests/test_saved_register_views.py).
+    "matters:save_view": "C: the signed-in person's own named register view",
+    "matters:rename_view": "C: renames the signed-in person's own register view",
+    "matters:remove_view": "C: removes the signed-in person's own register view",
+    # C — the landing page (docs/adr/0221): where `/` opens for the signed-in
+    # person. A key from a fixed allowlist keyed on `request.user`, checked
+    # against what that person may open; no parameter names anybody else.
+    "accounts:save_landing_page": "C: the signed-in person's own landing page",
     # C — personal deadline notifications (docs/adr/0198): the recipient's own
     # read and hidden stamps, and their own notification preferences. Rows are
     # resolved by `recipient=request.user`, so another person's id is a 404;
@@ -1870,6 +1882,14 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # «Lisa teemale» / «Märgi loetuks» on a Government agenda item tied to a Teema
     # (ADR 0219, amendment 2026-11-22): `Menetluse areng` through `+ Märge`'s use case.
     "register_watch:agenda_decide": "A: gated; sibling of register_watch:decide",
+    # Monitooring → Riigikogu and the Teema's Riigikogu section (ADR 0224, 0225, 0228):
+    # gated by `business_write_required`; a Teema is written only through
+    # `add_important_date` (informational kinds) or a `WatchTarget` link on a Teema the
+    # person may see, and a reminder is the person's own (tests/test_riigikogu_views.py).
+    "register_watch:riigikogu_decide": "A: gated; sibling of register_watch:decide",
+    "register_watch:riigikogu_link": "A: gated; links a bill to a visible Teema",
+    "register_watch:riigikogu_unlink": "A: gated; ends a bill link on a visible Teema",
+    "register_watch:riigikogu_victory": "A: gated; proposes a work-victory candidate",
     # E — migration and reconciliation tooling, governed by their own explicit
     # administrator/reviewer checks rather than by business authorship.
     "legacy_import:opinion_archive_link": "E: archive reconciliation, reviewer-gated",

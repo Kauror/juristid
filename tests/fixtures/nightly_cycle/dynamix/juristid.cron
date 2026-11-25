@@ -1,0 +1,13 @@
+# Juristid scheduled jobs (UTC). Installed by g3-monitoring/install.sh --apply as
+# /boot/config/plugins/dynamix/juristid.cron, then `update_cron`. Approved RPO: 24 h.
+# The daily backup set runs before the 21:15/22:15 Lovable sync windows and the
+# 23:00 host dump; it takes the host lock, so a release in progress makes it refuse
+# (logged), and the daily monitor reports the age the next morning.
+
+# Daily full backup set + age check against the 24 h RPO
+45 20 * * * bash /mnt/user/appdata/juristid-main/repo/deploy/unraid-main/cron/juristid-backup-nightly.sh --repo /mnt/user/appdata/juristid-main/repo --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main --log-dir /mnt/user/appdata/juristid-main/backup-logs --rpo-hours 24 &> /dev/null
+
+# Monitor: fast every 15 min, daily 04:05, weekly Monday 05:00
+*/15 * * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier fast --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
+5 4 * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier daily --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
+0 5 * * 1 bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier weekly --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null

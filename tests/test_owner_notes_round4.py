@@ -209,9 +209,10 @@ def test_haldus_overview_draws_no_card_headings(client, specialist):
 
     body = client.get(reverse("haldus:index")).content.decode()
 
-    assert '<h2 class="visually-hidden" id="seaded">Seaded</h2>' in body
-    assert '<h2 class="visually-hidden" id="rakendus">Rakendus</h2>' in body
-    assert "acctsection__title--split" in body
+    # UX-002 (docs/adr/0221): the attention list is the page's first panel, and
+    # it draws no card heading either; Rakendus moved to the sidebar.
+    assert '<h2 class="visually-hidden" id="tahelepanu">Vajab tähelepanu</h2>' in body
+    assert 'id="rakendus"' not in body
 
 
 @pytest.mark.django_db
