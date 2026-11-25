@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from e2e.conftest import HEAD, REPOSITORY_ROOT, open_disclosure, sign_in
+from e2e.conftest import HEAD, REPOSITORY_ROOT, sign_in
 
 pytestmark = pytest.mark.writes_last
 
@@ -49,12 +49,17 @@ def test_the_riigikogu_tab_sits_in_monitooring_and_invitations_come_first(page, 
     assert page.get_by_text("Riigikogu kutsus koda arvamust avaldama").first.is_visible()
 
 
-def test_a_doubtful_deadline_is_checked_from_its_own_form(page, base_url):
+def test_while_switched_off_the_page_reads_and_offers_no_decision(page, base_url):
+    """The browser suite runs as production does, with JURISTID_RIIGIKOGU_MONITORING
+    off (ADR 0224 «What the switch disables»): the stored records are readable, a
+    doubtful deadline still says so, and no decision or link form is offered. The
+    forms themselves are tested switched on in tests/test_riigikogu_views.py."""
     _open(page, base_url)
     row = page.locator(".rkinv--check").first
-    open_disclosure(row.locator("details.rkinv__more").first)
-    assert row.get_by_label("Kuupäev kirjast").is_visible()
-    assert row.get_by_role("button", name="Kinnita tähtaeg").is_visible()
+    assert row.is_visible()
+    assert page.get_by_text("Riigikogu jälgimine ei ole sisse lülitatud").first.is_visible()
+    assert not page.locator("form[action*='/riigikogu/kutse/']").count()
+    assert not page.get_by_role("button", name="Kinnita tähtaeg").count()
 
 
 def test_the_committee_filter_switches_between_our_teemad_and_all(page, base_url):
