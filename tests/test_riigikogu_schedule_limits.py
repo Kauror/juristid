@@ -311,7 +311,7 @@ def test_each_call_gets_the_earlier_of_the_limit_and_its_own_ceiling(monkeypatch
     assert "deadline" not in door.calls[-1]
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_a_ledger_lock_held_too_long_is_a_fetch_error_not_a_hang(monkeypatch):
     monkeypatch.setattr(client, "LEDGER_LOCK_TIMEOUT_MS", 200)
     other = connection.copy()
