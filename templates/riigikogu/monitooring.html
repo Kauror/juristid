@@ -83,8 +83,8 @@ Teema is named only where the reader may see it.
 
   {% if page.mentions %}
     <details class="regwatch__unrelated rkpage__section" {% disclosure "riigikogu.mentions" %}>
-      <summary>Muud koja mainimised täiskogus ({{ page.mentions|length }})</summary>
-      <p class="regwatch__meta">Stenogrammist, mitte eelnõuga seotud päevakorrapunktist. Ainult lugemiseks; teemasid siit ei teki.</p>
+      <summary>Koja mainimised täiskogus ({{ page.mentions|length }})</summary>
+      <p class="regwatch__meta">Täiskogu stenogrammist. Kui mainimine oli eelnõu arutelul, on eelnõu number juures; teie teemade eelnõude mainimised on teema vahekaardil «Registritest». Ainult lugemiseks; teemasid siit ei teki.</p>
       <ul class="regwatch__list">{% for mention in page.mentions %}{% include "riigikogu/_mention.html" %}{% endfor %}</ul>
     </details>
   {% endif %}

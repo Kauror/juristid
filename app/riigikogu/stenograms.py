@@ -82,6 +82,15 @@ def _window(text: str, start: int, end: int, width: int) -> str:
     return text[left:right].strip()
 
 
+def plain_title(value: Any) -> str:
+    """An agenda title as text: the API sends some wrapped in HTML («<p>…</p>»)."""
+    import html
+
+    from django.utils.html import strip_tags
+
+    return " ".join(html.unescape(strip_tags(str(value or ""))).split())
+
+
 def _bill_for(title: str) -> Bill | None:
     found = bills.mark_of(title)
     if found is None:
@@ -109,18 +118,24 @@ def read_days(*, start: dt.date, end: dt.date, budget: client.Budget | None = No
         for item in sitting.get("agendaItems") or []:
             if not isinstance(item, dict):
                 continue
-            agenda_title = str(item.get("title") or "")[:1000]
+            agenda_title = plain_title(item.get("title"))[:1000]
             bill = _bill_for(agenda_title)
+            # A bill's reading is legislative whether or not a Teema follows the bill
+            # (only followed bills are stored, and then `bill` ties it to them).
+            legislative = bills.mark_of(agenda_title) is not None
             for event in item.get("events") or []:
                 if not isinstance(event, dict) or event.get("type") != "SPEECH":
                     continue
                 counts.speeches += 1
                 text = str(event.get("text") or "")
+                quotes: set[str] = set()
                 for start_at, end_at in find(text):
+                    quote = _window(text, start_at, end_at, QUOTE_CHARS)
+                    if quote in quotes:
+                        continue  # two names in one passage are one mention
+                    quotes.add(quote)
                     key = f"{event.get('uuid') or day.isoformat()}:{start_at}"[:200]
-                    category = (
-                        MentionCategory.LEGISLATIVE if bill is not None else MentionCategory.OTHER
-                    )
+                    category = MentionCategory.LEGISLATIVE if legislative else MentionCategory.OTHER
                     _row, created = StenogramMention.objects.get_or_create(
                         key=key,
                         defaults={
@@ -129,7 +144,7 @@ def read_days(*, start: dt.date, end: dt.date, budget: client.Budget | None = No
                             "agenda_title": agenda_title,
                             "agenda_uuid": _uuid_or_none(item.get("agendaItemUuid")),
                             "speaker": str(event.get("speaker") or "")[:200],
-                            "quote": _window(text, start_at, end_at, QUOTE_CHARS),
+                            "quote": quote,
                             "context": _window(text, start_at, end_at, CONTEXT_CHARS),
                             "url": str(sitting.get("link") or "")[:500],
                             "category": category,

@@ -17,7 +17,7 @@ from typing import Any
 from django.db.models import Q
 from django.utils import timezone
 
-from app.riigikogu import agendas, amendments
+from app.riigikogu import agendas, amendments, bills
 from app.riigikogu.enums import (
     AnalysisStatus,
     AnalysisType,
@@ -26,7 +26,6 @@ from app.riigikogu.enums import (
     ExtractionStatus,
     FactState,
     InvitationReview,
-    MentionCategory,
     ResponseCheck,
 )
 from app.riigikogu.models import (
@@ -172,11 +171,16 @@ def monitooring(user: Any, *, today: dt.date | None = None, everything: bool = F
     base = Invitation.objects.select_related("document", "document__bill", "candidate").order_by(
         "-document__registered_on"
     )
-    open_invitations = list(base.filter(review=InvitationReview.NEW))
-    to_check = list(
+    undecided = list(base.filter(review=InvitationReview.NEW))
+    # Only what still waits for a decision stays on top: an undecided invitation
+    # koda's opinion already answers is earlier work, and one whose answer needs
+    # checking is listed with the others that do (`needs_decision`).
+    open_invitations = [i for i in undecided if needs_decision(i)]
+    answered = [i for i in undecided if i.response == ResponseCheck.FOUND]
+    to_check = [i for i in undecided if i.response == ResponseCheck.NEEDS_CHECK] + list(
         base.exclude(review=InvitationReview.NEW).filter(response=ResponseCheck.NEEDS_CHECK)
     )
-    previous = list(
+    previous = answered + list(
         base.exclude(review=InvitationReview.NEW).exclude(response=ResponseCheck.NEEDS_CHECK)[:40]
     )
     rows = invitation_rows(user, open_invitations + to_check + previous)
@@ -200,11 +204,7 @@ def monitooring(user: Any, *, today: dt.date | None = None, everything: bool = F
     # What each row names, read once above: a Teema the reader may see, or none.
     for row in [*upcoming, *all_deadlines]:
         row.teemad_shown = teemad.get(row.bill_id, [])
-    mentions = list(
-        StenogramMention.objects.filter(
-            category=MentionCategory.OTHER, source="STENOGRAM"
-        ).order_by("-sitting_on")[:20]
-    )
+    mentions = plenary_mentions()
     return Page(
         open_rows=open_rows,
         response_rows=response_rows,
@@ -217,6 +217,42 @@ def monitooring(user: Any, *, today: dt.date | None = None, everything: bool = F
         mentions=mentions,
         agenda_teemad=teemad,
     )
+
+
+def needs_decision(invitation: Invitation) -> bool:
+    """An undecided invitation that still asks for one: not answered by an opinion on
+    record, and not waiting for a check of how it was answered."""
+    return invitation.review == InvitationReview.NEW and invitation.response not in (
+        ResponseCheck.FOUND,
+        ResponseCheck.NEEDS_CHECK,
+    )
+
+
+def plenary_mentions(limit: int = 20) -> list[StenogramMention]:
+    """Koda named in the plenary, for Monitooring: every stenogram mention not tied to a
+    followed bill (those are on the bill's Teema). The title is shown as text (rows read
+    before r94 kept the API's HTML); a passage read twice is shown once; a mention
+    under a bill's reading names the bill (`mention.bill_mark`), followed or not.
+    """
+    from app.riigikogu.stenograms import plain_title
+
+    rows = StenogramMention.objects.filter(source="STENOGRAM", bill__isnull=True).order_by(
+        "-sitting_on", "key"
+    )
+    out: list[StenogramMention] = []
+    seen: set[tuple[Any, str, str]] = set()
+    for mention in rows[: limit * 3]:
+        mention.agenda_title = plain_title(mention.agenda_title)
+        marker = (mention.sitting_on, mention.speaker, " ".join(mention.quote.split()))
+        if marker in seen:
+            continue
+        seen.add(marker)
+        found = bills.mark_of(mention.agenda_title)
+        mention.bill_mark = f"{found[0]} {found[1]}" if found else ""
+        out.append(mention)
+        if len(out) == limit:
+            break
+    return out
 
 
 def _candidate_bill_ids() -> set[Any]:
@@ -240,8 +276,12 @@ def _candidate_bill_ids() -> set[Any]:
 
 
 def counts(user: Any) -> int:
-    """For the Monitooring tab badge: invitations waiting for a decision."""
-    return Invitation.objects.filter(review=InvitationReview.NEW).count()
+    """For the Monitooring tab badge: invitations waiting for a decision (the top list)."""
+    return (
+        Invitation.objects.filter(review=InvitationReview.NEW)
+        .exclude(response__in=[ResponseCheck.FOUND, ResponseCheck.NEEDS_CHECK])
+        .count()
+    )
 
 
 # -- the Teema --------------------------------------------------------------------------

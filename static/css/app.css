@@ -18614,3 +18614,11 @@ a.statpanel__note {
   justify-content: center;
   margin-top: var(--spacing-3);
 }
+
+/* Haldus → Registrite jälgimine, Riigikogu stages: each stage's counts on a full-width
+ * line under it (a squeezed «Loendurid» column made rows 280px tall at 950px). */
+.regwatchlog__countsrow td {
+  padding-top: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

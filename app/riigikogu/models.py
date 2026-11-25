@@ -329,6 +329,10 @@ class StenogramMention(BaseModel):
     that koda *took part*; an invitation alone never is (ADR 0228 §3).
     """
 
+    #: Not stored: the bill a plenary mention's agenda item names («987 SE»), set for
+    #: display by `selectors.plenary_mentions`.
+    bill_mark: str = ""
+
     #: Sitting date + agenda item + position: one mention, however often it is read.
     key = models.CharField(max_length=200, unique=True)
     #: ``STENOGRAM`` (the plenary) or ``PROTOCOL`` (a committee sitting's minutes).
