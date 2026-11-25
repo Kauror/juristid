@@ -323,3 +323,18 @@ def test_saabunud_rows_offer_the_preview_too(client, specialist):
     body = client.get(reverse("matters:inbox")).content.decode()
 
     assert f'data-mpreview-open="{_url(matter)}"' in body
+    assert "data-mpreview hidden" in body, "Saabunud places the drawer too"
+
+
+@pytest.mark.parametrize("name", ["matters:my_work", "notifications:list", "reporting:dashboard"])
+def test_a_page_with_nothing_to_preview_carries_no_drawer(client, specialist, name):
+    """The drawer is a modal dialog with a close button: on a page whose rows offer
+    no preview it is a dialog and a button nobody can open, and pages that promise
+    none (`role="dialog"` on Minu asjad's calendar, a Lovable queue with «no
+    button») must not carry one. Only Teemad and Saabunud place it."""
+    client.force_login(specialist)
+
+    body = client.get(reverse(name)).content.decode()
+
+    assert "data-mpreview" not in body
+    assert 'id="teema-eelvaade"' not in body

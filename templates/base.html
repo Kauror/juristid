@@ -326,18 +326,6 @@
         </p>
       </footer>
     </div>
-    {% if user.is_authenticated %}
-      {# «Eelvaade» (UX-006): the one drawer a register row's preview opens into; empty and hidden until asked (static/js/matter-preview.js). #}
-      <div class="mpreview" data-mpreview hidden>
-        <div class="mpreview__backdrop" data-mpreview-dismiss></div>
-        <section class="mpreview__panel" id="teema-eelvaade" role="dialog" aria-modal="true" aria-labelledby="mpreview-heading mpreview-title" data-mpreview-panel>
-          <div class="mpreview__bar">
-            <h2 class="mpreview__heading" id="mpreview-heading" tabindex="-1">Eelvaade</h2>
-            <button class="mpreview__close" type="button" data-mpreview-dismiss aria-label="Sulge eelvaade" title="Sulge (Esc)">✕</button>
-          </div>
-          <div class="mpreview__content" data-mpreview-content></div>
-        </section>
-      </div>
-    {% endif %}
+    {% block preview_drawer %}{% endblock %}
   </body>
 </html>
