@@ -80,6 +80,15 @@ from tests.test_read_side_existence_oracles import (  # noqa: F401 - `world` is 
 
 pytestmark = pytest.mark.django_db
 
+
+@pytest.fixture(autouse=True)
+def riigikogu_actions_switched_on(settings):
+    """The sweep proves who may reach a route, so the Riigikogu routes are swept as
+    they are once activated. Switched off they answer 404 to everybody before any
+    read (docs/adr/0224 «What the switch disables»), which
+    tests/test_riigikogu_disabled_boundaries.py holds on its own."""
+    settings.RIIGIKOGU_MONITORING = True
+
 #: Words that exist only on hidden records.
 TOKENS = (
     HIDDEN_TITLE,

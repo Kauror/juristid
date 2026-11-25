@@ -397,9 +397,10 @@ def test_a_lock_file_made_again_is_refused(host) -> None:
 
 
 @pytest.mark.skipif(REAL_FLOCK is None, reason="needs the kernel's flock: Linux only (CI)")
+@pytest.mark.parametrize("host", ["real"], indirect=True, ids=["real-flock"])
 def test_a_child_that_reopens_the_holders_descriptor_number_is_refused(host) -> None:
-    if host["kind"] != "real":
-        pytest.skip("the fake flock cannot tell a reopened fd number from an inherited one")
+    # Real flock only: the fake cannot tell a reopened fd number from an inherited
+    # one, and a skipped fake variant would be an unreviewed skip on CI.
     lock = host["sync_lock"]
     script = (
         f"exec 5<>{_q(lock)}; flock -n 5 || exit 9; "
