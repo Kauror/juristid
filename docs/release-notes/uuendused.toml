@@ -7,12 +7,12 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
-# r94 kandidaat (#PR): Riigikogu protokolli juurdepääs (ADR 0228 muudatus 25.11.2026). Kuupäev on ajutine:
+# r94 kandidaat (#728): Riigikogu protokolli juurdepääs (ADR 0228 muudatus 25.11.2026). Kuupäev on ajutine:
 # pane siia paigalduspäev (README: üks kirje päevas, kuupäev = paigalduspäev).
 [[day]]
 date = 2026-11-26
 basis = "deployment"
-prs = []
+prs = [728]
 changes = [
   "Halduse «Registrite jälgimine» Riigikogu tabelis on nüüd kirjas, kui Riigikogu keeldus mõne komisjoni protokolli näitamast (juurdepääs keelatud). Selline protokoll ei märgi enam kogu öist kontrolli osaliseks; teda küsitakse järgmisel ööl uuesti ja loetakse siis, kui see on avalik.",
 ]
