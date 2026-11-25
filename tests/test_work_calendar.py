@@ -530,7 +530,7 @@ def test_minu_asjad_renders_the_calendar_above_the_statistics(client, specialist
     body = client.get(MY_WORK).content.decode()
 
     assert 'id="minu-kalender"' in body
-    assert body.index('id="minu-kalender"') < body.index("Minu statistika")
+    assert body.index('id="minu-kalender"') < body.index('foldout__label">Minu statistika')
     for label in ("4 nädalat", "Kuu", "Kvartal", "Aasta"):
         assert f">{label}</a>" in body
 
