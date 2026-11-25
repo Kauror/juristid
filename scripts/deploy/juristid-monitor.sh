@@ -501,16 +501,22 @@ check_lovable() {
   fi
 }
 
-#: The nightly cycle (docs/adr/0229 §6). The night judged is the one whose cycle
-#: should have completed: the Tallinn date of (now − NIGHTLY_COMPLETE_HOURS), so a
-#: run at 04:05 UTC (06:05 or 07:05 in Tallinn) judges the night that began at
-#: 00:00 that day. Never started, refused by a release, started but never
-#: completed (interrupted, or still running past its time: overdue), and a
-#: completed night with a PARTIAL, FAILED, INTERRUPTED or SKIPPED_UNEXPECTED step
+#: The nightly cycle (docs/adr/0229 §6). The night judged is the newest one whose
+#: cycle should have completed: the Tallinn date of (now − NIGHTLY_COMPLETE_HOURS),
+#: so a run at 04:05 UTC (06:05 or 07:05 in Tallinn) judges the night that began
+#: at 00:00 that day. NIGHTLY_COMPLETE_HOURS is the application's
+#: `app.core.nightly_schedule.CYCLE_COMPLETE_BY` (6 h: the register sweep's
+#: finish-by, after the watch, the Riigikogu cycle with its 90-minute limit and
+#: every step's 20-minute lock wait; tests/test_nightly_schedule.py holds the
+#: two equal). A winter cycle (22:00 UTC) is due complete at 04:00 UTC, a summer
+#: one (21:00 UTC) at 03:00 UTC, so the 04:05 UTC look comes after both; it must
+#: stay after 04:00 UTC, or in winter it would judge the night before.
+#: Never started, refused by a release, started but never completed
+#: (interrupted, or still running past its time: overdue), and a completed night with a PARTIAL, FAILED, INTERRUPTED or SKIPPED_UNEXPECTED step
 #: are each a WARN naming the night and the steps. A paused cycle is ok on purpose;
 #: an authorised --manual recovery of the night stands in for it.
 #: JURISTID_MONITOR_NOW (epoch seconds) is a test seam; cron sets none.
-NIGHTLY_COMPLETE_HOURS=4
+NIGHTLY_COMPLETE_HOURS=6
 check_nightly() {
   [ -n "$MONITOR_NIGHTLY_DIR" ] || return 0
   local now night state verdict bad pid steps

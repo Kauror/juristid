@@ -51,12 +51,19 @@ daytime polling.
    next window starts 7 days before it (3 for stenograms), so a letter registered late is
    still seen; a PARTIAL or FAILED stage never moves the checkpoint. One stage's failure
    is that stage's: the others run, and nothing here touches the Lovable synchronisation.
-   ANALYSIS is recorded DISABLED (ADR 0227). **Place in the night.** No schedule of its own: the
-   owner decided on 25.11.2026 that one coordinated nightly cycle runs all routine
-   synchronisation, monitoring and analysis (ADR 0229). There `watch_riigikogu` runs after
-   the register watch, so both do not queue on the shared ledger, and before the new-drafts
-   sweep, so an invitation's candidate exists when the sweep reads the Riigikogu's new bills.
-   One advisory lock keeps two cycles from overlapping.
+   ANALYSIS is recorded DISABLED (ADR 0227). **Place in the night and its time.** No schedule of its own:
+   the owner decided on 25.11.2026 that one coordinated nightly cycle runs all routine
+   synchronisation, monitoring and analysis (ADR 0229). `watch_riigikogu` runs in the
+   registers lane after the register watch (so both do not queue on the shared ledger) and
+   before the new-drafts sweep (so an invitation's candidate exists when the sweep reads the
+   Riigikogu's new bills), only when the cycle runs with `--with-riigikogu`. The cycle is
+   bounded in wall-clock time, not only in requests: each stage reads until the earlier of
+   its own limit (`STAGE_TIME_LIMITS`: budget × 7.5 s + 2 min — 10/35/12/18/5/7 min) and the
+   cycle's `CYCLE_TIME_LIMIT` of 90 minutes; no request starts, no back-off or ledger wait
+   sleeps and no answer is waited for past it (the door's watchdog, at most 60 s a call; the
+   ledger lock has a 30 s `lock_timeout`). A stage at its limit is PARTIAL and keeps its
+   checkpoint; a stage the cycle had no time to start is recorded PARTIAL with the reason,
+   never left without a row. One advisory lock keeps two cycles from overlapping.
 6. **Health is per stage and never «zero findings» for a failure** (`cycle.health`):
    never run, disabled, failed, partial, stale (no success in 30 h) and ok are distinct.
    Monitooring → Riigikogu shows a line for any stage that is not ok; the public record

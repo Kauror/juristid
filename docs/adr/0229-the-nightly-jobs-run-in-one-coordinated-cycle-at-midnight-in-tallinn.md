@@ -61,9 +61,11 @@ catch-up; an authorised manual run remains possible.
    it as SKIPPED_UNEXPECTED with the reason. Everything else is soft order: a failed
    Lovable night still lets the watch read the Teemad as they stand. The model's work
    follows discovery inside every command. Each step has a finish-by from the cycle's
-   start (`nightly_schedule.FINISH_BY`: Lovable 1 h 30, agenda 2 h 30, watch 3 h, sweep
-   4 h), adding up the steps before it and the bounded lock waits; a normal night takes
-   ≈ 20 minutes.
+   start, in real (UTC) time across a change of offset (`nightly_schedule.FINISH_BY`:
+   Lovable 1 h 30, agenda 2 h 30, watch 3 h, Riigikogu 5 h — the watch, a 20-minute lock
+   wait, its 90-minute limit (ADR 0224 §5) and 10 minutes — and sweep 6 h, which is also
+   `CYCLE_COMPLETE_BY`), adding up the steps before it and the bounded lock waits. Without
+   the Riigikogu step the sweep simply ends early; a normal night takes ≈ 20 minutes.
 4. **An exit code is not an outcome.** The script has no `set -e` across steps (every step
    runs as `run_step … || true`). After each step it asks `manage.py nightly_outcome`
    (read-only, `app.core.nightly_outcome`), which classifies from the step's own record:
@@ -115,7 +117,8 @@ catch-up; an authorised manual run remains possible.
    person recovers it with `--manual`. The existing daily monitor (`juristid-monitor.sh
    --tier daily`, 04:05 UTC, `check_nightly`, `MONITOR_NIGHTLY_DIR`) reports through the
    existing notification path a night that never started, was refused, was interrupted
-   (started, never completed, its process gone) or overdue (still running past 4 h), or
+   (started, never completed, its process gone) or overdue (still running past 6 h, `CYCLE_COMPLETE_BY`;
+   the 04:05 UTC look comes after the winter due time of 04:00 UTC and must stay after it), or
    completed with a PARTIAL, FAILED, INTERRUPTED or SKIPPED_UNEXPECTED step; a paused
    cycle and a recovered night are ok. The application's health checks keep their run
    records and 30-hour staleness, and their first-run grace now follows the cycle
@@ -156,7 +159,11 @@ catch-up; an authorised manual run remains possible.
 10. **Riigikogu** plugs into the registers lane between the watch and the sweep once PR
     #723 is on main and the owner switches it on: the cron line gains `--with-riigikogu`.
     Until then the step is SKIPPED_DELIBERATE (NOT_INSTALLED). A failing Riigikogu step
-    never skips the sweep.
+    never skips the sweep. Activation is configuration only, with no release:
+    `JURISTID_RIIGIKOGU_MONITORING=1` in `config/register-watch.env` (and `juristid.env`, for
+    the pages) with fetching on, the cycle line gaining `--with-riigikogu` with a copy kept
+    for rollback, and a supervised `watch_riigikogu --stage …` first.
+    `JURISTID_RIIGIKOGU_DOCUMENT_AI` stays off under ADR 0227.
 
 **The kit-side change** (the generator lives outside the repository and is not edited
 here; for the next authorised kit): in the kit library's `acquire_lock`, before it takes

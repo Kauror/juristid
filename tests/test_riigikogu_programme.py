@@ -130,7 +130,7 @@ class FakeRiigikogu:
         self.calls: list[tuple[str, dict]] = []
         self.fail: dict[str, FetchError] = {}
 
-    def get_json(self, host: str, path: str, params: dict | None = None) -> Any:
+    def get_json(self, host: str, path: str, params: dict | None = None, **_: Any) -> Any:
         assert host == client.HOST
         self.calls.append((path, dict(params or {})))
         if path in self.fail:
@@ -708,7 +708,11 @@ def test_the_next_window_overlaps_the_last_successful_one(api):
 
 def test_health_never_shows_a_failed_or_unrun_stage_as_ok(api):
     with override_settings(RIIGIKOGU_MONITORING=True, REGISTER_WATCH_FETCH=True):
+        # The tables were just made: the first night's run is not late yet.
         states = {h.stage: h.state for h in cycle.health()}
+        assert states[Stage.INVITATIONS] == "pending"
+        after = cycle.first_run_due() + dt.timedelta(minutes=1)
+        states = {h.stage: h.state for h in cycle.health(after)}
         assert states[Stage.INVITATIONS] == "never"
         StageRun.objects.create(
             cycle=uuid_module.uuid4(),

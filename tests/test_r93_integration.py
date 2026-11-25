@@ -289,3 +289,15 @@ def test_document_analysis_running_while_switched_off_is_a_failure():
     result = _outcome()
     assert result.outcome == "FAILED"
     assert "switched off" in result.reason
+
+
+def test_the_sweeps_staleness_allows_a_long_night_and_its_finish_by():
+    """A 25-hour clock-change night after a fast night, plus the sweep's finish-by
+    (6 h since Riigikogu joined the budget), must not read as a missed sweep."""
+    from app.core import nightly_schedule
+    from app.register_watch import candidates
+
+    assert (
+        candidates.STALE_AFTER
+        >= dt.timedelta(hours=25) + nightly_schedule.FINISH_BY["register-sweep"]
+    )

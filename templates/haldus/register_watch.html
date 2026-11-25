@@ -25,7 +25,8 @@
 
   <section class="panel" aria-labelledby="regwatchlog-riigikogu">
     <h2 class="acctsection__title" id="regwatchlog-riigikogu">Riigikogu öine kontroll</h2>
-    {% comment %}docs/adr/0224 §6: per stage, its last attempt and last success; a failed, partial or never-run stage says so.{% endcomment %}
+    {% comment %}docs/adr/0224 §6: per stage, its last attempt and last success; a failed, partial or never-run stage says so. Timing: docs/adr/0229, app/riigikogu/cycle.py CYCLE_TIME_LIMIT, app/core/nightly_schedule.py FINISH_BY.{% endcomment %}
+    <p class="regwatch__meta">Käib kord ööl Tallinna aja järgi kell 00:00 algava öise tsükli osana, pärast registrite jälgimist ja enne uute eelnõude otsingut. Igal etapil on päringute ja aja piir; kogu kontroll lõpeb hiljemalt {{ riigikogu_timing.limit_minutes }} minutiga ja peab olema tehtud {{ riigikogu_timing.finish_hours }} tunni jooksul pärast tsükli algust (kogu öine tsükkel {{ riigikogu_timing.cycle_hours }} tunni jooksul). Piirini jõudnud etapp jääb osaliseks ja järgmisel ööl loetakse sama ajavahemik uuesti.</p>
     <div class="accttable">
       <table class="data-table">
         <thead>
@@ -35,7 +36,7 @@
           {% for row in riigikogu %}
             <tr>
               <td>{{ row.health.label }}</td>
-              <td>{% if row.health.state == "ok" %}<span class="statechip statechip--ok">{{ row.health.line }}</span>{% elif row.health.state == "disabled" %}<span class="statechip">{{ row.health.line }}</span>{% else %}<span class="statechip statechip--problem">{{ row.health.line }}</span>{% endif %}</td>
+              <td>{% if row.health.state == "ok" %}<span class="statechip statechip--ok">{{ row.health.line }}</span>{% elif row.health.state == "disabled" or row.health.state == "pending" %}<span class="statechip">{{ row.health.line }}</span>{% else %}<span class="statechip statechip--problem">{{ row.health.line }}</span>{% endif %}</td>
               <td class="regwatchlog__nowrap">{{ row.last.started_at|date:"j.n.Y H:i"|default:"—" }}</td>
               <td class="regwatchlog__nowrap">{{ row.health.last_success.started_at|date:"j.n.Y H:i"|default:"—" }}</td>
               <td>{% if row.last %}{{ row.last.requests }} / {{ row.last.rate_limited }}{% else %}—{% endif %}</td>

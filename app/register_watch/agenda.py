@@ -76,7 +76,7 @@ def window_end(monday: dt.date) -> dt.datetime:
     from app.core import nightly_schedule
 
     friday = nightly_schedule.cycle_start_on(monday + dt.timedelta(days=LAST_CYCLE_WEEKDAY))
-    return friday + nightly_schedule.FINISH_BY["government-agenda"]
+    return nightly_schedule.after_start(friday, nightly_schedule.FINISH_BY["government-agenda"])
 
 
 def missing_this_week(now: dt.datetime | None = None) -> bool:

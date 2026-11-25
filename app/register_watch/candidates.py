@@ -613,8 +613,9 @@ def at_riigikogu(candidate: TopicCandidate) -> bool:
 
 #: The sweep is a step of the nightly cycle (ADR 0229), after the register watch;
 #: its first run is due by `nightly_schedule.step_due`. A finished run older than
-#: this is missed (a night is 23-25 hours across a change of offset).
-STALE_AFTER = dt.timedelta(hours=30)
+#: this is missed: a night is 23-25 hours across a change of offset, and the sweep may
+#: finish up to its finish-by after the cycle starts, so 25 h + 6 h = 31 h.
+STALE_AFTER = dt.timedelta(hours=25) + dt.timedelta(hours=6)
 #: A run unfinished after this long was stopped from outside.
 ABANDONED_AFTER = dt.timedelta(hours=3)
 

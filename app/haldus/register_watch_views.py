@@ -89,11 +89,24 @@ def runs(request: HttpRequest) -> HttpResponse:
             # The Riigikogu cycle, stage by stage (docs/adr/0224 §6): never a
             # failed or unrun stage shown as a clean one.
             riigikogu=_riigikogu_stages(),
+            riigikogu_timing=_riigikogu_timing(),
             waiting=WatchFinding.objects.filter(
                 status=FindingStatus.PENDING, matter__in=_visible(request)
             ).count(),
         ),
     )
+
+
+def _riigikogu_timing() -> dict[str, int]:
+    """The figures the page states, from where they are kept (ADR 0229, ADR 0224 §5)."""
+    from app.core import nightly_schedule
+    from app.riigikogu import cycle
+
+    return {
+        "limit_minutes": int(cycle.CYCLE_TIME_LIMIT.total_seconds() // 60),
+        "finish_hours": int(nightly_schedule.FINISH_BY["riigikogu"].total_seconds() // 3600),
+        "cycle_hours": int(nightly_schedule.CYCLE_COMPLETE_BY.total_seconds() // 3600),
+    }
 
 
 def _riigikogu_stages() -> list[dict[str, Any]]:

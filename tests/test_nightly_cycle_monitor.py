@@ -97,7 +97,9 @@ def test_a_night_still_running_past_its_time_is_overdue(nightly: dict) -> None:
     _state(nightly, f"{NIGHT}.started", f"started=2026-01-14T22:00:01Z pid={alive}\n")
     _daily(nightly)
     sent = _nightly_lines(nightly)
-    assert len(sent) == 1 and "overdue" in sent[0]
+    # 04:05 UTC in winter is 6 h 05 after the cycle began: past the 6-hour
+    # completion (the sweep's finish-by, after the Riigikogu step).
+    assert len(sent) == 1 and "overdue" in sent[0] and "past 6h" in sent[0]
 
 
 @pytest.mark.parametrize(
@@ -147,3 +149,40 @@ def test_without_the_setting_the_check_is_silent(world: dict) -> None:  # noqa: 
     _fresh_set(world, _stamp(1))
     result = _run(world, "--tier", "daily")
     assert " nightly:" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("morning", "night"),
+    [
+        # Clocks forward on 29.03.2026 at 01:00Z: the cycle began 22:00Z on the 28th
+        # (UTC+2) and was due complete at 04:00Z; 04:05Z is 07:05 in Tallinn.
+        (dt.datetime(2026, 3, 29, 4, 5, tzinfo=dt.UTC), "2026-03-29"),
+        # Clocks back on 25.10.2026 at 01:00Z: the cycle began 21:00Z on the 24th
+        # (UTC+3) and was due complete at 03:00Z; 04:05Z is 06:05 in Tallinn.
+        (dt.datetime(2026, 10, 25, 4, 5, tzinfo=dt.UTC), "2026-10-25"),
+        # The first winter and summer nights after each change.
+        (dt.datetime(2026, 10, 26, 4, 5, tzinfo=dt.UTC), "2026-10-26"),
+        (dt.datetime(2026, 3, 30, 4, 5, tzinfo=dt.UTC), "2026-03-30"),
+    ],
+)
+def test_the_night_a_clock_changes_is_judged_as_that_night(nightly, morning, night) -> None:
+    _state(nightly, f"{night}.completed", GOOD)
+    result = _daily(nightly, morning)
+    assert f"ok nightly: night {night} completed" in result.stdout
+    assert _nightly_lines(nightly) == []
+
+
+def test_a_cycle_still_inside_its_six_hours_is_not_judged_yet(nightly: dict) -> None:
+    """A look before the night is due complete (here 03:30Z in winter, 5 h 30 in)
+    judges the night before, never tonight's cycle as overdue."""
+    alive = subprocess.run(  # noqa: S603
+        [BASH, "-c", "sleep 60 >/dev/null 2>&1 & echo $!"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    ).stdout.strip()
+    _state(nightly, f"{NIGHT}.started", f"started=2026-01-14T22:00:01Z pid={alive}\n")
+    _state(nightly, "2026-01-14.completed", GOOD)
+    result = _daily(nightly, dt.datetime(2026, 1, 15, 3, 30, tzinfo=dt.UTC))
+    assert "ok nightly: night 2026-01-14 completed" in result.stdout
+    assert _nightly_lines(nightly) == []
