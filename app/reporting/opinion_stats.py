@@ -832,6 +832,14 @@ def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[R
 
     Each record keeps every year or month that holds it (`Record.periods`), so
     the page can link each of them, a tie included.
+
+    Zero and unknown are kept apart (ADR 0214 §7, «Zero and unknown»):
+    a year whose value is unknown (``None``, «andmed puuduvad») never holds a
+    record, but a measured zero is a value like any other. It decides the
+    lowest record — a median of 0 days (the deadline fell on the day the topic
+    arrived) is the shortest time given. A highest record needs a positive
+    value: when every year's count or share is 0 nothing was achieved and no
+    year is named, while the trend itself still prints each 0.
     """
     by_key = {trend.key: trend for trend in found}
     out: list[Record] = []
@@ -840,10 +848,14 @@ def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[R
         return {
             bar.year: bar.value
             for bar in by_key[key].bars
-            if bar.value and (not complete or bar.year < today.year)
+            if bar.value is not None and (not complete or bar.year < today.year)
         }
 
-    best = _best(values("sent", complete=False))
+    def highest(key: str, *, complete: bool) -> tuple[float, list[Any]] | None:
+        best = _best(values(key, complete=complete))
+        return best if best and best[0] > 0 else None
+
+    best = highest("sent", complete=False)
     if best:
         out.append(
             Record(
@@ -877,7 +889,7 @@ def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[R
                 ),
             )
         )
-    best = _best(values("ontime", complete=True))
+    best = highest("ontime", complete=True)
     if best:
         out.append(
             Record(
@@ -899,7 +911,7 @@ def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[R
                 _years(best[1]),
             )
         )
-    best = _best(values("koda", complete=False))
+    best = highest("koda", complete=False)
     if best:
         out.append(
             Record(
@@ -910,7 +922,7 @@ def records(facts: list[OpinionFact], found: list[Trend], today: date) -> list[R
                 _years(best[1]),
             )
         )
-    best = _best(values("eu", complete=False))
+    best = highest("eu", complete=False)
     if best:
         out.append(
             Record(
