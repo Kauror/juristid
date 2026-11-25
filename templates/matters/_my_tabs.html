@@ -1,0 +1,11 @@
+{% comment %}
+The personal pages' tab row: Minu asjad · Minu tähtajad · Minu jõustumised ·
+Minu statistika. `my_tab` names the active one ("asjad", "tahtajad",
+"joustumised", "statistika"); it carries `aria-current="page"`.
+{% endcomment %}
+<nav class="tabs mytabs" aria-label="Minu lehed">
+  <a class="tabs__tab{% if my_tab == 'asjad' %} is-active{% endif %}" href="{% url 'matters:my_work' %}"{% if my_tab == 'asjad' %} aria-current="page"{% endif %}>Minu asjad</a>
+  <a class="tabs__tab{% if my_tab == 'tahtajad' %} is-active{% endif %}" href="{% url 'matters:my_deadlines' %}"{% if my_tab == 'tahtajad' %} aria-current="page"{% endif %}>Minu tähtajad</a>
+  <a class="tabs__tab{% if my_tab == 'joustumised' %} is-active{% endif %}" href="{% url 'matters:my_effective_dates' %}"{% if my_tab == 'joustumised' %} aria-current="page"{% endif %}>Minu jõustumised</a>
+  <a class="tabs__tab{% if my_tab == 'statistika' %} is-active{% endif %}" href="{% url 'matters:my_statistics' %}"{% if my_tab == 'statistika' %} aria-current="page"{% endif %}>Minu statistika</a>
+</nav>
