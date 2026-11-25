@@ -8487,6 +8487,12 @@ button.opinionmenu__item {
 
 /* ---- headers ------------------------------------------------------- */
 
+/* Minu asjad is full-bleed; the personal tab row takes the header's gutter. */
+.page--work > .mytabs {
+  padding: 0 var(--spacing-8);
+  background: var(--surface-panel);
+}
+
 .workhead,
 .ovhead {
   background: var(--surface-panel);
@@ -9839,6 +9845,7 @@ button.opinionmenu__item {
     margin-right: calc(var(--spacing-6) * -1);
   }
 
+  .page--work > .mytabs,
   .workhead,
   .ovhead,
   .seis,
@@ -9898,6 +9905,7 @@ button.opinionmenu__item {
     margin-bottom: calc(var(--spacing-8) * -1);
   }
 
+  .page--work > .mytabs,
   .workhead,
   .ovhead,
   .seis,
