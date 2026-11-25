@@ -1,4 +1,4 @@
-"""Is koda an addressee, the author, or only named? (ADR 0223 §1)
+"""Is koda an addressee, the author, or only named? (ADR 0225 §1)
 
 Read from the document's **metadata**: its direction and its ``author`` field,
 which for a letter the Riigikogu sends lists the addressees and for a letter it

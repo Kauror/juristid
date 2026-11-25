@@ -1,4 +1,4 @@
-"""The dates an invitation letter asks for, read deterministically (ADR 0223 §5).
+"""The dates an invitation letter asks for, read deterministically (ADR 0225 §5).
 
 No model. A letter says «Teil on võimalus avaldada eelnõu kohta arvamust ja
 esitada ettepanekuid õiguskomisjonile hiljemalt 24.11.26 …» and this reads

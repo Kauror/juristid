@@ -1,4 +1,4 @@
-"""Monitooring → Riigikogu, and the decisions on an invitation (ADR 0223, ADR 0224).
+"""Monitooring → Riigikogu, and the decisions on an invitation (ADR 0225, ADR 0226).
 
 The page is Monitooring's (the department head's, or everyone's once the head
 opened it). The decisions are also taken from a Teema's «Registritest» tab by
@@ -235,7 +235,7 @@ def unlink_bill(request: HttpRequest, pk: Any) -> HttpResponse:
 @require_http_methods(["POST"])
 def propose_victory(request: HttpRequest, pk: Any, index: int) -> HttpResponse:
     """«Lisa töövõidu kandidaadiks»: a person proposes; the existing service records a
-    candidate, never a confirmed win (docs/adr/0225 §6)."""
+    candidate, never a confirmed win (docs/adr/0227 §6)."""
     from app.intelligence.services import add_work_victory_candidate
     from app.riigikogu.enums import AnalysisStatus, AnalysisType
     from app.riigikogu.models import Analysis

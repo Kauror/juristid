@@ -1,4 +1,4 @@
-"""The invitation deadline reader and koda's name in the Riigikogu's data (ADR 0223 §1, §5).
+"""The invitation deadline reader and koda's name in the Riigikogu's data (ADR 0225 §1, §5).
 
 No database. The evaluation set is `tests/fixtures/riigikogu/deadline_cases.json`
 (see `app.riigikogu.evaluation`): 205 real letters' date sentences, sanitised and

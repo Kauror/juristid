@@ -1,4 +1,4 @@
-"""Official evidence before inference: the lead committee's list of amendments (ADR 0225 §5).
+"""Official evidence before inference: the lead committee's list of amendments (ADR 0227 §5).
 
 For the second reading the lead committee publishes «Muudatusettepanekute
 loetelu» (``…_MEde_loetelu.docx`` in the bill's texts, read 24.11.2026 on 892 SE).

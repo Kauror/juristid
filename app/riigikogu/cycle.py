@@ -1,8 +1,8 @@
-"""The nightly Riigikogu cycle: stages, each on its own (ADR 0222 §5).
+"""The nightly Riigikogu cycle: stages, each on its own (ADR 0224 §5).
 
 One cycle, run once a night inside the coordinated nightly sequence (the
 proposed order is in `deploy/unraid-main/cron/juristid.cron.example`'s comment
-and ADR 0222 §5; nothing is installed by this code). Each stage:
+and ADR 0224 §5; nothing is installed by this code). Each stage:
 
 * runs in its own `StageRun` with its own status, counts, errors, request count
   and rate-limit count;
@@ -14,7 +14,7 @@ and ADR 0222 §5; nothing is installed by this code). Each stage:
   and the next stage starts.
 
 The ANALYSIS stage exists and stays DISABLED until full-document analysis is
-separately authorised (ADR 0225).
+separately authorised (ADR 0227).
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def enabled() -> bool:
 
 
 def analysis_enabled() -> bool:
-    """Full-document model analysis (ADR 0225): never on without a separate authorisation."""
+    """Full-document model analysis (ADR 0227): never on without a separate authorisation."""
     return bool(getattr(settings, "RIIGIKOGU_DOCUMENT_AI", False))
 
 
@@ -248,7 +248,7 @@ def health(now: dt.datetime | None = None) -> list[StageHealth]:
         )
         label = Stage(stage).label
         if stage == Stage.ANALYSIS and not analysis_enabled():
-            state, line = "disabled", "Välja lülitatud (vajab eraldi luba, ADR 0225)"
+            state, line = "disabled", "Välja lülitatud (vajab eraldi luba, ADR 0227)"
         elif not enabled():
             state, line = "disabled", "Riigikogu jälgimine on välja lülitatud"
         elif attempt is None:

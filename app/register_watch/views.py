@@ -178,7 +178,7 @@ def teema_panel(user: Any, matter: Any) -> dict[str, Any]:
     from app.riigikogu import selectors as parliament
 
     return {
-        # The Riigikogu: this Teema's tied bills, invitations, dates, sittings (ADR 0224 §3).
+        # The Riigikogu: this Teema's tied bills, invitations, dates, sittings (ADR 0226 §3).
         "parliament": parliament.teema(user, matter),
         # The Government's agenda items tied to this Teema, waiting for a decision.
         "agenda_proposals": agenda.teema_proposals(matter) if matter.is_open else [],

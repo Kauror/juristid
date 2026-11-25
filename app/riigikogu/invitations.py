@@ -1,4 +1,4 @@
-"""Invitations to koda: found, verified, read, kept, routed (ADR 0223).
+"""Invitations to koda: found, verified, read, kept, routed (ADR 0225).
 
 The nightly stage (`discover`) asks the document register for everything naming
 «Tööstuskoda» registered in a window that overlaps the previous one, reads each
@@ -60,7 +60,7 @@ SEARCH = "Tööstuskoda"
 #: The previous window is read again by this much: a letter registered late is still found.
 OVERLAP_DAYS = 7
 #: The first window, when no stage has succeeded yet. Older letters are not offered
-#: as new work (ADR 0226 §5: no historical backfill into the queues).
+#: as new work (ADR 0228 §5: no historical backfill into the queues).
 FIRST_WINDOW_DAYS = 30
 CANDIDATE_LABEL = "Riigikogu kutsus koda arvamust avaldama"
 
@@ -540,7 +540,7 @@ def current_opinion_date(invitation: Invitation) -> ExternalDeadline | None:
 
 @transaction.atomic
 def add_as_date(invitation: Invitation, matter: Any, *, actor: Any) -> Any:
-    """«Lisa tähtajana»: an informational `Oluline tähtaeg` on the Teema (ADR 0223 §3).
+    """«Lisa tähtajana»: an informational `Oluline tähtaeg` on the Teema (ADR 0225 §3).
 
     Only a verified date: a date that needs checking is checked first (the person
     reads the sentence, and «Kontrolli tähtaega» confirms it). Never `Arvamuse
@@ -589,7 +589,7 @@ def link_to_date(invitation: Invitation, important_date: Any, *, actor: Any) -> 
 def add_reminder(
     invitation: Invitation, matter: Any, *, actor: Any, remind_on: dt.date, note: str = ""
 ) -> Any:
-    """«Lisa meeldetuletus»: the person's own reminder — no Teema field, no workload (ADR 0223 §6).
+    """«Lisa meeldetuletus»: the person's own reminder — no Teema field, no workload (ADR 0225 §6).
 
     `Järgmiseks` is Lovable's (ADR 0213), so an invitation never writes it; the
     person's own reminder is the internal follow-up this surface may create.

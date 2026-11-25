@@ -1,11 +1,11 @@
-"""The nightly Riigikogu cycle (ADR 0222 §5).
+"""The nightly Riigikogu cycle (ADR 0224 §5).
 
     manage.py watch_riigikogu [--stage INVITATIONS ...] [--today YYYY-MM-DD]
 
 Reads only when ``JURISTID_RIIGIKOGU_MONITORING`` and
 ``JURISTID_REGISTER_WATCH_FETCH`` are both on; otherwise every stage is recorded
 as DISABLED and nothing is fetched. Not scheduled by this code: the proposed
-place in the coordinated nightly sequence is documented in ADR 0222 §5 and in
+place in the coordinated nightly sequence is documented in ADR 0224 §5 and in
 ``deploy/unraid-main/cron/juristid.cron.example`` as a comment, for the owner to
 install with a release.
 

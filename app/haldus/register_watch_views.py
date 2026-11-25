@@ -86,7 +86,7 @@ def runs(request: HttpRequest) -> HttpResponse:
             health=watch_health(),
             totals=totals,
             total_days=TOTAL_DAYS,
-            # The Riigikogu cycle, stage by stage (docs/adr/0222 §6): never a
+            # The Riigikogu cycle, stage by stage (docs/adr/0224 §6): never a
             # failed or unrun stage shown as a clean one.
             riigikogu=_riigikogu_stages(),
             waiting=WatchFinding.objects.filter(

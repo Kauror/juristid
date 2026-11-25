@@ -1,4 +1,4 @@
-"""Was koda's proposal taken into account? Official evidence first (ADR 0225 §5–§6).
+"""Was koda's proposal taken into account? Official evidence first (ADR 0227 §5–§6).
 
 The evidence hierarchy, mapped onto Juristid's own work-victory vocabulary
 (`MatterWorkVictory` is a candidate until a person confirms it):
@@ -85,7 +85,7 @@ def analyse(
             if item.get("official"):
                 continue
             item.setdefault("stage", stage)
-            # Inference is never more than alignment (ADR 0225 §6).
+            # Inference is never more than alignment (ADR 0227 §6).
             item["evidence_level"] = (
                 "ALIGNMENT" if item.get("outcome") in ("REFLECTED", "PARTIAL") else "INSUFFICIENT"
             )

@@ -404,7 +404,7 @@ def worth_telling() -> QuerySet[TopicCandidate]:
     """What the bell and Osakond count: not folded, and named (a title that says which draft).
 
     A candidate the Riigikogu invited koda on is always worth telling, whatever the
-    model's verdict and whether the model ran at all (ADR 0223 §6).
+    model's verdict and whether the model ran at all (ADR 0225 §6).
     """
     from django.db.models import Q
 
@@ -462,7 +462,7 @@ def _link_items(candidate: TopicCandidate, matter: Any, actor: Any) -> int:
 
 
 def _tie_bills(candidate: TopicCandidate, matter: Any, actor: Any) -> None:
-    """A candidate's Riigikogu bills become the Teema's followed bills (ADR 0222 §2).
+    """A candidate's Riigikogu bills become the Teema's followed bills (ADR 0224 §2).
 
     The person's «Seo» or «Uus teema» is the confirmation: the tie is by the bill's
     UUID, so the Teema is followed whatever its title says.

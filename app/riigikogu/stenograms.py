@@ -1,4 +1,4 @@
-"""Where the plenary names koda (ADR 0226 §2).
+"""Where the plenary names koda (ADR 0228 §2).
 
 `/api/steno/verbatims` gives each sitting's agenda items and their speeches; a
 speech carries its own UUID, its speaker as the stenogram heads it («Esimees

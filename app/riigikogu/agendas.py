@@ -1,4 +1,4 @@
-"""Committee agendas, the next fortnight (ADR 0224 §2).
+"""Committee agendas, the next fortnight (ADR 0226 §2).
 
 `/api/events` lists each day's committee sittings and their agenda items. An item
 carries its own UUID and, when it is about a bill, the bill itself

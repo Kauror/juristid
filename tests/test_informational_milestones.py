@@ -91,7 +91,7 @@ def _missing(user, matters) -> set:
 
 def test_only_the_commencement_and_parliamentary_kinds_are_informational():
     estimated = ImportantDateKind.ESTIMATED_COMMENCEMENT
-    # The Riigikogu's dates are external facts, never koda's work (ADR 0223 §3).
+    # The Riigikogu's dates are external facts, never koda's work (ADR 0225 §3).
     parliamentary = {
         ImportantDateKind.RK_OPINION_REQUEST.value,
         ImportantDateKind.RK_AMENDMENTS_DEADLINE.value,

@@ -1,4 +1,4 @@
-"""How well the deadline reader reads, measured (ADR 0223 §5).
+"""How well the deadline reader reads, measured (ADR 0225 §5).
 
 The evaluation set (`tests/fixtures/riigikogu/deadline_cases.json`) holds:
 

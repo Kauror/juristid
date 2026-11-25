@@ -98,7 +98,7 @@ def notify_agendas(agendas: int) -> int:
 
 
 def notify_invitations(invitations: int) -> int:
-    """Riigikogu invitations to koda with no Teema owner to tell (ADR 0223 §7): a bill no
+    """Riigikogu invitations to koda with no Teema owner to tell (ADR 0225 §7): a bill no
     Teema follows yet, or a Teema without an active owner. The notice is a count only; it
     names no Teema, so a restricted one is never revealed through it."""
     return _tell(invitations=invitations)

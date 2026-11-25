@@ -1,4 +1,4 @@
-# 0223 — Riigikogu invitations to koda are read nightly, and their dates stay external facts
+# 0225 — Riigikogu invitations to koda are read nightly, and their dates stay external facts
 
 Date: 2026-11-24 · Status: proposed (coordinator's brief, RK-1; development authorisation only)
 
@@ -31,7 +31,7 @@ anybody's work by itself.
    left outside the class found four requests the phrases missed, now covered.
 3. **External dates and their meaning.** An invitation's dates are `ExternalDeadline`s of
    kind OPINION_REQUEST and ATTENDANCE; the Riigikogu's amendment deadline is AMENDMENTS
-   (ADR 0224 §3). None is koda's obligation. A person may take one onto the Teema as an
+   (ADR 0226 §3). None is koda's obligation. A person may take one onto the Teema as an
    `Oluline tähtaeg` of a new kind — RK_OPINION_REQUEST, RK_AMENDMENTS_DEADLINE,
    RK_COMMITTEE_SITTING — all three in `INFORMATIONAL_IMPORTANT_DATE_KINDS`: never the next
    step, never late work, never counted as workload or in consultation statistics, never a

@@ -1,4 +1,4 @@
-# 0226 — Protocols, stenograms and answers to invitations are evidence, never verdicts
+# 0228 — Protocols, stenograms and answers to invitations are evidence, never verdicts
 
 Date: 2026-11-24 · Status: proposed (coordinator's brief, RK-4 and RK-5; development authorisation only)
 
@@ -10,7 +10,7 @@ attendance, a mention is not support, a missing public opinion is not a missed d
 
 ## Decision
 
-1. **Read nightly, deterministically**, in the cycle of ADR 0222 §5 (PROTOCOLS, STENOGRAMS,
+1. **Read nightly, deterministically**, in the cycle of ADR 0224 §5 (PROTOCOLS, STENOGRAMS,
    RESPONSES). No model decides any of it.
 2. **Stenograms.** The day's verbatims are searched for koda's names, including spoken
    forms («kaubanduskoja», «Kaubandus-tööstuskoja»), never the Põllumajandus-Kaubanduskoda
@@ -42,5 +42,5 @@ attendance, a mention is not support, a missing public opinion is not a missed d
 
 ## Consequences
 
-- The evidence a work-victory candidate needs (ADR 0225 §6) and the evidence that koda
+- The evidence a work-victory candidate needs (ADR 0227 §6) and the evidence that koda
   took part are collected without anyone being judged by an absence.

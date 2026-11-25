@@ -1,4 +1,4 @@
-"""What Juristid knows about the Riigikogu, as the Riigikogu published it (ADR 0222–0226).
+"""What Juristid knows about the Riigikogu, as the Riigikogu published it (ADR 0224–0228).
 
 Every row is keyed by the Riigikogu's own identifier (a UUID), so a document met
 through three endpoints — the document register, a bill's opinions, a committee
@@ -10,7 +10,7 @@ overwriting what was known before.
 None of this is a fact about a Teema, and none of it is restricted data: it is the
 public record. **The association of a public record with a Teema can be
 restricted**, so every view that names a Teema next to one of these rows reads the
-Teema through `Matter.objects.visible_to` first (ADR 0222 §6).
+Teema through `Matter.objects.visible_to` first (ADR 0224 §6).
 """
 
 from __future__ import annotations
@@ -133,7 +133,7 @@ class ParliamentDocument(BaseModel):
 
 
 class DocumentChange(BaseModel):
-    """What changed in a document the source had already shown (ADR 0222 §4)."""
+    """What changed in a document the source had already shown (ADR 0224 §4)."""
 
     document = models.ForeignKey(
         ParliamentDocument, on_delete=models.CASCADE, related_name="changes"
@@ -150,7 +150,7 @@ class DocumentChange(BaseModel):
 
 
 class Invitation(BaseModel):
-    """A committee's letter that names koda as an addressee (ADR 0223).
+    """A committee's letter that names koda as an addressee (ADR 0225).
 
     Always kept, whether or not a deadline could be read from it. The deadline
     itself is an `ExternalDeadline` (the letter may set several, and a later
@@ -228,7 +228,7 @@ class Invitation(BaseModel):
 
 
 class ExternalDeadline(BaseModel):
-    """An external parliamentary date, with its history (ADR 0223 §3–§4).
+    """An external parliamentary date, with its history (ADR 0225 §3–§4).
 
     Never koda's obligation and never `Arvamuse tähtaeg`: that is Lovable's
     (ADR 0213). A change is a new row that supersedes the old one; the old one
@@ -323,10 +323,10 @@ class CommitteeAgendaItem(BaseModel):
 
 
 class StenogramMention(BaseModel):
-    """A place in a plenary stenogram or a committee protocol that names koda (ADR 0226 §2).
+    """A place in a plenary stenogram or a committee protocol that names koda (ADR 0228 §2).
 
     The quote is the evidence. A protocol naming koda among those present is evidence
-    that koda *took part*; an invitation alone never is (ADR 0226 §3).
+    that koda *took part*; an invitation alone never is (ADR 0228 §3).
     """
 
     #: Sitting date + agenda item + position: one mention, however often it is read.
@@ -357,7 +357,7 @@ class StenogramMention(BaseModel):
 
 
 class StageRun(BaseModel):
-    """One stage of one nightly cycle (ADR 0222 §5): its own status, counts and errors.
+    """One stage of one nightly cycle (ADR 0224 §5): its own status, counts and errors.
 
     A stage's checkpoint is the ``window_end`` of its last SUCCEEDED run. A
     PARTIAL or FAILED run never moves it, so what was not read is read again.
@@ -386,7 +386,7 @@ class StageRun(BaseModel):
 
 
 class ApiCall(models.Model):
-    """The shared ledger of calls to api.riigikogu.ee (ADR 0222 §3).
+    """The shared ledger of calls to api.riigikogu.ee (ADR 0224 §3).
 
     1 request a second per address and 12 a minute per path, as the Riigikogu
     publishes. Every process that reads the API asks the ledger first, under one
@@ -407,7 +407,7 @@ class ApiCall(models.Model):
 
 
 class Analysis(BaseModel):
-    """One model analysis of public parliamentary text (ADR 0225). Disabled in production.
+    """One model analysis of public parliamentary text (ADR 0227). Disabled in production.
 
     Keyed by what was analysed (`source_key`: document UUIDs and content hashes)
     and how (`analysis_type`, `schema_version`, `prompt_version`), so an unchanged

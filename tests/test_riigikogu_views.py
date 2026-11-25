@@ -1,4 +1,4 @@
-"""Monitooring → Riigikogu, the Teema's sections, and the controlled analysis (ADR 0224, 0225)."""
+"""Monitooring → Riigikogu, the Teema's sections, and the controlled analysis (ADR 0226, 0227)."""
 
 from __future__ import annotations
 

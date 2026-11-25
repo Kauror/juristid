@@ -1,4 +1,4 @@
-"""Was an invitation answered? «Kutsele vastamine vajab kontrollimist» (ADR 0226 §4).
+"""Was an invitation answered? «Kutsele vastamine vajab kontrollimist» (ADR 0228 §4).
 
 After an invitation's opinion date has passed, the bill's documents are looked at
 for an opinion from koda (`DocumentKind.KODA_OPINION` on the same bill, registered
@@ -81,7 +81,7 @@ def store_opinions(bill: Any, detail: dict[str, Any], *, now: dt.datetime) -> in
     koda's own opinion is recognised by its title naming koda as the one giving it
     («Eesti Kaubandus-Tööstuskoja arvamus …»): the opinions list carries no author
     field, so the title is what the Riigikogu states. Others are OTHER_OPINION, the
-    material of «Teiste seisukohad» (ADR 0225).
+    material of «Teiste seisukohad» (ADR 0227).
     """
     import re
     import uuid as uuid_module

@@ -1,4 +1,4 @@
-"""What Monitooring → Riigikogu and the Teema's «Registritest» show (ADR 0224).
+"""What Monitooring → Riigikogu and the Teema's «Registritest» show (ADR 0226).
 
 Every Teema named next to a parliamentary record is read through
 `Matter.objects.visible_to(user)` first: the public record is public, its tie to
@@ -167,7 +167,7 @@ class Page:
 
 
 def monitooring(user: Any, *, today: dt.date | None = None, everything: bool = False) -> Page:
-    """Monitooring → Riigikogu, in the four sections ADR 0224 §2 orders."""
+    """Monitooring → Riigikogu, in the four sections ADR 0226 §2 orders."""
     today = today or timezone.localdate()
     base = Invitation.objects.select_related("document", "document__bill", "candidate").order_by(
         "-document__registered_on"

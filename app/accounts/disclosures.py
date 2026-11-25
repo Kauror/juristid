@@ -82,7 +82,7 @@ DISCLOSURES: dict[str, Disclosure] = {
         ),
         Disclosure("reporting.definition", False, "Statistika · Definitsioon (iga arvu all)"),
         Disclosure("reporting.chart_table", False, "Statistika · Joonise andmed tabelina"),
-        # Monitooring → Riigikogu and the Teema's parliamentary sections (ADR 0224).
+        # Monitooring → Riigikogu and the Teema's parliamentary sections (ADR 0226).
         Disclosure("riigikogu.previous", False, "Monitooring · Riigikogu · Varasemad kutsed"),
         Disclosure("riigikogu.signals", False, "Monitooring · Riigikogu · Varajased signaalid"),
         Disclosure(

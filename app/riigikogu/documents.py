@@ -1,4 +1,4 @@
-"""A Riigikogu file's text, through the application's own parsers (ADR 0223 §5).
+"""A Riigikogu file's text, through the application's own parsers (ADR 0225 §5).
 
 A committee's letter is filed as the Word-generated HTML of the e-mail it was
 (``Kaasamiskiri_(eelnõu_1082_SE).html``, Windows-1252), or as a PDF. HTML goes

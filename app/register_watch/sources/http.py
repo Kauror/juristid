@@ -55,7 +55,7 @@ class FetchError(Exception):
     ``status`` is the HTTP status when the server answered one, and
     ``retry_after`` the seconds its ``Retry-After`` header asked for (a number of
     seconds only; a date is ignored): the Riigikogu client backs off by them
-    (ADR 0222 §3). Both are ``None`` for every other failure.
+    (ADR 0224 §3). Both are ``None`` for every other failure.
     """
 
     def __init__(

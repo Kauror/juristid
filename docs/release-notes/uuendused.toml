@@ -7,7 +7,7 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
-# Riigikogu programm (rk/programme, ADR 0222–0226): kuupäev on ajutine — pane väljalaske päev, kui
+# Riigikogu programm (rk/programme, ADR 0224–0228): kuupäev on ajutine — pane väljalaske päev, kui
 # programm pärast parendusprogrammi tootmisse jõuab. Öine Riigikogu lugemine ja dokumentide analüüs on
 # vaikimisi välja lülitatud; kirje kehtib siis, kui omanik need sisse lülitab.
 [[day]]

@@ -1,4 +1,4 @@
-"""One controlled way to ask a model about public parliamentary text (ADR 0225). Off.
+"""One controlled way to ask a model about public parliamentary text (ADR 0227). Off.
 
 **Disabled in production.** `run` refuses unless ``RIIGIKOGU_DOCUMENT_AI`` is on
 or the caller passes a model explicitly (tests and the demonstration command pass
@@ -45,7 +45,7 @@ SCHEMA_VERSION = "2026-11-24.1"
 PROMPT_VERSION = "2026-11-24.1"
 MAX_INPUT_CHARS = 120_000
 MAX_ATTEMPTS = 3
-DISABLED = "Dokumentide analüüs on välja lülitatud (vajab eraldi luba, ADR 0225)."
+DISABLED = "Dokumentide analüüs on välja lülitatud (vajab eraldi luba, ADR 0227)."
 
 RELATIONS = ("SAME", "PARTIAL", "DIFFERENT", "ADDITIONAL", "NO_POSITION", "INSUFFICIENT")
 OUTCOMES = ("REFLECTED", "PARTIAL", "NOT_REFLECTED", "REVERSED", "INSUFFICIENT")

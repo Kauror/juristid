@@ -1,4 +1,4 @@
-"""The Riigikogu's amendment deadlines (ADR 0224 §3).
+"""The Riigikogu's amendment deadlines (ADR 0226 §3).
 
 One search a night: every bill whose amendment deadline falls in the coming
 weeks (`/api/volumes/drafts?amendmentsDeadlineStartDate=…`). Each is stored as a

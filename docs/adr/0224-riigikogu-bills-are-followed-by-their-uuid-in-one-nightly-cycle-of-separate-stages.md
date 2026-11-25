@@ -1,4 +1,4 @@
-# 0222 — Riigikogu bills are followed by their UUID, read in one nightly cycle of separate stages
+# 0224 — Riigikogu bills are followed by their UUID, read in one nightly cycle of separate stages
 
 Date: 2026-11-24 · Status: proposed (coordinator's brief «Riigikogu legislative intelligence programme», 2026-11-24; development authorisation only — nothing activated, nothing deployed)
 
@@ -51,12 +51,12 @@ daytime polling.
    next window starts 7 days before it (3 for stenograms), so a letter registered late is
    still seen; a PARTIAL or FAILED stage never moves the checkpoint. One stage's failure
    is that stage's: the others run, and nothing here touches the Lovable synchronisation.
-   ANALYSIS is recorded DISABLED (ADR 0225). **Proposed order of the whole night** (UTC,
-   not installed): 22:15 Lovable synchronisation (unchanged) · 03:30 register watch
-   (unchanged) · 04:00 `watch_riigikogu` · 04:20 new-drafts sweep (unchanged). The
-   Riigikogu cycle runs after the watch, so both do not queue on the shared ledger, and
-   before the sweep, so an invitation's candidate exists when the sweep reads the
-   Riigikogu's new bills. One advisory lock keeps two cycles from overlapping.
+   ANALYSIS is recorded DISABLED (ADR 0227). **Place in the night.** No schedule of its own: the
+   owner decided on 25.11.2026 that one coordinated nightly cycle runs all routine
+   synchronisation, monitoring and analysis (ADR 0229). There `watch_riigikogu` runs after
+   the register watch, so both do not queue on the shared ledger, and before the new-drafts
+   sweep, so an invitation's candidate exists when the sweep reads the Riigikogu's new bills.
+   One advisory lock keeps two cycles from overlapping.
 6. **Health is per stage and never «zero findings» for a failure** (`cycle.health`):
    never run, disabled, failed, partial, stale (no success in 30 h) and ok are distinct.
    Monitooring → Riigikogu shows a line for any stage that is not ok; the public record
@@ -73,4 +73,4 @@ daytime polling.
   slower, and no longer able to burst against the cycle.
 - New tables in a new app (`riigikogu`, migration 0001); `register_watch` 0009 adds the
   tie's who/when and the notices' invitation counts; `intelligence` 0006 adds three
-  date kinds (ADR 0223). All additive.
+  date kinds (ADR 0225). All additive.

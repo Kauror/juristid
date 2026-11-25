@@ -1,4 +1,4 @@
-"""The one way this package reads api.riigikogu.ee (ADR 0222 §3).
+"""The one way this package reads api.riigikogu.ee (ADR 0224 §3).
 
 Through the register watch's fenced door (`app.register_watch.sources.http`):
 https, the fixed host list, no redirects, a timeout, a size cap and the
@@ -18,7 +18,7 @@ https, the fixed host list, no redirects, a timeout, a size cap and the
   as partial instead of reading for ever.
 
 Nothing here decides what an empty answer means. A caller that gets an empty
-page must not read it as «everything is gone» (ADR 0222 §4).
+page must not read it as «everything is gone» (ADR 0224 §4).
 """
 
 from __future__ import annotations

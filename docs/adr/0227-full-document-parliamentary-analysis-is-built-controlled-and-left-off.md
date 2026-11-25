@@ -1,4 +1,4 @@
-# 0225 — Full-document parliamentary analysis is built, controlled, and left off
+# 0227 — Full-document parliamentary analysis is built, controlled, and left off
 
 Date: 2026-11-24 · Status: proposed — **the processing it describes is not authorised**; the code runs only against a mocked model (coordinator's brief, RK-3)
 

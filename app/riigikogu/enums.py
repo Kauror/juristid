@@ -1,4 +1,4 @@
-"""The vocabularies of the Riigikogu source (ADR 0222–0226)."""
+"""The vocabularies of the Riigikogu source (ADR 0224–0228)."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ class TextStatus(models.TextChoices):
 
 
 class DeadlineKind(models.TextChoices):
-    """An external parliamentary date. None of these is koda's own obligation (ADR 0223 §3)."""
+    """An external parliamentary date. None of these is koda's own obligation (ADR 0225 §3)."""
 
     #: The date a committee asks an opinion or proposals by.
     OPINION_REQUEST = "OPINION_REQUEST", "Arvamuse tähtaeg komisjonile"
@@ -57,7 +57,7 @@ class DeadlineKind(models.TextChoices):
 
 
 class ExtractionStatus(models.TextChoices):
-    """Whether a deadline was read from the letter (ADR 0223 §5). Wording is the UI's."""
+    """Whether a deadline was read from the letter (ADR 0225 §5). Wording is the UI's."""
 
     FOUND = "FOUND", "Tähtaeg tuvastatud"
     CHECK = "CHECK", "Tähtaeg vajab kontrollimist"
@@ -84,7 +84,7 @@ class InvitationReview(models.TextChoices):
 
 
 class ResponseCheck(models.TextChoices):
-    """After the deadline: was the invitation answered? (ADR 0226 §4)
+    """After the deadline: was the invitation answered? (ADR 0228 §4)
 
     The default after the deadline is «vajab kontrollimist», never «ei vastanud»:
     no public document is not proof of no answer.
@@ -114,7 +114,7 @@ class MentionCategory(models.TextChoices):
 
 
 class Stage(models.TextChoices):
-    """The stages of the nightly Riigikogu cycle, in their order (ADR 0222 §5)."""
+    """The stages of the nightly Riigikogu cycle, in their order (ADR 0224 §5)."""
 
     BILLS = "BILLS", "Eelnõud ja muudatusettepanekute tähtajad"
     INVITATIONS = "INVITATIONS", "Kutsed kojale"

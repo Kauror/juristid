@@ -43,7 +43,7 @@ def _waiting() -> Q:
     items = Exists(agenda.proposals().filter(related_matter=OuterRef("matter")))
     from app.riigikogu.invitations import waiting_on_teema
 
-    # A Riigikogu invitation to koda on one of the Teema's bills (ADR 0223 §7).
+    # A Riigikogu invitation to koda on one of the Teema's bills (ADR 0225 §7).
     invitations = Exists(waiting_on_teema(OuterRef("matter")))
     return Q(documents) | Q(items) | Q(invitations)
 
@@ -84,7 +84,7 @@ def notify(matter: Any, documents: int, *, invitations: int = 0) -> RegisterNoti
 
     ``recipient`` records who was told last; who sees the notice is the
     current owner (`own`). ``invitations`` counts Riigikogu invitations to koda
-    (or a material change of one's deadline) on the Teema's bills (ADR 0223 §7);
+    (or a material change of one's deadline) on the Teema's bills (ADR 0225 §7);
     with no active owner the caller tells the department head instead.
     """
     owner = getattr(matter, "owner", None)

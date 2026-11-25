@@ -70,7 +70,7 @@ def section_counts(user: Any) -> dict[str, int]:
             if newest
             else 0
         ),
-        # Riigikogu invitations to koda nobody has decided yet (docs/adr/0224).
+        # Riigikogu invitations to koda nobody has decided yet (docs/adr/0226).
         "riigikogu": _riigikogu_waiting(),
         "registrid": watch.pending_for(user)
         .exclude(relevance=Relevance.UNRELATED)

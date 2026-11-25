@@ -1,4 +1,4 @@
-"""Committee protocols: who took part, and what was said about koda (ADR 0226 §3).
+"""Committee protocols: who took part, and what was said about koda (ADR 0228 §3).
 
 A committee sitting that has happened lists its minutes (``protocolDocuments``)
 in `/api/events`. Each new protocol is read once (its content digest is kept), and

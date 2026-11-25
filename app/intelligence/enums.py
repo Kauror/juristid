@@ -95,7 +95,7 @@ class ImportantDateKind(models.TextChoices):
     PLANNED_COMMENCEMENT = "PLANNED_COMMENCEMENT", "Eelnõus kavandatud jõustumine"
     ESTIMATED_COMMENCEMENT = "ESTIMATED_COMMENCEMENT", "Eeldatav jõustumine"
     #: Parliamentary dates a lawyer took onto the Teema from Monitooring → Riigikogu
-    #: (docs/adr/0223). Each is an event *outside* the department — a committee's
+    #: (docs/adr/0225). Each is an event *outside* the department — a committee's
     #: request for an opinion, the Riigikogu's own amendment deadline, a committee
     #: sitting — so all three are informational: never the next step, never late
     #: work, never a closure hold, never an `Arvamuse tähtaeg` (that is Lovable's).
@@ -123,7 +123,7 @@ INFORMATIONAL_IMPORTANT_DATE_KINDS: frozenset[str] = frozenset(
     {
         ImportantDateKind.PLANNED_COMMENCEMENT.value,
         ImportantDateKind.ESTIMATED_COMMENCEMENT.value,
-        # External parliamentary facts (docs/adr/0223 §3): what the Riigikogu
+        # External parliamentary facts (docs/adr/0225 §3): what the Riigikogu
         # asks or schedules is not what koda has decided to do next.
         ImportantDateKind.RK_OPINION_REQUEST.value,
         ImportantDateKind.RK_AMENDMENTS_DEADLINE.value,

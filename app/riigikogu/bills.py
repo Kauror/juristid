@@ -1,4 +1,4 @@
-"""Bills as durable identities, and which Teema follows which bill (ADR 0222 §1–§2).
+"""Bills as durable identities, and which Teema follows which bill (ADR 0224 §1–§2).
 
 **Identity.** A bill is its Riigikogu UUID (`Bill.uuid`). The number restarts with
 each membership, so «1082 SE» finds a bill and labels it, and is never stored as
@@ -257,7 +257,7 @@ def link(matter: Any, bill: Bill, *, actor: Any) -> Any:
         target.active = True
         target.origin = TargetOrigin.LINKED
     # Who tied it, kept on the tie itself: a monitoring setting, like a lawyer's
-    # search words, not a fact on the Teema's timeline (ADR 0222 §2).
+    # search words, not a fact on the Teema's timeline (ADR 0224 §2).
     target.linked_by = actor
     target.linked_at = timezone.now()
     target.save()

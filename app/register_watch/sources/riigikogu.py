@@ -20,7 +20,7 @@ HOST = "api.riigikogu.ee"
 
 def get_json(host: str, path: str, params: dict[str, Any] | None = None) -> Any:
     """Through the Riigikogu client, so this watch shares the published rate limits'
-    ledger with the sweep and the Riigikogu cycle (ADR 0222 §3)."""
+    ledger with the sweep and the Riigikogu cycle (ADR 0224 §3)."""
     from app.riigikogu import client
 
     if host != client.HOST:

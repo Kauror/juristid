@@ -1,4 +1,4 @@
-"""Monitooring → Riigikogu and the Teema's Riigikogu sections in a browser (ADR 0224).
+"""Monitooring → Riigikogu and the Teema's Riigikogu sections in a browser (ADR 0226).
 
 The fictional Riigikogu (`manage.py seed_riigikogu_demo`) is planted in the
 server's own database once, as `plant_historical_instruments` plants its pair: the

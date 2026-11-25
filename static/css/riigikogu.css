@@ -1,4 +1,4 @@
-/* riigikogu.css: Monitooring → Riigikogu and the Teema's Riigikogu sections (docs/adr/0224).
+/* riigikogu.css: Monitooring → Riigikogu and the Teema's Riigikogu sections (docs/adr/0226).
  * Loaded after historical-reading.css from templates/base.html. The rows reuse the register
  * watch's `.regwatch__*` grammar (app.css); only what that grammar lacks is defined here:
  * a deadline that needs checking, the quoted source sentence, a changed date, and the

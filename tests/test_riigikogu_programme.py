@@ -1,4 +1,4 @@
-"""The Riigikogu programme against a fake Riigikogu (ADR 0222–0226).
+"""The Riigikogu programme against a fake Riigikogu (ADR 0224–0228).
 
 No test reaches api.riigikogu.ee: the fenced door (`http.get_json`, `http.get_bytes`)
 answers from the dictionaries below, and the shared ledger's sleep is a no-op.

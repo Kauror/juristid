@@ -1,4 +1,4 @@
-"""What changed between two versions of a bill's text — established without a model (ADR 0225 §4).
+"""What changed between two versions of a bill's text — established without a model (ADR 0227 §4).
 
 Step 1 is **which documents to compare**: a bill's ``texts[]`` mixes the draft,
 its explanatory memorandum, annexes, signed containers and the second reading's
@@ -125,7 +125,7 @@ def explain(*, bill: Any, old: Any, new: Any, model: Any = None) -> Any:
 
     The model is told which provisions changed and asked only to explain them; an
     explanation for a provision the comparison did not find is dropped, so the
-    model cannot add a change (ADR 0225 §4).
+    model cannot add a change (ADR 0227 §4).
     """
     from app.riigikogu import analysis
     from app.riigikogu.enums import AnalysisType

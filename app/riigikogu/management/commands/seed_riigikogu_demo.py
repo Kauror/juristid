@@ -1,5 +1,5 @@
 # ruff: noqa: E501  (a fixture of invented sentences, kept one per line for review)
-"""A fictional Riigikogu for review screenshots and browser tests (ADR 0224, 0225).
+"""A fictional Riigikogu for review screenshots and browser tests (ADR 0226, 0227).
 
     manage.py seed_riigikogu_demo
 

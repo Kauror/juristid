@@ -15,7 +15,7 @@ urlpatterns = [
     path("nahtavus/", candidate_views.audience, name="candidate_audience"),
     path("valitsus/", candidate_views.agenda_list, name="agendas"),
     path("valitsus/<uuid:pk>/", candidate_views.agenda_decide, name="agenda_decide"),
-    # Monitooring → Riigikogu (docs/adr/0224).
+    # Monitooring → Riigikogu (docs/adr/0226).
     path("riigikogu/", riigikogu_views.monitooring, name="riigikogu"),
     path("riigikogu/kutse/<uuid:pk>/", riigikogu_views.decide, name="riigikogu_decide"),
     path("riigikogu/teema/<uuid:pk>/seo/", riigikogu_views.link_bill, name="riigikogu_link"),
