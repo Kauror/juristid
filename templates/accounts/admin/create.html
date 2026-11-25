@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% block title %}Uus kasutaja · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -7,12 +7,9 @@
   only when its owner sets their own password (docs/adr/0145 §5).
 {% endcomment %}
 
-{% block content %}
-<div class="page page--narrow">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Uus kasutaja</h1>
-    <span class="pagehead__context"><a href="{% url 'account_admin:list' %}">Kasutajad</a></span>
-  </div>
+{% block haldus_title %}Uus kasutaja{% endblock %}
+{% block haldus_context %}<span class="pagehead__context"><a href="{% url 'account_admin:list' %}">Kasutajad</a></span>{% endblock %}
+{% block haldus_content %}
 
   <form method="post" class="card card--form form" novalidate>
     {% csrf_token %}
@@ -29,5 +26,4 @@
       <a class="button button--quiet" href="{% url 'account_admin:list' %}">Loobu</a>
     </div>
   </form>
-</div>
 {% endblock %}

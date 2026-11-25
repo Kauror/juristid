@@ -17,6 +17,7 @@ changes = [
   "Halduse «Registrite jälgimine» Riigikogu tabelis on nüüd kirjas, kui Riigikogu keeldus mõne komisjoni protokolli näitamast (juurdepääs keelatud). Selline protokoll ei märgi enam kogu öist kontrolli osaliseks; teda küsitakse järgmisel ööl uuesti ja loetakse siis, kui see on avalik.",
   "Monitooring → Riigikogu: «Lisa tähtajana» kõrval on kuupäev, mis teemale lisatakse — vaikimisi kirjast loetud tähtaeg, kalendrist saab valida ka teise päeva. Kui tähtaeg vajab kontrollimist, vali kuupäev ise.",
   "«Edasist tööd pole vaja» on nüüd «Märgi loetuks».",
+  "Halduse vasakpoolne menüü on nüüd nähtaval kõigil Halduse lehtedel, ka Isiklikud seaded → Teavitused, Kiirklahvid, Arendusseis, Arvamuste arhiiv, Andmekvaliteet, Ajaloolised materjalid, Statistika definitsioonid, uue kasutaja lisamine ja halduri sisselogimine.",
   "Kutsete loendis ei ole enam ridu «Tähtaeg tuvastatud» ja «Koja arvamus registris» ega selgitusi öise lugemise ja registri kohta; alles on see, mis vajab tähelepanu, näiteks «Tähtaeg vajab kontrollimist».",
 ]
 

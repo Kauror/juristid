@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% block title %}Arvamuste arhiiv · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -21,11 +21,8 @@
   who may actually work that queue.
 {% endcomment %}
 
-{% block content %}
-<div class="page">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Arvamuste arhiiv</h1>
-    <span class="pagehead__context">
+{% block haldus_title %}Arvamuste arhiiv{% endblock %}
+{% block haldus_context %}<span class="pagehead__context">
       {{ counts.total }} kirja · {{ counts.linked }} teemaga seotud ·
       {{ counts.with_submission }} kanoonilise arvamusena ·
       {% if body_search_available %}
@@ -33,11 +30,9 @@
       {% else %}
         otsing metaandmete järgi
       {% endif %}
-    </span>
-    {% if can_use_opinion_queue %}
-      <a class="button button--quiet" href="{% url 'legacy_import:opinion_queue' %}">Ava ülevaatus</a>
-    {% endif %}
-  </div>
+    </span>{% endblock %}
+{% block haldus_actions %}{% if can_use_opinion_queue %}<a class="button button--quiet" href="{% url 'legacy_import:opinion_queue' %}">Ava ülevaatus</a>{% endif %}{% endblock %}
+{% block haldus_content %}
 
   {% comment %}
     One sentence about what this workspace is, and one about what a link here
@@ -251,5 +246,4 @@
     {% endcomment %}
     <p class="empty">Arhiivis ei ole ühtegi kirja.</p>
   {% endif %}
-</div>
 {% endblock %}

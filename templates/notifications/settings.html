@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% block title %}Teavituste seaded · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -14,15 +14,12 @@ offered only to a holder of `department.view_management`. The e-mail control
 is drawn disabled: the wish cannot be stored until personal sign-in exists.
 {% endcomment %}
 
-{% block content %}
-<div class="page">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Teavituste seaded</h1>
-    <span class="pagehead__context">
+{% block haldus_title %}Teavituste seaded{% endblock %}
+{% block haldus_context %}<span class="pagehead__context">
       Vali, millest ja mitu päeva ette sulle teada antakse. Seaded kehtivad ainult sinu teavitustele.
       <a href="{% url 'notifications:list' %}">Teavitused</a>
-    </span>
-  </div>
+    </span>{% endblock %}
+{% block haldus_content %}
 
   <form method="post" action="{% url 'notifications:settings' %}" class="notifsettings">
     {% csrf_token %}
@@ -91,5 +88,4 @@ is drawn disabled: the wish cannot be stored until personal sign-in exists.
     {% csrf_token %}
     <button type="submit" class="button button--quiet">Taasta vaikimisi</button>
   </form>
-</div>
 {% endblock %}

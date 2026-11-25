@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% block title %}Halduri sisselogimine · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -11,8 +11,8 @@
   account that may not administer — and only the security audit records which.
 {% endcomment %}
 
-{% block content %}
-<div class="page page--narrow">
+{% block haldus_head %}{% endblock %}
+{% block haldus_content %}
   <h1>Halduri sisselogimine</h1>
   <p class="acctnote">
     Kontode ja õiguste haldamiseks kinnita, et oled see inimene: oma e-posti aadress, isiklik parool
@@ -35,5 +35,4 @@
     Isikliku parooli seadistad operaatorilt saadud ühekordse lingiga. Kui parool või telefon on
     kadunud, pöördu teise halduri või operaatori poole.
   </p>
-</div>
 {% endblock %}

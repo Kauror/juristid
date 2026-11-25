@@ -97,6 +97,9 @@ def _shell(request: HttpRequest, context: ReportingContext, tab: str) -> dict[st
     return {
         "reporting": context,
         "tabs": ADMIN_TABS if tab in ADMIN_TAB_KEYS else TABS,
+        # Ajalugu, Andmekvaliteet and Definitsioonid are Haldus destinations
+        # (docs/adr/0221): their pages keep the Haldus sidebar.
+        "in_haldus": tab in ADMIN_TAB_KEYS,
         "active_tab": tab,
         "period_options": filters.period_options(
             context, also_offered=[year.key for year in years]

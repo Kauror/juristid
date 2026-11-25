@@ -15,7 +15,9 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
 {% endcomment %}
 
 {% block content %}
+{% load haldus %}
 <div class="page">
+  {% if in_haldus %}<div class="haldus__layout">{% haldus_sidebar %}<div class="haldus__main">{% endif %}
   <div class="pagehead">
     <h1 class="pagehead__title">Statistika</h1>
     <span class="pagehead__context">
@@ -210,5 +212,6 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
   </div>
 
   {% block statistics %}{% endblock %}
+  {% if in_haldus %}</div></div>{% endif %}
 </div>
 {% endblock %}
