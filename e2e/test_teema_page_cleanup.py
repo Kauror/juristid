@@ -451,7 +451,7 @@ def test_nine_columns_at_768_never_print_one_label_over_another(page, base_url):
     column and printed over «Arvamuse tähtaeg». A column is never narrower than
     its own longest word now (`static/css/app.css`, `.tl-strip`), so at 768 the
     long one is wider and the rest share what is left; the page itself never
-    scrolls sideways, and on a phone the rail scrolls itself as it always did.
+    scrolls sideways, and on a phone the rail is a vertical list (UX-001).
     """
     sign_in(page, base_url, SANDRA)
     ahead = date.today() + timedelta(days=30)
@@ -475,19 +475,23 @@ def test_nine_columns_at_768_never_print_one_label_over_another(page, base_url):
         assert overprinted(boxes) == [], (width, overprinted(boxes))
         for box in boxes:
             assert box["right"] <= box["columnRight"] + 0.5, (width, box)
-        # Contiguous columns, so the one solid run is one line with no gap.
-        for before, after in pairwise(boxes):
-            assert abs(after["columnLeft"] - before["columnRight"]) <= 0.5, (width, before, after)
+        # Contiguous columns, so the one solid run is one line with no gap — on a
+        # row; below 720px the rail is a vertical list (UX-001, N-A2).
+        if width > 720:
+            for before, after in pairwise(boxes):
+                assert abs(after["columnLeft"] - before["columnRight"]) <= 0.5, (
+                    width,
+                    before,
+                    after,
+                )
         assert_no_sideways_scroll(page)
 
         geometry = rail.evaluate(
             "node => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })"
         )
-        if width >= 768:
-            # Nine floors fit at 768, so the rail does not scroll there.
-            assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, (width, geometry)
-        else:
-            assert geometry["scrollWidth"] > geometry["clientWidth"], (width, geometry)
+        # Nine floors fit at 768, so the rail does not scroll there; below 720
+        # it is a vertical list (UX-001, N-A2) and does not scroll sideways either.
+        assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, (width, geometry)
 
 
 # ---------------------------------------------------------------------------

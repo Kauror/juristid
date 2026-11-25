@@ -1,0 +1,23 @@
+{% comment %}
+  The Haldus sidebar (docs/adr/0221), drawn by `{% haldus_sidebar %}` from the
+  registry in app/haldus/sections.py: the reader's visible groups, each with
+  only its visible items, the current one marked. Two renderings of one list:
+  a column beside the page from 900 px up, and a «Haldus» menu that opens
+  above the page on a narrower screen. Only one of them is displayed at a
+  time, so a screen reader meets one navigation. Plain links and a native
+  <details>: keyboard and Escape-free, no script.
+{% endcomment %}
+{% if groups %}
+  <nav class="haldusnav" aria-label="Haldus">
+    {% include "haldus/_sidebar_list.html" with prefix="haldusnav" %}
+  </nav>
+  <details class="haldusmenu">
+    <summary class="haldusmenu__summary">
+      <span class="haldusmenu__title">Haldus</span>
+      {% if active_label %}<span class="haldusmenu__current">{{ active_label }}</span>{% endif %}
+    </summary>
+    <nav class="haldusmenu__panel" aria-label="Haldus">
+      {% include "haldus/_sidebar_list.html" with prefix="haldusmenu" %}
+    </nav>
+  </details>
+{% endif %}

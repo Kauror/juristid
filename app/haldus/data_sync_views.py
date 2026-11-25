@@ -1,4 +1,9 @@
-"""Haldus → Andmete sünkroonimine: Lovable and OneNote, for a technical administrator.
+"""Haldus → Integratsioonid → Lovable and OneNote, for a technical administrator.
+
+Two destinations since UX-002 (docs/adr/0221) over the same services and the
+same addresses: Lovable's overview stays at `haldus:data_sync` with its
+differences, history, names and details; OneNote's overview is
+`haldus:onenote`, with the capture check, the import and the held readings.
 
 Every route asks `may_open_system` (a verified technical administrator) through
 the shell's section registry and answers 404 otherwise, like Süsteemi seis and
@@ -41,17 +46,24 @@ from app.legacy_import import sync_admin
 from app.legacy_import.lovable_sync_models import SyncMode
 from app.legacy_import.sync_requests_models import SyncRequestLane
 
-SECTION = "andmed"
+SECTION = "lovable"
+ONENOTE = "onenote"
 NOT_HERE = "Lehte ei leitud."
 FRESH_PROOF = "Kinnita enne käivitamist uuesti oma isik."
 
-#: The sub-pages, in the strip's order: (key, label, url name).
+#: Lovable's sub-pages, in the strip's order: (key, label, url name).
 PAGES = (
     ("ulevaade", "Ülevaade", "haldus:data_sync"),
     ("erinevused", "Erinevused", "haldus:data_sync_differences"),
     ("ajalugu", "Ajalugu", "haldus:data_sync_history"),
     ("nimed", "Lovable'i nimed", "haldus:data_sync_names"),
     ("lovable", "Lovable'i üksikasjad", "haldus:lovable"),
+)
+
+#: OneNote's sub-pages: its overview and the held readings.
+ONENOTE_PAGES = (
+    ("ulevaade", "Ülevaade", "haldus:onenote"),
+    ("ootel", "Ootel kirjed", "haldus:onenote_holds"),
 )
 
 #: What a run does in each mode — the confirmation says it before anybody presses.
@@ -81,8 +93,8 @@ def recorded_message(lane: str, done: str) -> str:
     return f"Taotlus on salvestatud, kuid seda pole veel käivitatud. {runner.note}"
 
 
-def _require(request: HttpRequest) -> None:
-    if not any(item.key == SECTION for item in visible_sections(request)):
+def _require(request: HttpRequest, key: str = SECTION) -> None:
+    if not any(item.key == key for item in visible_sections(request)):
         raise Http404(NOT_HERE)
     admin_session.note_activity(request)
 
@@ -101,21 +113,32 @@ def _actor(request: HttpRequest) -> Any:
     return actor
 
 
-def _context(request: HttpRequest, page: str, **extra: Any) -> dict[str, Any]:
+def _context(
+    request: HttpRequest, page: str, *, item: str = SECTION, **extra: Any
+) -> dict[str, Any]:
     return {
         "haldus_sections": visible_sections(request),
-        "haldus_active": SECTION,
+        "haldus_active": item,
         "nav_active": "haldus",
-        "sync_pages": sync_pages(page),
+        "sync_pages": onenote_pages(page) if item == ONENOTE else sync_pages(page),
+        "sync_label": "OneNote'i lehed" if item == ONENOTE else "Lovable'i lehed",
         **extra,
     }
 
 
 def sync_pages(active: str) -> list[dict[str, Any]]:
-    """The section's own strip of sub-pages; ``active`` names the current one."""
+    """Lovable's own strip of sub-pages; ``active`` names the current one."""
     return [
         {"key": key, "label": label, "url": reverse(name), "active": key == active}
         for key, label, name in PAGES
+    ]
+
+
+def onenote_pages(active: str) -> list[dict[str, Any]]:
+    """OneNote's own strip of sub-pages; ``active`` names the current one."""
+    return [
+        {"key": key, "label": label, "url": reverse(name), "active": key == active}
+        for key, label, name in ONENOTE_PAGES
     ]
 
 
@@ -137,7 +160,7 @@ def _fresh_proof(request: HttpRequest, back: str) -> HttpResponseBase | None:
 @never_cache
 @require_http_methods(["GET", "HEAD"])
 def overview(request: HttpRequest) -> HttpResponse:
-    """Both panels, the open requests and the actions. Reads only."""
+    """Lovable's overview: its panel, its open requests and its actions. Reads only."""
     _require(request)
     return render(
         request,
@@ -146,9 +169,22 @@ def overview(request: HttpRequest) -> HttpResponse:
             request,
             "ulevaade",
             lovable=sync_admin.lovable_panel(request.user),
-            onenote=sync_admin.onenote_panel(),
             mode_effect=MODE_EFFECT.get(sync_admin.current_mode(), ""),
         ),
+    )
+
+
+@never_cache
+@require_http_methods(["GET", "HEAD"])
+def onenote(request: HttpRequest) -> HttpResponse:
+    """OneNote's overview (docs/adr/0221): the panel the combined page showed, on
+    its own page — coverage, the capture check, the import and its requests.
+    Reads only; the forms post to the routes they always posted to."""
+    _require(request, ONENOTE)
+    return render(
+        request,
+        "haldus/onenote.html",
+        _context(request, "ulevaade", item=ONENOTE, onenote=sync_admin.onenote_panel()),
     )
 
 
@@ -382,7 +418,7 @@ def history(request: HttpRequest) -> HttpResponse:
 @require_http_methods(["POST"])
 def onenote_verify(request: HttpRequest) -> HttpResponse:
     """«OneNote'i impordi kontroll»: a request to check one named capture on the host."""
-    _require(request)
+    _require(request, ONENOTE)
     actor = _actor(request)
     try:
         sync_admin.request_onenote_verify(
@@ -400,14 +436,14 @@ def onenote_verify(request: HttpRequest) -> HttpResponse:
                 SyncRequestLane.ONENOTE, "Server kontrollib kogumit; tulemus ilmub siia."
             ),
         )
-    return redirect(f"{reverse('haldus:data_sync')}#onenote")
+    return redirect("haldus:onenote")
 
 
 @never_cache
 @require_http_methods(["GET", "HEAD", "POST"])
 def onenote_import(request: HttpRequest) -> HttpResponseBase:
     """«Impordi OneNote'i materjalid»: GET confirms a verified capture, POST records the import."""
-    _require(request)
+    _require(request, ONENOTE)
     source = request.POST if request.method == "POST" else request.GET
     capture = sync_admin.valid_capture_name(str(source.get("capture", "")))
     if capture is None:
@@ -421,6 +457,7 @@ def onenote_import(request: HttpRequest) -> HttpResponseBase:
     context = _context(
         request,
         "ulevaade",
+        item=ONENOTE,
         capture=capture,
         plan=plan,
         check=check,
@@ -450,7 +487,7 @@ def onenote_import(request: HttpRequest) -> HttpResponseBase:
                 "Server kontrollib kogumi uuesti ja impordib ainult siis, kui plaan on sama.",
             ),
         )
-        return redirect(f"{reverse('haldus:data_sync')}#onenote")
+        return redirect("haldus:onenote")
     return render(request, "haldus/data_sync_import.html", context)
 
 

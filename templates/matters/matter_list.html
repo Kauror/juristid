@@ -5,8 +5,8 @@
 
 {% comment %}
 The register. Filter state lives in the URL so a view can be shared, bookmarked
-and reached with Back — which is what a saved-view framework would otherwise be
-invented to do (master specification 7.4).
+and reached with Back (master specification 7.4); a person's named views keep
+such an address and nothing more (docs/adr/0222).
 
 Stage 2E.1 adds a search box that answers while you type, and a Täpsem otsing
 panel beside it. Both write to the same URL as the chips do, so what is on
@@ -23,15 +23,21 @@ localStorage (Stage-2E.1 brief 12).
   </div>
 
   {% comment %}
-    Saved views. Not a stored object anywhere: this register has always kept its
-    whole state in the URL, so a view is a *named* link — bookmarkable, pasteable
-    and reachable with Back. Naming the four combinations everybody rebuilds by
-    hand every morning is the whole feature, and adding a preferences table for
-    it would give the product a second place where "what am I looking at" lives
+    Saved views. The four predefined chips are named links whose query string is
+    their definition; each count comes from running its own parameters through
+    the register's filter pipeline, so a chip reading 12 opens twelve rows
     (master specification 7.4, design handoff 2d).
 
-    Each chip's count comes from running its own parameters through the
-    register's filter pipeline, so a chip reading 12 opens twelve rows.
+    «Minu vaated» (docs/adr/0222, superseding ADR 0043 §2): a person may keep up
+    to twenty addresses of their own under names of their own, after the four.
+    What is stored is the canonical query and nothing else — no rows, no count,
+    no access decision — so opening one is the ordinary register request, and
+    its count comes from the same pipeline in one statement for all of them
+    (app/matters/saved_views.py). Six are chips — three on a narrow screen, so
+    the strip does not push the list itself down a phone's first screen; all of
+    them, with «Nimeta ümber» and «Eemalda», are under «Minu vaated ▾», which
+    keeps the strip short whatever a person saves. Private to the person; the address is still the
+    thing that is shared.
   {% endcomment %}
   <div class="uxviews" role="group" aria-label="Salvestatud vaated">
     {% for view in saved_views %}
@@ -40,19 +46,78 @@ localStorage (Stage-2E.1 brief 12).
          href="?{{ view.query }}">{{ view.label }} · {{ view.count }}</a>
     {% endfor %}
 
+    {% for view in personal_views_shown %}
+      <a class="uxchip uxchip--mine{% if forloop.counter > personal_views_narrow %} uxchip--minewide{% endif %}{% if view.active %} is-selected{% endif %}"
+         {% if view.active %}aria-current="true"{% endif %}
+         href="?{{ view.query }}"
+         title="Minu vaade{% if view.dropped %} — filtrid, mida enam ei ole, jäeti välja{% endif %}">{{ view.name }} · {{ view.count }}</a>
+    {% endfor %}
+
+    {% if personal_views %}
+      <details class="uxviews__mine" data-uxpopover>
+        {# One inline run inside the chip, so the flex chip keeps the spaces around «+N». #}
+        <summary class="uxchip uxchip--dashed"><span>Minu vaated{% if personal_views_hidden %}<span class="uxviews__more--wide"> · +{{ personal_views_hidden }}</span>{% endif %}{% if personal_views_hidden_narrow %}<span class="uxviews__more--narrow"> · +{{ personal_views_hidden_narrow }}</span>{% endif %} ▾</span></summary>
+        <div class="uxviews__minebody">
+          <p class="uxviews__note">Sinu vaated ({{ personal_views|length }}/{{ personal_views_max }}). Neid näed ainult sina; iga vaate link on jagatav.</p>
+          <ul class="uxviews__list">
+            {% for view in personal_views %}
+              <li class="uxviews__item">
+                <a class="uxviews__itemlink{% if view.active %} is-selected{% endif %}" href="?{{ view.query }}"{% if view.active %} aria-current="true"{% endif %}>{{ view.name }}<span class="uxviews__itemcount"> · {{ view.count }}</span></a>
+                {% if view.dropped %}<span class="uxviews__itemnote">Mõni filter ei kehti enam ja jäeti välja.</span>{% endif %}
+                <div class="uxviews__itemactions">
+                  <form class="uxviews__rename" method="post" action="{% url 'matters:rename_view' pk=view.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <label class="visually-hidden" for="vaade-{{ view.pk }}-nimi">Vaate «{{ view.name }}» uus nimi</label>
+                    <input class="field__input field__input--compact uxviews__name" id="vaade-{{ view.pk }}-nimi" name="nimi" value="{{ view.name }}" maxlength="60" required autocomplete="off">
+                    <button class="button button--quiet button--tiny" type="submit">Nimeta ümber<span class="visually-hidden">: {{ view.name }}</span></button>
+                  </form>
+                  <details class="uxviews__remove">
+                    <summary class="button button--quiet button--tiny">Eemalda<span class="visually-hidden"> vaade {{ view.name }}</span></summary>
+                    <form class="uxviews__confirm" method="post" action="{% url 'matters:remove_view' pk=view.pk %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                      <span class="uxviews__note">Eemaldada vaade «{{ view.name }}»? Teemad jäävad alles.</span>
+                      <button class="button button--danger button--tiny" type="submit">Jah, eemalda</button>
+                    </form>
+                  </details>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </details>
+    {% endif %}
+
     {% comment %}
-      «Salvesta praegune filter vaatena» — and what it saves is the address,
-      because the address is the view. The control hands over the link rather
-      than pretending to store something: a name typed here would have to live
-      somewhere, and there is nowhere for it to live that a bookmark does not
-      already cover better.
+      «Salvesta praegune filter vaatena»: a name keeps the current address among
+      «Minu vaated»; «Kopeeri» still hands over the address itself, which is
+      what a colleague receives — they see it through their own access.
     {% endcomment %}
     <details class="uxviews__save" data-uxpopover>
       <summary class="uxchip uxchip--dashed">+ Salvesta praegune filter vaatena</summary>
       <div class="uxviews__savebody">
+        {% if not current_view_query %}
+          <p class="uxviews__note">See on Teemade vaikevaade. Vali enne salvestamist mõni filter või otsing.</p>
+        {% elif personal_views|length >= personal_views_max %}
+          <p class="uxviews__note">Sul on juba {{ personal_views_max }} vaadet. Eemalda mõni «Minu vaated» alt, et uus salvestada.</p>
+        {% else %}
+          <form class="uxviews__saveform" method="post" action="{% url 'matters:save_view' %}">
+            {% csrf_token %}
+            <input type="hidden" name="vaade" value="{{ current_view_query }}">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <label class="uxviews__label" for="teemad-vaate-nimi">Vaate nimi</label>
+            <div class="uxviews__saverow">
+              <input class="field__input field__input--compact uxviews__name"
+                     id="teemad-vaate-nimi" name="nimi" maxlength="60" required autocomplete="off"
+                     placeholder="nt Minu kooskõlastused">
+              <button class="button button--primary button--tiny" type="submit">Salvesta</button>
+            </div>
+            <p class="uxviews__note">Vaade jääb «Minu vaated» alla ja on nähtav ainult sulle.</p>
+          </form>
+        {% endif %}
         <p class="uxviews__note">
-          Vaade elab aadressis. Kopeeri link ja pane järjehoidjasse või saada kolleegile —
-          ta näeb täpselt seda, mida sina praegu näed.
+          Või kopeeri link ja pane järjehoidjasse või saada kolleegile — ta näeb sama vaadet oma õigustega.
         </p>
         <div class="uxviews__saverow">
           <label class="visually-hidden" for="teemad-vaate-link">Praeguse vaate link</label>

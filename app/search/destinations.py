@@ -153,6 +153,10 @@ def _matches(query_words: list[str], entry_words: list[str]) -> bool:
     return all(any(word.startswith(part) for word in entry_words) for part in query_words)
 
 
+#: The URL names `DESTINATIONS` already names, so a Haldus item is never listed twice.
+_OWN_ENTRIES = frozenset(entry.url_name for entry in DESTINATIONS)
+
+
 def _haldus_sections(request: HttpRequest) -> list[Destination]:
     """The Haldus sections this reader may open, through their own registry."""
     from app.haldus.sections import visible_sections
@@ -165,7 +169,8 @@ def _haldus_sections(request: HttpRequest) -> list[Destination]:
             context="Haldus",
         )
         for section in visible_sections(request)
-        if section.key not in ("ulevaade", "uuendused")
+        # Ülevaade is «Haldus» above; a page with an entry of its own keeps that one.
+        if section.key != "ulevaade" and section.url_name not in _OWN_ENTRIES
     ]
 
 

@@ -105,6 +105,7 @@ from app.matters.process_phases import (
     phase_label,
 )
 from app.matters.process_timeline import (
+    PHASE_CLOSED,
     PHASE_EFFECTIVE,
     PHASE_TRANSPOSITION,
     STATE_AHEAD,
@@ -272,7 +273,12 @@ class PhaseContext:
         return self.pattern.phase_for_stage(self.stage_key)
 
 
-def phase_context(*, matter: Matter, instrument_keys: frozenset[str] | None = None) -> PhaseContext:
+def phase_context(
+    *,
+    matter: Matter,
+    instrument_keys: frozenset[str] | None = None,
+    snapshot: tuple[Any, Any, Any, Any] | None = None,
+) -> PhaseContext:
     """Resolve one Matter's pattern and current stage. **A read, never a write.**
 
     Choosing a pattern from `Õigusakt` is a *presentation* decision and must never
@@ -284,12 +290,19 @@ def phase_context(*, matter: Matter, instrument_keys: frozenset[str] | None = No
 
     ``instrument_keys`` is passed in by a caller that has already read them, so
     the page does not ask twice.
+
+    ``snapshot`` is ``(stage key, stage label, track, disposition)`` from a
+    caller that has *just* read the row in the same request and writes nothing
+    before it asks — the preview drawer's GET (app/matters/preview.py). Never
+    from an instance fetched before a write: that is the stale reading this
+    function's own read exists to avoid.
     """
-    snapshot = (
-        Matter.objects.filter(pk=matter.pk)
-        .values_list("stage__key", "stage__label_et", "track", "disposition")
-        .first()
-    )
+    if snapshot is None:
+        snapshot = (
+            Matter.objects.filter(pk=matter.pk)
+            .values_list("stage__key", "stage__label_et", "track", "disposition")
+            .first()
+        )
     if snapshot is None:  # pragma: no cover - the caller holds a saved Matter
         return PhaseContext()
     stage_key, stage_label, track, disposition = snapshot
@@ -729,6 +742,10 @@ class RailStep:
     #: Folded onto the phase they belong to, they are one column with its dates
     #: under it, and the text is text (docs/adr/0100 §3).
     notes: tuple[str, ...] = ()
+    #: The record behind each line of ``notes``, in the same order (``None``
+    #: where a line has none), so the popover keeps every fact with its own
+    #: description and source (UX-001). Presentation only; not compared.
+    note_records: tuple[Any, ...] = field(default=(), compare=False)
     #: How much of the connector running from this item to the next is behind
     #: us. Decided for the whole rail at once by `_one_backbone`, never per item:
     #: an item does not know which neighbour the merge will give it.
@@ -1152,6 +1169,7 @@ def matter_rail(
                 display_date=milestone.display,
                 sort_on=milestone.sort_on,
                 detail=milestone.detail,
+                record=getattr(milestone, "record", None),
             )
         # Recomputed rather than carried, because placing a dated point that has
         # already happened moves the current node one to the right.
@@ -1191,6 +1209,25 @@ def matter_rail(
             beginning = _beginning_slot(steps, rail)
             default = current if beginning is None else max(current, beginning + 1)
             window = (0, high)
+            if milestone.phase == PHASE_CLOSED:
+                # **`Lõpetatud` reads inside the phase the file was closed in,
+                # after its node** (coordinator review 2026-11-25). The rule
+                # above puts a past point *before* the current phase because the
+                # file may have reached that phase after the act. A closure is
+                # the one act for which that cannot be so: a closed Matter stays
+                # in the period it was closed in and its stage moves only
+                # through `Ava uuesti` (docs/adr/0131 §12, `change_stage`). So
+                # the current phase had begun when Koda's work ended, and the
+                # closure follows its node — and the dated points already read
+                # inside it, by date. It is still not the end of the rail: the
+                # procedure's later phases and a deadline still ahead go on
+                # reading after it, because the end of Koda's work is not the
+                # end of the proceedings (docs/adr/0074 §12.4). An explicit
+                # roadmap date on the current phase later than the closure is
+                # still believed (docs/adr/0100, amendment of 2026-09-27,
+                # rule 1): the scan below then places it before that node.
+                window = (min(current, len(steps)), high)
+                default = min(current + 1, len(steps))
         else:
             # **A future point with no phase of its own belongs beside the
             # current one, not at the end of the road.**
@@ -1613,6 +1650,7 @@ def _fold_into_phase(steps: list[RailStep], milestone: Any) -> bool:
         display_date=node.display_date or milestone.display,
         sort_on=node.sort_on or milestone.sort_on,
         notes=(*node.notes, line),
+        note_records=(*node.note_records, getattr(milestone, "record", None)),
     )
     return True
 

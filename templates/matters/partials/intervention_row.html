@@ -30,6 +30,7 @@ rest behind «Näita veel N ▾» — and two copies of a row are two rows that 
         {% endcomment %}
         {{ row.detail }}
       </span>
+      {% if row.consistency_alert %}{% include "matters/partials/consistency_mark.html" with alert=row.consistency_alert %}{% endif %}
     </span>
     <span class="interrow__stage">{{ row.stage_label }}</span>
     <span class="interrow__owner">

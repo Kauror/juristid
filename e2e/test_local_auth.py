@@ -174,7 +174,7 @@ def test_the_first_administrator_activates_and_must_enrol(
     page.locator(".topbar").get_by_role("link", name="Haldus", exact=True).click()
     page.wait_for_url(f"{local_base_url}/haldus/")
     expect(
-        page.get_by_role("navigation", name="Halduse osad").get_by_role(
+        page.get_by_role("navigation", name="Haldus", exact=True).get_by_role(
             "link", name="Kasutajad ja õigused"
         )
     ).to_be_visible()

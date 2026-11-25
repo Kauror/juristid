@@ -69,6 +69,8 @@ DISCLOSURES: dict[str, Disclosure] = {
         # Minu asjad.
         Disclosure("my_work.statistics", True, "Minu asjad · Minu statistika"),
         Disclosure("my_work.recent_activity", True, "Minu asjad · Viimased tegevused"),
+        # Teavitused: the history below the inbox, closed until the reader opens it.
+        Disclosure("notifications.history", False, "Teavitused · Varasemad"),
         # Teema → Dokumendid.
         Disclosure("matter_documents.working", False, "Teema · Dokumendid · SharePointi viited"),
         Disclosure("matter_documents.archive", False, "Teema · Dokumendid · Seotud arhiivikirjad"),
@@ -82,6 +84,14 @@ DISCLOSURES: dict[str, Disclosure] = {
         ),
         Disclosure("reporting.definition", False, "Statistika · Definitsioon (iga arvu all)"),
         Disclosure("reporting.chart_table", False, "Statistika · Joonise andmed tabelina"),
+        # Haldus → Integratsioonid → OneNote: the purely diagnostic counts
+        # (pages per state, other pages, uncovered sections). Folded by default;
+        # status, held readings and every action stay outside it.
+        Disclosure(
+            "haldus.onenote.diagnostics",
+            False,
+            "Haldus · OneNote · Üksikasjad (lehed oleku järgi, muud lehed)",
+        ),
     )
 }
 

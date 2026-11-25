@@ -7,6 +7,52 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# Kavandatud järgmine väljalase pärast r93 (ööprogramm 25.11.2026, kumulatiivne kandidaat): B1 #718, B2 #722,
+# C1 #717, C2 #720, D1 #713, D2 #716, D3 #719, E1 #715. Kuupäev ja väljalaskeid jaotus (r94/r95) otsustatakse ülevaatusel;
+# kirje liigub paigalduspäeva alla (README: üks kirje päevas, kuupäev = paigalduspäev).
+[[day]]
+date = 2026-11-26
+basis = "deployment"
+prs = [713, 715, 716, 717, 718, 719, 720, 722]
+changes = [
+  "Haldus on nüüd korrastatud: vasakul on menüü seitsme rühmaga (Ülevaade, Isiklikud seaded, Töökorraldus, Andmed, Integratsioonid, Süsteem ja õigused, Rakendus). Menüüs on ainult need lehed, mida sa avada saad.",
+  "Haldus → Ülevaade näitab lühidalt, mis vajab tähelepanu; korras olev võtab ühe rea.",
+  "Lovable, OneNote ja registrite jälgimine on eraldi lehed (Integratsioonid). Vanad lingid töötavad edasi.",
+  "Haldus → OneNote: üksikasjalikud loendused (lehed oleku järgi, muud lehed, katmata jaotised) on kokku volditud; seis, ootel kirjed ja toimingud on nähtaval nagu enne.",
+  "Kujunduse lüliti ja «Taasta plokkide vaikeseaded» on nüüd Isiklikud seaded → Kuvamine.",
+  "Haldus → Isiklikud seaded → Kuvamine: saad valida, milline leht avaneb pärast sisselogimist (Minu asjad, Teemad, Osakond, Statistika, Monitooring või Teavitused). Otselink avab ikka oma lehe.",
+  "Samas saad valida teksti suuruse: Väike, Tavaline, Suur või Väga suur. Valik jääb meelde selles brauseris. Suurus muudab ka nuppe, filtrinuppe, olekusilte, menetluse kulu silte ja hüpikuid, menüüsid ning tabelite teksti; Tavaline on täpselt endine. Suure teksti korral mahuvad registri kuupäevad oma veergu ja telefonis ei lükka filtrid ega otsing lehte külgsuunas laiali.",
+  "Teemade ja Saabunud nimekirjas on pealkirja lõpus väike eelvaate ikoon: see avab külgpaneeli teema kokkuvõtte, järgmise sammu ja vastutaja, olulise tähtaja, menetluse käigu ja viimaste tegevustega — nimekiri, filtrid ja kerimiskoht jäävad paigale. Paneel sulgub Esc-klahviga, ristist või paneeli kõrvalt klõpsates ning viimati vaadatud teema rida on nimekirjas märgitud. Kui avad järjest mitu eelvaadet, näitab paneel alati viimati valitud teemat.",
+  "Teemalt «Tagasi tulemustesse» naastes keritakse nimekiri selle teema reani.",
+  "Teemade nimekirjas saab praeguse filtri salvestada oma nimega vaateks: «+ Salvesta praegune filter vaatena» → anna nimi → Salvesta. Vaade ilmub nelja tavavaate järele koos teemade arvuga; «Minu vaated» alt saab oma vaateid avada, ümber nimetada ja eemaldada. Vaateid võib olla kuni 20 ja need on nähtavad ainult sulle; vaate linki saab endiselt kolleegile saata — ta näeb seda oma õigustega. Telefonis on nimekirja kohal kuni kolm oma vaadet, ülejäänud on «Minu vaated» all. Kui salvestad või nimetad vaate korraga kahes aknas sama nimega, saad teate, et selline vaade on juba olemas.",
+  "Statistika rekordikaardid on nüüd lingid: rekordaasta avab selle aasta, rekordkuu selle kuu arvamused ja trendi rekord märgib trendil vastava aasta. Kui mitu aastat või kuud jagavad rekordit, saab avada igaüht neist.",
+  "Statistika iga graafiku saab alla laadida PNG-, läbipaistva PNG-, SVG- või Excel-failina; tabelid Excelina. Joonisel on pealkiri, periood, valitud jurist, legend ja märkused; Excelis on andmed ja eraldi teabeleht. Mõõdetud null on 0, puuduvad andmed jäävad tühjaks ja on märkuses kirjas.",
+  "Statistika rekordites loetakse mõõdetud null päris väärtuseks: kui tähtaeg oli teema saabumise päeval (0 päeva), võib see aasta olla lühima tähtajaga aasta. Aasta, mille kohta andmeid pole, rekordit ei saa.",
+  "Minu asjade «Minu statistika» all on link «Kõik minu statistika», mis avab sinu enda näitajad kuude kaupa. Need loetakse sinu tehtu ja tol ajal sinu vastutusel olnud teemade järgi; Minu asjade ja Statistika arvud loevad teema praeguse vastutaja järgi — mõlemal lehel on see kirjas, nii et erinevad arvud ei ole vastuolus.",
+  "Minu statistikas on iga kuu arvu juures näha, kui palju sellest on teada: täielik kuu, osaline kuu (näiteks «osaline: alates 14.09.2026» või jooksev kuu), «vähemalt N», kui ajalugu on poolik, või «andmed puuduvad». «Vastutusel avatud teemasid kuu lõpus» on taastatud vastutus: kuu viimasel päeval lõpetatud teema seda kuud ei koorma ja taasavatud teema loetakse taasavamisest.",
+  "Vastutaja muutmisel jätab Juristid nüüd meelde ka inimese, mitte ainult nime, nii et nime muutmine ei kaota ajalugu.",
+  "Minu asjades ja osakonnajuhi «Vajab sekkumist» loendis on nüüd märge «Praegune tegevus võib olla juba tehtud» samal real, kus see tegevus on — sama teade ja sama põhjus, mida teema leht näitab praeguse tegevuse all.",
+]
+
+# Kavandatud väljalase r93: pakett A1 (UX-003, UX-004; #711) ja pakett A2 (UX-001; #712) ühes kirjes.
+# Kuupäev on oodatav paigalduspäev ja pannakse lõplikult paika väljalaske ettevalmistamisel; kui r93 jõuab
+# tootmisse muul päeval, tõsta read selle päeva kirjesse (README: üks kirje päevas, kuupäev = paigalduspäev).
+[[day]]
+date = 2026-11-25
+basis = "deployment"
+prs = [711, 712]
+changes = [
+  "Minu asjade «Viimastes tegevustes» on iga tegevus ühel real: teema pealkirja järel on kohe kuupäev ja tegevuse liik (ja kolleegi nimi, kui tegevuse tegi keegi teine). Korraga on näha 20 tegevust, ülejäänud on nagu varem «Näita veel» all.",
+  "Teavituste lehe «Varasemad» on nüüd kokku volditav ja vaikimisi kinni; pealkirjas on varasemate teavituste arv. Juristid jätab meelde, kas hoiad selle lahti või kinni. «Näita varasemaid» avab selle alati, ning lahti- või kinnivoltimine ei märgi ühtegi teavitust loetuks ega lugemata.",
+  "Menetluse kulg on kompaktsem ja ühtlane: kõik etapid ja kuupäevad on ühel katkematul joonel, igaühe all on nimi, kuupäev ja üks rida kirjeldust. Mitu jõustumiskuupäeva on endiselt eraldi ridadena.",
+  "Kogu kirjeldus, märkused ja allikas on etapi hüpikus: see avaneb, kui hiir peatub etapil, klaviatuuriga või puudutusega, ja sulgub Esc-iga. Allikas on alati viimane; kui jõustumisel on avaldatud allika aadress (näiteks Riigi Teataja), on see link. Lovable'ist tulnud kirje hüpik ütleb, et seda muudetakse Lovable'is.",
+  "Kui menetluse kulul on rohkem samme, kui ekraanile mahub, näitab serv seda ning ‹ ja › kerivad ülejäänud nähtavale; kerida saab ka klaviatuuri nooltega ja puudutusega.",
+  "Kolleegi lisatud eeldatava jõustumise eemaldamise ✕ ei ole enam menetluse kulus endas, vaid menetluse kulu «Muuda» paneelis loendis «Eeldatavad jõustumised», sama kinnitusega nagu varem.",
+  "Telefonis on menetluse kulg püstine loend, mida ei pea külgsuunas kerima.",
+  "Suletud teema menetluse kulul ei ole enam nuppu «Muuda» ega kuupäeva lisamise otseteid: suletud teemat ei saa muuta, ja kui teema suletakse ajal, mil kellelgi on muutmisaken lahti, siis selle salvestamisest keeldutakse. Teema uuesti avamine annab muutmise tagasi.",
+  "Suletud teema menetluse kulus on «Lõpetatud» nüüd selle etapi järel, milles koja töö lõppes, mitte enne seda. Menetluse hilisemad etapid on endiselt selle järel.",
+]
+
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
 # sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
 # #691, #692, #693, #694, #695.

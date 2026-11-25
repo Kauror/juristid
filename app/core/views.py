@@ -93,7 +93,11 @@ def home(request: HttpRequest) -> HttpResponse:
     from app.accounts import shared_gate
 
     if request.user.is_authenticated:
-        return redirect("matters:my_work")
+        # The person's chosen landing page, re-checked now; Minu asjad when
+        # there is none or it is no longer theirs to open (docs/adr/0221).
+        from app.accounts.landing import landing_url
+
+        return redirect(landing_url(request.user))
     if shared_gate.has_passed(request):
         # Not `matters:my_work`: that page is one person's desk and there is no
         # person yet. Not `matters:overview` either — the department view is a

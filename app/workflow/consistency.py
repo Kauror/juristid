@@ -40,7 +40,9 @@ is not told, by an alert, that one exists.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Any
 
 from app.workflow.enums import ActionKind, ActionStatus, PlanStepOperation
@@ -93,44 +95,179 @@ def _proof_sentence(step: Any, done: Any) -> str:
     return PROOF_OPINION
 
 
-def step_already_recorded(matter: Any, current_action: Any, viewer: Any) -> ConsistencyAlert | None:
-    """The current step is a standard step the record proves done since it was set.
+@dataclass(frozen=True)
+class CurrentStep:
+    """The facts the rule reads of one current step — from a `NextAction` or a work row.
+
+    A work list holds `WorkItem` rows, not `NextAction` objects, so the rule
+    reads these seven facts rather than either shape: the Teema page builds
+    one from its `NextAction` (:meth:`of_action`), Minu asjad and Osakond from
+    the row they already render (:meth:`of_item`). Nothing else is read.
+    """
+
+    matter: Any
+    action_id: Any
+    is_current: bool
+    kind: str
+    is_follow_up: bool
+    plan_step_id: Any
+    set_at: datetime | None
+
+    @classmethod
+    def of_action(cls, matter: Any, action: Any) -> CurrentStep:
+        return cls(
+            matter=matter,
+            action_id=action.pk,
+            is_current=action.status == ActionStatus.OPEN,
+            kind=action.kind,
+            is_follow_up=action.follow_up_id is not None,
+            plan_step_id=action.plan_step_id,
+            set_at=action.created_at,
+        )
+
+    @classmethod
+    def of_item(cls, item: Any) -> CurrentStep | None:
+        """A work row's step, or ``None`` for a row that is not a `NextAction`."""
+        if not item.is_action:
+            return None
+        return cls(
+            matter=item.matter,
+            action_id=item.object_id,
+            # A work row is a live action: `OPEN` — the Matter's current step,
+            # of which there is one (`workflow_one_open_action_per_matter`) —
+            # or `PLANNED`.
+            is_current=not item.is_planned,
+            kind=item.action_kind,
+            is_follow_up=item.is_follow_up,
+            plan_step_id=item.plan_step_id,
+            set_at=item.set_at,
+        )
+
+    @property
+    def may_be_judged(self) -> bool:
+        """Every clause of the rule that needs no read (§1)."""
+        from app.matters.enums import RecordMode
+
+        return (
+            bool(self.matter.is_open)
+            and self.matter.record_mode == RecordMode.FULL
+            and self.is_current
+            and self.kind == ActionKind.DO
+            and not self.is_follow_up
+            and self.plan_step_id is not None
+            and self.set_at is not None
+        )
+
+
+def steps_already_recorded(
+    steps: Iterable[CurrentStep | None],
+    viewer: Any,
+    *,
+    plan_steps: Mapping[Any, Any] | None = None,
+) -> dict[Any, ConsistencyAlert]:
+    """The rule, asked of many current steps at once: action id → alert.
 
     The predicate, every clause of which is a structured fact:
 
     * the Matter is open and a full record (an archive row is history, not work);
-    * ``current_action`` is this reader's current step (`OPEN`), a `DO` — a
-      wait or a watch is somebody else's move, not a task the record finishes —
-      and not an `Arvamuse järelkontroll`, which has its own typed outcome;
+    * the step is this reader's current step (`OPEN`), a `DO` — a wait or a
+      watch is somebody else's move, not a task the record finishes — and not
+      an `Arvamuse järelkontroll`, which has its own typed outcome;
     * it was started from a plan step (`plan_step`; imported, legacy and
       hand-written steps never carry one);
     * `RecordedWork.proves` that step, counting only records this reader may
       see that were entered after the step was set (`since=created_at`).
-    """
-    from app.matters.enums import RecordMode
-    from app.matters.plan_view import RecordedWork
 
-    if current_action is None or not matter.is_open or matter.record_mode != RecordMode.FULL:
-        return None
-    if current_action.status != ActionStatus.OPEN or current_action.kind != ActionKind.DO:
-        return None
-    if current_action.follow_up_id is not None or current_action.plan_step_id is None:
-        return None
-    step = current_action.plan_step
-    if step.matter_id != matter.pk:
-        return None
-    done = RecordedWork.of(matter, viewer, since=current_action.created_at)
-    if not done.proves(step):
-        return None
-    return ConsistencyAlert(
-        key=STEP_ALREADY_RECORDED,
-        title=STEP_ALREADY_RECORDED_TITLE,
-        reason=_proof_sentence(step, done),
-        remedy=STEP_ALREADY_RECORDED_REMEDY,
+    **A constant number of reads, however many steps** (docs/adr/0161,
+    amendment of 2026-11-25): none when no step passes the clauses above;
+    otherwise one for the plan steps not handed in as ``plan_steps`` and
+    `RecordedWork.for_matters`' grouped reads. The single Teema reading
+    (:func:`step_already_recorded`) is this function asked about one step, so
+    a work row and the Teema page cannot disagree.
+    """
+    from app.matters.plan_view import RecordedWork
+    from app.workflow.models import MatterPlanStep
+
+    candidates = [step for step in steps if step is not None and step.may_be_judged]
+    if not candidates:
+        return {}
+    known: dict[Any, Any] = dict(plan_steps or {})
+    missing = {step.plan_step_id for step in candidates} - set(known)
+    if missing:
+        known.update(
+            (row.pk, row)
+            for row in MatterPlanStep.objects.filter(pk__in=missing).only(
+                "matter_id", "template_step_key", "operation"
+            )
+        )
+    judged = [
+        (step, known[step.plan_step_id])
+        for step in candidates
+        if step.plan_step_id in known and known[step.plan_step_id].matter_id == step.matter.pk
+    ]
+    if not judged:
+        return {}
+    done = RecordedWork.for_matters(
+        [step.matter for step, _ in judged],
+        viewer,
+        since={step.matter.pk: step.set_at for step, _ in judged},
     )
+    alerts: dict[Any, ConsistencyAlert] = {}
+    for step, plan_step in judged:
+        recorded = done[step.matter.pk]
+        if recorded.proves(plan_step):
+            alerts[step.action_id] = ConsistencyAlert(
+                key=STEP_ALREADY_RECORDED,
+                title=STEP_ALREADY_RECORDED_TITLE,
+                reason=_proof_sentence(plan_step, recorded),
+                remedy=STEP_ALREADY_RECORDED_REMEDY,
+            )
+    return alerts
+
+
+def step_already_recorded(matter: Any, current_action: Any, viewer: Any) -> ConsistencyAlert | None:
+    """The current step is a standard step the record proves done since it was set.
+
+    :func:`steps_already_recorded` asked about this one step — the Teema page's
+    `PRAEGUNE TEGEVUS`. A plan step already loaded on the action is handed in,
+    so the page pays no read for it.
+    """
+    from app.workflow.models import NextAction
+
+    if current_action is None:
+        return None
+    loaded = (
+        {current_action.plan_step_id: current_action.plan_step}
+        if current_action.plan_step_id is not None
+        and NextAction.plan_step.is_cached(current_action)
+        else None
+    )
+    alerts = steps_already_recorded(
+        [CurrentStep.of_action(matter, current_action)], viewer, plan_steps=loaded
+    )
+    return alerts.get(current_action.pk)
 
 
 def current_work_alerts(matter: Any, current_action: Any, viewer: Any) -> list[ConsistencyAlert]:
     """Every workflow-consistency alert for this Matter's `PRAEGUNE TEGEVUS`, for this reader."""
     alert = step_already_recorded(matter, current_action, viewer)
     return [alert] if alert is not None else []
+
+
+def with_consistency_alerts(items: list[Any], viewer: Any) -> list[Any]:
+    """Work rows with the alert set on the row of each flagged current step.
+
+    For Minu asjad (docs/adr/0161, amendment of 2026-11-25): the rows are the
+    ones the page already read, one `WorkItem` per step; the flagged ones are
+    copied with ``consistency_alert`` set and every other row is returned as
+    it was, in the same order. Nothing is counted, sorted or dropped by it.
+    """
+    alerts = steps_already_recorded([CurrentStep.of_item(item) for item in items], viewer)
+    if not alerts:
+        return items
+    return [
+        replace(item, consistency_alert=alerts[item.object_id])
+        if item.is_action and item.object_id in alerts
+        else item
+        for item in items
+    ]

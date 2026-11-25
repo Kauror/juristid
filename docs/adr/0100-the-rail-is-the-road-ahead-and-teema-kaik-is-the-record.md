@@ -325,3 +325,71 @@ own «Muutmata» chip). Emptied, the date is removed.
   it (`RailItem.type_label`); «Tähtaeg» (passed) and «Töövõit» are still
   written. `event_label`, the upcoming/passed rule, positions and tooltips are
   unchanged.
+
+## Amendment, 2026-11-25 — one track, compact items, the rest in a popover (UX-001)
+
+Presentation only. What the rail holds, its order, every state, the reach of
+today, date precision, the acts, the year labels and the editing routes are
+unchanged; no migration.
+
+1. **One track.** Each item's connector runs from its own dot's centre to the
+   next dot's centre, and every column is the same component in a grid of equal
+   columns. The rail used to draw each connector to its column's own right
+   edge while an event column was capped narrower than its grid track, so on a
+   Teema with several expected commencements the line came apart. `--tl-reach`
+   still measures how much of one segment today has covered. Spacing is the
+   procedure's order, not elapsed time.
+2. **Compact items.** An item shows its name (two lines at most), its date at
+   its recorded precision and one line per fact — a phase with several
+   commencements keeps one line per commencement, never one merged date. Lines
+   are cut with an ellipsis by the stylesheet; the text itself is never
+   shortened.
+3. **The popover holds the rest** (`app/matters/rail_tips.py`): the whole
+   description, the notes, for a Lovable record where it is changed, and
+   «Allikas» last — per fact, so a source is never read as a neighbour's. A
+   stored `http(s)` address is a link (new tab, no opener) showing its host;
+   otherwise the source is plain text: Lovable, the colleague who recorded it,
+   or «teadmata». No address is ever inferred (coordinator decision N-A1: no new
+   field). The popover is the existing `data-uxpopover` / `data-uxfloat="fit"`
+   contract — placed outside the strip's scroll box and inside the window, one
+   open at a time, Escape and an outside click close it — plus hover and
+   keyboard focus opening it like a tooltip (`bindRailTips`, static/js/ux.js).
+   The read model carries the record behind each folded fact
+   (`RailStep.note_records`, `ProcessStep.record` on commencements and work
+   victories) from the page's existing read; no query is added.
+4. **Removal is in `Muuda`.** The rail carries no ✕. The expected
+   commencements a colleague recorded are listed in the `Muuda` panel with the
+   same confirmation, revision check and server-side checks (`row_remove.html`,
+   `remove_record_view`); one from Lovable is listed with where it is changed
+   and no control (`source_ownership`, unchanged).
+5. **A phone reads it vertically** (coordinator decision N-A2): the same items in
+   the same order on a track down the left, nothing scrolling sideways.
+
+This supersedes the 2026-11-23 note that the rail names an estimate's source
+and offers its ✕ under the date: both are kept, in the popover and in `Muuda`.
+
+## Amendment 2026-11-25 (coordinator review): `Lõpetatud` reads inside the phase it ended in
+
+A point that has happened, with nothing in its window to date it, reads just
+before the current phase, because the file may have reached that phase after
+the act. On a closed Teema that put `Lõpetatud` *before* the phase the file was
+closed in — Koda's work ending before the stage it ended on.
+
+A closure is the one act for which «reached the phase afterwards» cannot hold:
+a closed Matter stays in the period it was closed in, and its stage moves only
+through `Ava uuesti` (docs/adr/0131 §12; `change_stage` refuses a move on a
+closed row). So `matter_rail` places the closure milestone just **after** the
+current phase's node — after the dated points already read inside that phase,
+by date — rather than before it. No new rule is introduced; the order follows
+from the existing one.
+
+What does not change:
+
+* `Lõpetatud` is not the end of the rail. The end of Koda's work is not the end
+  of the proceedings: the procedure's later phases, a commencement folded onto
+  `Jõustumine`, and a deadline still ahead go on reading after it (as
+  docs/adr/0074 §12.4 already says of a deadline).
+* An explicit roadmap date on the current phase is still believed (rule 1 of
+  the 2026-09-27 amendment): a date later than the closure puts `Lõpetatud`
+  before that node.
+* An ARCHIVE row with no `closed_at` still draws no closure (no invented day).

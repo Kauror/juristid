@@ -39,6 +39,7 @@ from app.workflow.models import MatterPlanStep, NextAction
 from app.workflow.plan import STRUCTURED_OPERATIONS, activate_plan_step, seed_standard_plan
 from app.workflow.services import set_next_action_for_new_work
 from tests import factories
+from tests.consistency_parity import assert_parity
 from tests.legacy_plans import seed_version_one_plan, start_as_before_adr_0168
 
 pytestmark = pytest.mark.django_db
@@ -113,7 +114,11 @@ def _alert(matter, viewer):
         .filter(matter=matter, status=ActionStatus.OPEN)
         .first()
     )
-    return step_already_recorded(matter, current, viewer)
+    single = step_already_recorded(matter, current, viewer)
+    # Every scenario here is also a parity case for the batched rule the work
+    # lists ask (docs/adr/0161, amendment of 2026-11-25).
+    assert_parity(matter, current, viewer, single)
+    return single
 
 
 def _zone(client, matter) -> str:

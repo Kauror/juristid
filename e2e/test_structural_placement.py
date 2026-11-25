@@ -496,9 +496,10 @@ def test_the_rail_with_a_deadline_beside_the_phase_does_not_overflow(
     # breakpoint is read from the rule rather than guessed, and the widths
     # either side of it are what this parametrisation is for
     # (static/css/app.css, `@media (max-width: 720px)`).
+    # Since UX-001 (coordinator decision N-A2) the rail is a vertical list below
+    # the 720px breakpoint: it neither clips nor scrolls sideways.
     if width <= 720:
-        assert strip["overflowX"] in ("auto", "scroll"), strip
-        assert strip["scrollable"], f"the rail should scroll itself at {width}px, not clip"
+        assert not strip["scrollable"], f"the rail scrolls sideways at {width}px: {strip}"
 
 
 @pytest.mark.parametrize("width", [375, 420])

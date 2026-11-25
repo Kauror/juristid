@@ -137,6 +137,11 @@ NOT_MATTER_DATA = {
     "matters:person_work": "person",
     # A metric slug, not an id (tests/test_reporting_*).
     "reporting:export": "metric",
+    # A chart's panel key, not an id: the file holds exactly what the page shows
+    # this reader — the same `matter_facts(user)` scope — and is audited
+    # (UX-005, docs/adr/0214 §8, tests/test_statistika_chart_downloads.py).
+    "reporting:chart_svg": "chart",
+    "reporting:chart_xlsx": "chart",
     # Reference data: an institution, a tag or a vocabulary key — rows with no
     # visibility of their own, behind `reference.manage`, 404 for everybody
     # without it (docs/adr/0187, tests/test_reference_data_views.py).
@@ -179,6 +184,11 @@ PERSONAL_INBOX = {
     "notifications:candidates_read": "the recipient's own new-topics notice (ADR 0218 §7)",
     "notifications:candidates_unread": "the recipient's own new-topics notice (ADR 0218 §7)",
     "notifications:personal_remove": "the recipient's own reminder",
+    # «Minu vaated» (docs/adr/0222): a saved view is its owner's own row, keyed
+    # by its own id; the swept id is a Matter's, never a view's, so it is a 404
+    # for everybody, the owner too (tests/test_saved_register_views.py).
+    "matters:rename_view": "the signed-in person's own saved view",
+    "matters:remove_view": "the signed-in person's own saved view",
 }
 
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.

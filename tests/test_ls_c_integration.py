@@ -8,6 +8,7 @@ through the real engine. Every reference, page and capture is invented.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import psycopg
 import pytest
@@ -132,10 +133,39 @@ def test_the_page_renders_the_real_onenote_numbers(onenote_world, client, settin
     settings.REAL_DATA_ALLOWED = False
     admin, secret = technical_admin()
     verified(client, admin, secret)
-    body = client.get(reverse("haldus:data_sync")).content.decode()
+    # OneNote's own overview since UX-002 (docs/adr/0221).
+    body = client.get(reverse("haldus:onenote")).content.decode()
     assert "cap-1" in body
     assert "Operatiivseid lehti" in body and "Ühisleht, ootab seose otsust" in body
     assert sync_admin.ONENOTE_MISSING not in body
+
+
+def test_onenote_folds_only_its_diagnostic_detail(onenote_world, client, settings):
+    """Final review (docs/adr/0221 §4): the corpus-explaining counts sit in one remembered
+    block, closed by default; the status, the held readings and every action stay outside it."""
+    apply_admin_gate(settings)
+    settings.REAL_DATA_ALLOWED = False
+    admin, secret = technical_admin()
+    verified(client, admin, secret)
+    body = client.get(reverse("haldus:onenote")).content.decode()
+
+    start = body.index('data-disclosure="haldus.onenote.diagnostics"')
+    tag = body[body.rindex("<details", 0, start) : body.index(">", start) + 1]
+    folded = body[start : body.index("</details>", start)]
+    outside = body.replace(folded, "")
+
+    assert not re.search(r"\sopen(\s|>|=)", tag), tag  # closed for somebody who has not chosen
+    # Diagnostic: pages per state, other pages, uncovered sections.
+    for label, _n in sync_admin.onenote_panel().per_state:
+        assert label in folded
+    assert "Muid kataloogitud lehti" in folded and "Katmata jaotisi" in folded
+    assert "Muid kataloogitud lehti" not in outside
+    # Status and actions: never folded.
+    assert "cap-1" in outside and "Operatiivseid lehti" in outside
+    assert "Ühisleht, ootab seose otsust" in outside  # a held reading needs a decision
+    assert reverse("haldus:onenote_holds") in outside
+    assert reverse("haldus:data_sync_onenote_verify") in outside
+    assert "Taotlused" in outside
 
 
 # -- 3. a continuation is decidable ----------------------------------------------------

@@ -1,0 +1,19 @@
+{% comment %}One rendering of the sidebar's groups; `prefix` keeps the heading ids unique.{% endcomment %}
+<ul class="haldusnav__groups">
+  {% for group in groups %}
+    <li>
+      {% if group.items|length == 1 and group.items.0.label == group.label %}
+        <ul class="haldusnav__items">
+      {% else %}
+        <span class="haldusnav__grouplabel" id="{{ prefix }}-{{ group.key }}">{{ group.label }}</span>
+        <ul class="haldusnav__items" aria-labelledby="{{ prefix }}-{{ group.key }}">
+      {% endif %}
+        {% for item in group.items %}
+          <li><a class="haldusnav__link{% if item.key == active %} is-active{% endif %}"
+                 {% if item.key == active %}aria-current="page"{% endif %}
+                 href="{{ item.url }}">{{ item.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </li>
+  {% endfor %}
+</ul>

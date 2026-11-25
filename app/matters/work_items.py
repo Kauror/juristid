@@ -103,7 +103,7 @@ hide it, and no template re-implements a security check.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -337,6 +337,15 @@ class WorkItem:
     #: (docs/adr/0144 §1). An `Arvamuse järelkontroll` is planned too and keeps
     #: its own `record_url`.
     is_planned: bool = False
+    #: The standard step this action was started from, and when the action was
+    #: set — the two facts the workflow-consistency rule reads of a current
+    #: step (docs/adr/0161 §1). ``None`` for every other source.
+    plan_step_id: Any = None
+    set_at: datetime | None = None
+    #: The docs/adr/0161 alert about this row's step, for the reader the page
+    #: was built for — set only by a page that asked
+    #: (`consistency.with_consistency_alerts`), never by the work model itself.
+    consistency_alert: Any = None
 
     @property
     def date_display(self) -> str:
@@ -780,6 +789,8 @@ def action_item(action: NextAction, today: date, *, subject: Any = None) -> Work
         is_follow_up=action.follow_up_id is not None,
         follow_up_label=subject.label if subject is not None else "",
         is_planned=action.is_planned,
+        plan_step_id=action.plan_step_id,
+        set_at=action.created_at,
     )
 
 
@@ -1252,6 +1263,43 @@ def settlement_word(matter: Matter, *, discharged: bool) -> str:
     return ""
 
 
+def responses_outstanding(matters: list[Matter], user: Any) -> dict[Any, bool]:
+    """``response_obligation_of(...).is_outstanding`` for many Matters, in one query.
+
+    The obligation half of that function, asked of a list: a Matter with no
+    ``Arvamuse tähtaeg`` owes nothing; one whose row already carries the
+    :data:`DISCHARGED` annotation is read off it; the rest are asked together
+    through :func:`annotate_response_obligation`, reader-scoped — and a Matter
+    this reader may not see is not outstanding, for the reason
+    :func:`response_obligation_of` gives. The batched consistency reading
+    (`plan_view.RecordedWork.for_matters`, docs/adr/0161) and the single one
+    both come here, so the two cannot drift apart.
+    """
+    unknown = [
+        matter.pk
+        for matter in matters
+        if matter.response_deadline is not None and getattr(matter, DISCHARGED, None) is None
+    ]
+    fetched: dict[Any, bool] = {}
+    if unknown:
+        fetched = dict(
+            annotate_response_obligation(Matter.objects.visible_to(user), user)
+            .filter(pk__in=unknown)
+            .values_list("pk", DISCHARGED)
+        )
+    outstanding: dict[Any, bool] = {}
+    for matter in matters:
+        if matter.response_deadline is None:
+            outstanding[matter.pk] = False
+            continue
+        discharged = getattr(matter, DISCHARGED, None)
+        if discharged is None:
+            # Absent means no such row for this reader, not "undischarged".
+            discharged = fetched.get(matter.pk, True)
+        outstanding[matter.pk] = not discharged
+    return outstanding
+
+
 def response_obligation_of(
     matter: Matter, user: Any, today: date | None = None
 ) -> ResponseObligation:
@@ -1274,19 +1322,7 @@ def response_obligation_of(
     """
     today = today or timezone.localdate()
     deadline = matter.response_deadline
-    outstanding = False
-    if deadline is not None:
-        discharged = getattr(matter, DISCHARGED, None)
-        if discharged is None:
-            discharged = (
-                annotate_response_obligation(Matter.objects.visible_to(user), user)
-                .filter(pk=matter.pk)
-                .values_list(DISCHARGED, flat=True)
-                .first()
-            )
-            # ``None`` here means no such row for this reader, not "undischarged".
-            discharged = True if discharged is None else discharged
-        outstanding = not discharged
+    outstanding = responses_outstanding([matter], user)[matter.pk]
     is_past = deadline is not None and deadline < today
     is_overdue = outstanding and is_past
     return ResponseObligation(
@@ -2228,6 +2264,7 @@ __all__ = [
     "response_deadline_is_outstanding",
     "response_obligation_of",
     "response_obligations",
+    "responses_outstanding",
     "review_ripe_items",
     "secondary_response_obligation",
     "settlement_word",

@@ -69,8 +69,16 @@ nothing at all.
         read against no pattern had no phases to hide — but the panel now also
         adds steps, and that is exactly what a file with no pattern, or with no
         phase ahead of it, cannot get any other way (docs/adr/0119 §1).
+
+        **Never on a closed file** (docs/adr/0119 §1: «a reader, and a closed
+        file, still get nothing»). The condition used to read `can_write and
+        legal_process or can_write and matter.is_open`, which offered `Muuda` on
+        a closed file that had a procedure — a panel whose every save the
+        service then refused. The refusal itself is not this line: it is
+        `lock_open_matter_for_business_write` inside `set_timeline_steps` and
+        `set_rail_step_date`, and the panel's GET answers a closed file 404.
       {% endcomment %}
-      {% if can_write and legal_process or can_write and matter.is_open %}
+      {% if can_write and matter.is_open %}
         <button type="button" class="button button--quiet button--tiny lprail__edit"
                 hx-get="{% url 'matters:timeline_steps' pk=matter.pk %}"
                 hx-target="#menetluse-kulg-muuda"
@@ -85,54 +93,67 @@ nothing at all.
     <div id="menetluse-kulg-muuda" data-draft-host></div>
 
     {% if rail_steps %}
-    <div class="tl-strip" aria-label="Menetluse kulg">
-      {% for step in rail_steps %}
-        {% comment %}
-          `--tl-reach` is how far into *this* column's segment today has come, as
-          a CSS length the server formatted. A phase carries no measurement — it
-          is not a date — so it takes the value its own state implies: a phase
-          behind us or current joins the solid rail, one still ahead does not.
+    {% comment %}
+      **One component per item, on one track** (UX-001, 2026-11-25). Every item
+      is the same three things in the same places: the year above, the dot on
+      the track, and under it the name, the date at its recorded precision and
+      at most one line per fact — cut with an ellipsis by the stylesheet, never
+      in the text. Everything else — the whole description, the notes, whose
+      fact it is and where it is published («Allikas», always last) — is in the
+      item's popover (`app/matters/rail_tips.py`), which escapes the strip's
+      scroll box (`data-uxfloat`) and opens on hover, on keyboard focus and on a
+      tap, closing on Escape or a click elsewhere (`data-uxpopover`).
 
-          It is a string and not a number on purpose: the application runs in
-          Estonian and Django would render a raw float as `0,372`, which drops
-          the gradient silently (app/matters/process_timeline.py).
+      The track is each item's segment from its own dot's centre to the next
+      dot's centre (`.tl-step::before`), so the segments meet exactly whatever
+      an item's text, and `--tl-reach` still says how much of that one segment
+      today has covered. Columns share the width equally: the spacing is the
+      order of the procedure, never elapsed time.
+
+      **No removal on the rail.** Taking a colleague's expected commencement off
+      is in `Muuda` (`timeline_steps_form.html`), with the same confirmation;
+      one from Lovable says in its popover where it is changed.
+    {% endcomment %}
+    {% load rail %}
+    {% comment %}
+      **More than fits** (UX-001 refinement): the strip scrolls itself, and when
+      there is more on either side a soft edge and a small ‹ / › say so and move
+      it (`bindRailScroll`, static/js/ux.js). Shown only while there really is
+      more; the strip is then keyboard-scrollable (it takes `tabindex`), and on a
+      touch screen it is swiped as before. Nothing here when everything fits.
+    {% endcomment %}
+    <div class="tl-scroll" data-tlscroll>
+    <ol class="tl-strip" aria-label="Menetluse kulg">
+      {% for step in rail_steps %}
+        {% rail_tip step lovable_commencement_ids as tip %}
+        {% comment %}
+          `--tl-reach` is how far into *this* item's segment today has come, as a
+          CSS length the server formatted — a string, because the application
+          runs in Estonian and a raw float renders as `0,372`
+          (app/matters/process_timeline.py).
         {% endcomment %}
-        <span class="tl-step tl-step--{{ step.state }} tl-step--{{ step.kind }}"
-              style="--tl-reach: {{ step.reach_percent }}"
-              {% if step.state == "today" %}aria-current="date"{% endif %}
-              {% if step.state == "current" %}aria-current="step"{% endif %}
-              {% if step.detail %} title="{{ step.detail }}"{% endif %}>
+        <li class="tl-step tl-step--{{ step.state }} tl-step--{{ step.kind }}{% if tip.has_popover %} tl-step--tip{% endif %}"
+            style="--tl-reach: {{ step.reach_percent }}"
+            {% if step.state == "today" %}aria-current="date"{% endif %}
+            {% if step.state == "current" %}aria-current="step"{% endif %}><span class="tl-step__dot" aria-hidden="true"></span>
           {% if step.year_label %}<span class="tl-step__year">{{ step.year_label }}</span>{% endif %}
-          <span class="tl-step__dot" aria-hidden="true"></span>
           {% comment %}
-            What happened in this phase, from `Tegevused` (owner, 2026-11-23,
-            learned from the Riigikogu's «Menetluskäik»): a small dot per act on
-            the stretch after the phase, its date and name in the tooltip.
+            What happened in this phase, from `Tegevused` (owner, 2026-11-23): a
+            small dot per act on the segment after the phase, date and name in
+            its tooltip; «N tegevust» below opens them.
           {% endcomment %}
           {% if step.acts %}
             <span class="tl-step__acts" aria-hidden="true">
               {% for when, what in step.acts %}<span class="tl-step__act" title="{{ when }} — {{ what }}"></span>{% endfor %}
             </span>
           {% endif %}
-          {% comment %}
-            **An event, not a stage** (owner, 2026-10-19): a watched deadline or a
-            `Töövõit` says what kind of thing it is in words, above its own
-            title — and its dot is a diamond — so it reads apart from the
-            procedure's steps without colour (`KIND_EVENT`).
-          {% endcomment %}
           {% if step.is_event and step.type_label %}
             <span class="tl-step__type">{{ step.type_label }}</span>
           {% endif %}
           {% comment %}
-            **A phase or an added step is dated by clicking it** (owner,
-            2026-10-26): the name is a button that opens the small `millal?`
-            panel under the rail — a day, or a month, quarter or year
-            (`rail_step_date_form.html`). Only for a writer on an open file, and
-            only on what `rail_datable` offers: an event, a sent opinion and a
-            deadline are records with their own surfaces, and a phase carrying a
-            recorded fact (`Jõustumine` with its commencement, `step.notes`) is
-            dated by that record. Its accessible name
-            says what the click does; the visible name is unchanged.
+            A phase or an added step is dated by clicking its name (owner,
+            2026-10-26; `rail_step_date_form.html`), for a writer on an open file
+            and only where `rail_datable` offers it.
           {% endcomment %}
           {% if can_write and matter.is_open and step.key in rail_datable and not step.notes %}
             <button type="button" class="tl-step__what tl-step__pick"
@@ -141,94 +162,49 @@ nothing at all.
                     hx-target="#menetluse-kulg-muuda" hx-swap="innerHTML"
                     aria-label="{{ step.label }}: {% if step.display_date %}muuda kuupäeva ({{ step.display_date }}){% else %}lisa kuupäev{% endif %}">{{ step.label }}</button>
           {% else %}
-            <span class="tl-step__what">{{ step.label }}</span>
+            <span class="tl-step__what" title="{{ step.label }}">{{ step.label }}</span>
           {% endif %}
-          {% comment %}
-            Never colour alone. A column still ahead says so to a screen reader
-            and on a printout, which is what the muting cannot do
-            (docs/adr/0074 §12.2, amended).
-          {% endcomment %}
           {% if step.state == "future" or step.state == "possible" %}
             <span class="visually-hidden">Tulevikus</span>
           {% endif %}
-          {% comment %}
-            One date line, from whichever source this node has.
-
-            A phase carrying canonical facts prints them as its lines —
-            «põhiosa 27.9.2027», «osad sätted 1.1.2028» — and does not also
-            print the first one bare above them, which would be the same date
-            twice. A phase carrying only a roadmap date prints that.
-
-            These used to be separate columns: `Jõustumine · Jõustumine
-            1.1.2027`, two adjacent names reading alike, with the sentence that
-            told them apart in a `title` tooltip — which is to say nowhere, for
-            a touch screen, a printout or a screen reader (QA-005).
-          {% endcomment %}
-          {% if step.notes %}
-            {% for note in step.notes %}
-              <span class="tl-step__note">{{ note }}</span>
-            {% endfor %}
-          {% elif step.display_date %}
-            <span class="tl-step__date">{{ step.display_date }}</span>
+          {% if tip.has_popover %}
+            <details class="tl-step__more" data-uxpopover data-railtip>
+              <summary class="tl-step__sum">
+                {% for line in tip.lines %}<span class="{% if line == step.display_date and not step.notes %}tl-step__date{% else %}tl-step__note{% endif %}">{{ line }}</span>{% empty %}<span class="tl-step__note">Üksikasjad</span>{% endfor %}<span class="visually-hidden"> — üksikasjad</span>
+              </summary>
+              <span class="tl-tip" data-uxfloat="fit-start">
+                {% for fact in tip.facts %}
+                  <span class="tl-tip__fact">
+                    {% if fact.date and tip.facts|length > 1 %}<span class="tl-tip__date">{{ fact.date }}</span>{% endif %}
+                    {% if fact.description %}<span class="tl-tip__text">{{ fact.description }}</span>{% endif %}
+                    {% for note in fact.notes %}<span class="tl-tip__note">{{ note }}</span>{% endfor %}
+                    {% if fact.owned_by_lovable %}<span class="tl-tip__owner">{% rail_lovable_note %}</span>{% endif %}
+                    {% if fact.source %}
+                      <span class="tl-tip__source">Allikas: {% if fact.source.url %}{% if fact.owned_by_lovable %}Lovable · {% elif fact.source.label != "teadmata" %}{{ fact.source.label }} · {% endif %}<a href="{{ fact.source.url }}" target="_blank" rel="noopener noreferrer">{{ fact.source.host }}</a>{% else %}{{ fact.source.label }}{% endif %}</span>
+                    {% endif %}
+                  </span>
+                {% endfor %}
+              </span>
+            </details>
+          {% else %}
+            {% for line in tip.lines %}<span class="{% if line == step.display_date %}tl-step__date{% else %}tl-step__note{% endif %}">{{ line }}</span>{% endfor %}
           {% endif %}
-          {% comment %}
-            **Whose expectation this is, and its removal** (owner, 2026-11-23).
-            An estimated or planned commencement is somebody's guess at when the
-            act comes into force, so the marker names its source — Lovable, or
-            the colleague who recorded it — with the source's own note under it.
-            A lawyer's own may be taken off here (`remove_record`, the same
-            confirmation `Tegevused` uses). One from Lovable is Lovable's
-            (`source_ownership`): its ✕ says where to remove it, and the night
-            then cancels it here too.
-          {% endcomment %}
-          {% with commencement=step.expected_commencement %}
-            {% if commencement %}
-              {% if lovable_commencement_ids and commencement.pk|stringformat:"s" in lovable_commencement_ids %}
-                <span class="tl-step__source">Allikas: Lovable</span>
-                {% if commencement.note %}<span class="tl-step__note">{{ commencement.note|truncatechars:80 }}</span>{% endif %}
-                {% if can_write and matter.is_open %}
-                  <details class="uxtl__remove">
-                    <summary class="uxtl__icon uxtl__icon--remove" title="Kustuta">{% include "matters/partials/action_icon.html" with name="remove" %}<span class="visually-hidden">Kustuta — eeldatav jõustumine {{ step.display_date }}</span></summary>
-                    <p class="uxtl__removeask">See kuupäev tuleb Lovable'ist. Eemalda see Lovable'is — öine sünkroonimine eemaldab selle siis ka siit.</p>
-                  </details>
-                {% endif %}
-              {% else %}
-                <span class="tl-step__source">Allikas: {% if commencement.created_by %}{{ commencement.created_by.display_name }}{% else %}teadmata{% endif %}</span>
-                {% if commencement.note %}<span class="tl-step__note">{{ commencement.note|truncatechars:80 }}</span>{% endif %}
-                {% if can_write and matter.is_open %}
-                  {% include "matters/partials/row_remove.html" with record=commencement remove_kind="tahtaeg" remove_label="eeldatav jõustumine" remove_genitive="eeldatava jõustumise" remove_where="teemalt" remove_revision=commencement.updated_at.isoformat %}
-                {% endif %}
-              {% endif %}
-            {% endif %}
-          {% endwith %}
           {% if step.acts_count %}
             {# The phase opens its acts: their period in Tegevused, opened and scrolled to. #}
             <a class="tl-step__actslink" href="#{{ step.acts_anchor }}" data-open-etapp="{{ step.acts_anchor }}">{{ step.acts_count }} tegevus{{ step.acts_count|pluralize:"t" }}</a>
           {% endif %}
           {% comment %}
-            **`Hetkeseis` is not on this rail, and that is docs/adr/0074 §12.1
-            kept rather than a thing this round forgot.**
-
-            §12.1 took the current `StageVocabulary` off the strip precisely
-            because it left «the header's `Hetkeseis` pinned in the middle of
-            it», and merging the phases back onto the same row put it there
-            again: `Kooskõlastusringil` under a node called `Kooskõlastusring`,
-            on every ordinary file, one letter apart.
-
-            docs/adr/0092 §13's amendment put it on the node for a real reason —
-            `Jõustumine` holds both «ootel» and «jõustunud», and `Jõustumine ·
-            Praegu` read identically for both. That reason is weaker now: the
-            `Praegu` it was disambiguating is gone from the rail too, and the
-            header states the stage in full, once, where it has always been
-            stated. One glance for the rare question beats a duplicated line on
-            the common one.
-
-            Which node is *current* is still said three ways, none of them
-            colour: `aria-current="step"`, the filled and ringed dot, and the
-            heavier name.
+            `Hetkeseis` is not on this rail (docs/adr/0074 §12.1); the current
+            node is said by `aria-current="step"`, the ringed dot and the heavier
+            name, none of them colour alone.
           {% endcomment %}
-        </span>
+        </li>
       {% endfor %}
+    </ol>
+      <button type="button" class="tl-scroll__btn tl-scroll__btn--prev" data-tlscroll-prev hidden
+              aria-label="Menetluse kulg: näita varasemaid samme">‹</button>
+      <button type="button" class="tl-scroll__btn tl-scroll__btn--next" data-tlscroll-next hidden
+              aria-label="Menetluse kulg: näita järgmisi samme">›</button>
     </div>
     {% endif %}
 

@@ -123,12 +123,12 @@ The period, the lawyer and the trend range are links: the state is the URL.
 
   <section class="statpanel" aria-labelledby="stat-kuud">
     <div class="statpanel__head">
-      <h2 class="statpanel__title" id="stat-kuud">Välja saadetud arvamused kuude lõikes</h2>
-      <span class="statlegend">
-        {% for item in bar_owners %}
-          <span class="statlegend__item"><span class="statlegend__mark statseries--{{ item.slot }}"></span>{{ item.owner }}</span>
+      <h2 class="statpanel__title" id="{{ charts.kuud.anchor }}">{{ charts.kuud.title }}</h2>
+      <span class="statpanel__tools"><span class="statlegend">
+        {% for series in charts.kuud.series %}
+          <span class="statlegend__item"><span class="statlegend__mark statseries--{{ series.slot }}"></span>{{ series.name }}</span>
         {% endfor %}
-      </span>
+      </span>{% include "reporting/_chart_download.html" with chart=charts.kuud stem=chart_stems.kuud %}</span>
     </div>
     {% if summary.sent %}
       <div class="statcols" role="list">
@@ -161,11 +161,12 @@ The period, the lawyer and the trend range are links: the state is the URL.
   <div class="statgrid">
     <section class="statpanel statpanel--wide" aria-labelledby="stat-voog">
       <div class="statpanel__head">
-        <h2 class="statpanel__title" id="stat-voog">Sisse tulnud ja välja saadetud kuude lõikes</h2>
-        <span class="statlegend">
-          <span class="statlegend__item"><span class="statlegend__mark statseries--muted"></span>Sisse tulnud teemad</span>
-          <span class="statlegend__item"><span class="statlegend__mark statseries--0"></span>Välja saadetud arvamused</span>
-        </span>
+        <h2 class="statpanel__title" id="{{ charts.voog.anchor }}">{{ charts.voog.title }}</h2>
+        <span class="statpanel__tools"><span class="statlegend">
+          {% for series in charts.voog.series %}
+            <span class="statlegend__item"><span class="statlegend__mark statseries--{{ series.slot }}"></span>{{ series.name }}</span>
+          {% endfor %}
+        </span>{% include "reporting/_chart_download.html" with chart=charts.voog stem=chart_stems.voog %}</span>
       </div>
       <div class="statcols" role="list">
         {% for bar in flow %}
@@ -184,30 +185,32 @@ The period, the lawyer and the trend range are links: the state is the URL.
 
     <section class="statpanel statpanel--wide" aria-labelledby="stat-liigid">
       <div class="statpanel__head">
-        <h2 class="statpanel__title" id="stat-liigid">Õigusakti liigi järgi</h2>
+        <h2 class="statpanel__title" id="{{ charts.liigid.anchor }}">{{ charts.liigid.title }}</h2>
+        {% include "reporting/_chart_download.html" with chart=charts.liigid stem=chart_stems.liigid %}
       </div>
       {% include "reporting/_group_table.html" with items=instruments first="Liik" %}
     </section>
 
     <section class="statpanel statpanel--wide" aria-labelledby="stat-valdkonnad">
       <div class="statpanel__head">
-        <h2 class="statpanel__title" id="stat-valdkonnad">Valdkonna järgi</h2>
-        {% if pending_classification %}<a class="statpanel__note" href="{% url 'reporting:classification' %}">Kinnitamata ettepanekud: {{ pending_classification }}</a>{% endif %}
+        <h2 class="statpanel__title" id="{{ charts.valdkonnad.anchor }}">{{ charts.valdkonnad.title }}</h2>
+        <span class="statpanel__tools">{% if pending_classification %}<a class="statpanel__note" href="{% url 'reporting:classification' %}">Kinnitamata ettepanekud: {{ pending_classification }}</a>{% endif %}{% include "reporting/_chart_download.html" with chart=charts.valdkonnad stem=chart_stems.valdkonnad %}</span>
       </div>
       {% include "reporting/_group_table.html" with items=areas first="Valdkond" %}
     </section>
 
     <section class="statpanel statpanel--wide" aria-labelledby="stat-saatjad">
       <div class="statpanel__head">
-        <h2 class="statpanel__title" id="stat-saatjad">Saatja järgi</h2>
+        <h2 class="statpanel__title" id="{{ charts.saatjad.anchor }}">{{ charts.saatjad.title }}</h2>
+        {% include "reporting/_chart_download.html" with chart=charts.saatjad stem=chart_stems.saatjad %}
       </div>
       {% include "reporting/_group_table.html" with items=senders first="Saatja" %}
     </section>
 
     <section class="statpanel" aria-labelledby="stat-aeg">
       <div class="statpanel__head">
-        <h2 class="statpanel__title" id="stat-aeg">Kui palju aega vastamiseks anti</h2>
-        <span class="statpanel__note">{{ pressure.total }} tähtajaga teemat</span>
+        <h2 class="statpanel__title" id="{{ charts.aeg.anchor }}">{{ charts.aeg.title }}</h2>
+        <span class="statpanel__tools"><span class="statpanel__note">{{ pressure.total }} tähtajaga teemat</span>{% include "reporting/_chart_download.html" with chart=charts.aeg stem=chart_stems.aeg %}</span>
       </div>
       {% if pressure.total %}
         <div class="statshare" role="img" aria-label="{% for band in pressure.bands %}{{ band.label }}: {{ band.count }} ({{ band.share }}%){% if not forloop.last %}, {% endif %}{% endfor %}">
@@ -230,7 +233,8 @@ The period, the lawyer and the trend range are links: the state is the URL.
 
     <section class="statpanel" aria-labelledby="stat-otsus">
       <div class="statpanel__head">
-        <h2 class="statpanel__title" id="stat-otsus">Saadetud ja saatmata jäetud</h2>
+        <h2 class="statpanel__title" id="{{ charts.otsus.anchor }}">{{ charts.otsus.title }}</h2>
+        {% include "reporting/_chart_download.html" with chart=charts.otsus stem=chart_stems.otsus %}
       </div>
       {% if decisions.total %}
         <div class="statshare" role="img" aria-label="Saadetud {{ decisions.sent }}, ei saatnud {{ decisions.declined }}">
@@ -268,16 +272,16 @@ The period, the lawyer and the trend range are links: the state is the URL.
       </span>
     </div>
     <div class="stattrends">
-      {% for trend in trends %}
-        <section class="statpanel{% if forloop.first %} statpanel--wide{% endif %}" aria-label="{{ trend.title }}">
+      {% for item in trend_items %}{% with trend=item.trend chart=item.chart %}
+        <section class="statpanel{% if forloop.first %} statpanel--wide{% endif %}" id="{{ chart.anchor }}" aria-label="{{ chart.title }}">
           <div class="statpanel__head">
-            <h3 class="statpanel__title">{{ trend.title }}</h3>
-            {% if trend.note %}<span class="statpanel__note">{{ trend.note }}</span>{% endif %}
+            <h3 class="statpanel__title">{{ chart.title }}</h3>
+            <span class="statpanel__tools">{% if trend.note %}<span class="statpanel__note">{{ trend.note }}</span>{% endif %}{% include "reporting/_chart_download.html" with chart=chart stem=item.stem %}</span>
           </div>
           {% if trend.has_data %}
             <div class="statcols statcols--years" role="list">
               {% for bar in trend.bars %}
-                <span class="statcol{% if bar.partial %} statcol--partial{% endif %}" role="listitem" title="{{ bar.title }}{% if bar.partial %} (aasta on pooleli){% endif %}">
+                <span class="statcol{% if bar.partial %} statcol--partial{% endif %}" id="{{ chart.anchor }}-{{ bar.year|stringformat:'d' }}" role="listitem" title="{{ bar.title }}{% if bar.partial %} (aasta on pooleli){% endif %}">
                   <span class="statcol__value">{{ bar.text }}</span>
                   <span class="statcol__track">
                     <span class="statcol__stack" style="height: {{ bar.height|stringformat:'.2f' }}%">
@@ -293,20 +297,45 @@ The period, the lawyer and the trend range are links: the state is the URL.
             <p class="statpanel__empty">Andmed puuduvad.</p>
           {% endif %}
         </section>
-      {% endfor %}
+      {% endwith %}{% endfor %}
     </div>
   </section>
 
-  {% if records %}
+  {% comment %}
+    A record card opens what explains it (UX-008): the record year of sent
+    opinions opens that year's months, the record month the opinions it
+    counted, a trend's record that trend with the year's column marked. A tie
+    links each of its periods — the first three in the line, the rest behind
+    «+N» — so no tied year or month is chosen for the reader.
+  {% endcomment %}
+  {% if record_items %}
     <section class="statsection" aria-labelledby="stat-rekordid">
       <h2 class="statsection__title" id="stat-rekordid">Rekordid <span class="statpanel__note">{{ trend_span }}</span></h2>
       <div class="statrecords">
-        {% for record in records %}
-          <div class="statrecord">
-            <span class="statrecord__title">{{ record.title }}</span>
-            <span class="statrecord__value">{{ record.value }}</span>
-            <span class="statrecord__when">{{ record.when }}</span>
-          </div>
+        {% for item in record_items %}
+          {% if item.links|length == 1 %}
+            <a class="statrecord statrecord--link" href="{{ item.links.0.url }}">
+              <span class="statrecord__title">{{ item.record.title }}</span>
+              <span class="statrecord__value">{{ item.record.value }}</span>
+              <span class="statrecord__when">{{ item.record.when }}</span>
+            </a>
+          {% else %}
+            <div class="statrecord">
+              <span class="statrecord__title">{{ item.record.title }}</span>
+              <span class="statrecord__value">{{ item.record.value }}</span>
+              <div class="statrecord__when statrecord__periods">
+                {% for link in item.shown %}<a class="statrecord__period" href="{{ link.url }}">{{ link.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+                {% if item.rest %}
+                  <details class="statrecord__more">
+                    <summary class="statrecord__toggle" aria-label="Veel {{ item.rest|length }} sama tulemusega perioodi">+{{ item.rest|length }}</summary>
+                    <span class="statrecord__rest">
+                      {% for link in item.rest %}<a class="statrecord__period" href="{{ link.url }}">{{ link.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+                    </span>
+                  </details>
+                {% endif %}
+              </div>
+            </div>
+          {% endif %}
         {% endfor %}
       </div>
     </section>

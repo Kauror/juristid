@@ -231,6 +231,13 @@ class InterventionRow:
     detail: str
     owner: Any | None
     sort_on: date
+    #: The work row this row was read from, for a late or ripe item; ``None``
+    #: for a file with no step and for an unowned one.
+    source: wi.WorkItem | None = None
+    #: The docs/adr/0161 alert about the step on this row — set for the
+    #: department head only, by `department.build_department` (amendment of
+    #: 2026-11-25). It never adds, drops, counts or reorders a row.
+    consistency_alert: Any = None
 
     @property
     def tone(self) -> str:
@@ -312,6 +319,7 @@ def intervention_rows(
                     ),
                     owner=item.responsible,
                     sort_on=item.period_end or item.when or today,
+                    source=item,
                 )
             )
         elif item.is_review_ripe:
@@ -332,6 +340,7 @@ def intervention_rows(
                     detail=item.text,
                     owner=item.responsible,
                     sort_on=item.when or today,
+                    source=item,
                 )
             )
 

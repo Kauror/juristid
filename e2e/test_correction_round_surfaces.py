@@ -254,8 +254,9 @@ def test_the_rail_draws_one_joustumine_and_says_what_it_is(page, base_url):
     nodes = rail.locator(".tl-step__what")
     labels = [nodes.nth(index).inner_text() for index in range(nodes.count())]
     assert labels.count("Jõustumine") == 1
-    # As text on the page, not as a `title` a touch screen never delivers.
-    assert "QA põhiosa 1.1.2027" in rail.inner_text()
+    # As text on the page, not as a `title` a touch screen never delivers —
+    # date first since UX-001, so a narrow column never cuts the date.
+    assert "1.1.2027 · QA põhiosa" in rail.inner_text()
 
 
 def test_the_current_phase_and_an_anchored_phase_cannot_be_removed(page, base_url):

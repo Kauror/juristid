@@ -45,7 +45,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.functional import cached_property
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 
 from app.accounts.models import User
 from app.accounts.naming import disambiguated_names
@@ -111,6 +111,7 @@ from app.matters import (
     register_columns,
     register_filters,
     register_selection,
+    saved_views,
     selectors,
     step_launch,
     timeline_links,
@@ -466,6 +467,26 @@ def my_work(request: HttpRequest) -> HttpResponse:
     cannot disagree (app/matters/work_items.py).
     """
     return _render_person_work(request, subject=request.user, is_self=True)
+
+
+@login_required
+@require_GET
+def my_statistics(request: HttpRequest) -> HttpResponse:
+    """Minu statistika — the signed-in person's own figures (FUNC-003, docs/adr/0223).
+
+    Self only: there is no address for anybody else's, so the route takes no
+    person, and a department head opening it reads their own figures.
+    """
+    from app.matters.my_statistics import my_statistics as build
+
+    return render(
+        request,
+        "matters/my_statistics.html",
+        {
+            "stats": build(request.user, timezone.localdate()),
+            "nav_active": "minu_asjad",
+        },
+    )
 
 
 @login_required
@@ -2229,9 +2250,20 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     # four extra counts per keystroke would be four queries for something the
     # reader cannot even see move (Stage-2E.1 brief 14).
     context["saved_views"] = register_filters.saved_views(request.user, params)
-    # The view *is* the address. «Salvesta praegune filter vaatena» offers this
-    # link; there is nothing else to save, and nothing is stored.
+    # The view is still the address, and «Kopeeri» still hands it over. Since
+    # docs/adr/0222 a person may also keep it under a name of their own: what is
+    # stored is the canonical query of the register's parameters, and the chips
+    # are counted through the register's own pipeline in one statement
+    # (app/matters/saved_views.py).
     context["current_view_url"] = request.build_absolute_uri()
+    personal = saved_views.personal_views(request.user, params)
+    context["personal_views"] = personal
+    context["personal_views_shown"] = personal[: saved_views.VISIBLE_CHIPS]
+    context["personal_views_hidden"] = max(0, len(personal) - saved_views.VISIBLE_CHIPS)
+    context["personal_views_narrow"] = saved_views.NARROW_CHIPS
+    context["personal_views_hidden_narrow"] = max(0, len(personal) - saved_views.NARROW_CHIPS)
+    context["personal_views_max"] = saved_views.MAX_VIEWS
+    context["current_view_query"] = saved_views.canonical_query(params)
 
     context |= {
         "tracks": Track.choices,
@@ -10155,12 +10187,54 @@ def _timeline_steps_refusal(
     response = render(
         request,
         "matters/partials/timeline_steps_form.html",
-        {"matter": matter, "timeline_steps_form": form, "timeline_steps_error": error},
+        {
+            "matter": matter,
+            "timeline_steps_form": form,
+            "timeline_steps_error": error,
+            **_rail_removals(request, matter),
+        },
         status=status,
     )
     response["HX-Retarget"] = "#menetluse-kulg-muuda"
     response["HX-Reswap"] = "innerHTML"
     return response
+
+
+def _rail_removals(request: HttpRequest, matter: Matter) -> dict[str, Any]:
+    """The expected commencements `Muuda` lists, each with its removal (UX-001).
+
+    The rail drew a ✕ beside every estimate; it is here instead, in the one
+    editing panel the rail has. The same population the rail draws — this
+    reader's visible, live, active estimates — and the same rule: a colleague's
+    may be removed by a writer on an open file (`row_remove.html`, re-checked by
+    `remove_record_view`), one from Lovable is listed with where it is changed
+    and has no control (`source_ownership`).
+    """
+    from app.intelligence.enums import INFORMATIONAL_IMPORTANT_DATE_KINDS, FactStatus
+    from app.intelligence.models import MatterImportantDate
+
+    records = list(
+        MatterImportantDate.objects.filter(
+            matter=matter,
+            kind__in=INFORMATIONAL_IMPORTANT_DATE_KINDS,
+            status=FactStatus.ACTIVE,
+        )
+        .visible_to(request.user)
+        .select_related("created_by")
+        .order_by("period_end", "pk")
+    )
+    lovable = lovable_commencement_ids(matter) if records else frozenset()
+    return {
+        "rail_removals": [
+            {
+                "record": record,
+                "lovable": str(record.pk) in lovable,
+                "named_by": f"kulg-eemalda-{record.pk}-nimi",
+            }
+            for record in records
+        ],
+        "rail_can_remove": matter.is_open and may_write_business_content(request.user),
+    }
 
 
 def _rail_datable_keys(phases: Any, step_rows: Any) -> frozenset[str]:
@@ -10296,13 +10370,25 @@ def timeline_steps_view(request: HttpRequest, pk: Any) -> HttpResponse:
     this page. A GET opens it; a POST saves and re-renders the whole Teema view,
     because hiding a phase changes the rail, and on a file whose phases carry
     dates it changes what the rail says about every one of them.
+
+    **A closed file has no panel**: the GET answers 404, the shape
+    `rail_step_date_view` gives (docs/adr/0119 §1). A POST is not stopped
+    here — a panel opened before the closure, or a crafted request, reaches
+    `set_timeline_steps`, which re-reads the closure under the Matter's row
+    lock and refuses with `CLOSED_MATTER_REFUSAL`; nothing is written.
     """
     matter = get_visible_matter(request, pk)
     if request.method == "GET":
+        if not matter.is_open:
+            raise Http404
         return render(
             request,
             "matters/partials/timeline_steps_form.html",
-            {"matter": matter, "timeline_steps_form": _timeline_steps_form(request, matter)},
+            {
+                "matter": matter,
+                "timeline_steps_form": _timeline_steps_form(request, matter),
+                **_rail_removals(request, matter),
+            },
         )
     form = _timeline_steps_form(request, matter, request.POST)
     if not form.is_valid():
