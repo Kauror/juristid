@@ -899,7 +899,7 @@
 }
 
 .uxviews__itemlink {
-  font: 600 12.5px/1.35 var(--typography-font-sans);
+  font: 600 var(--typography-size-sm)/1.35 var(--typography-font-sans);
   color: var(--text-primary);
   text-decoration: none;
   overflow-wrap: anywhere;
@@ -919,7 +919,7 @@
 }
 
 .uxviews__itemnote {
-  font: 400 11.5px/1.45 var(--typography-font-sans);
+  font: 400 var(--typography-size-meta-sm)/1.45 var(--typography-font-sans);
   color: var(--status-warning);
 }
 
@@ -960,7 +960,7 @@
 }
 
 .uxviews__label {
-  font: 600 11.5px/1.3 var(--typography-font-sans);
+  font: 600 var(--typography-size-meta-sm)/1.3 var(--typography-font-sans);
   color: var(--text-secondary);
 }
 
