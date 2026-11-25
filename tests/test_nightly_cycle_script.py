@@ -710,3 +710,79 @@ def test_the_plan_writes_nothing_and_runs_nothing(host) -> None:
 def test_the_plan_marks_the_riigikogu_step_left_out_by_default(host) -> None:
     result = run(host, "--plan")
     assert "SKIPPED_DELIBERATE NOT_INSTALLED" in result.stdout
+
+
+# -- 01:00 Tallinn: the lanes after Lovable (owner, 25.11.2026; ADR 0229 §3) ---------
+
+
+def _cycle_log(host: dict[str, Path]) -> str:
+    logs = sorted((host["appdata"] / "nightly" / "logs").glob("*.log"))
+    assert logs, "the cycle wrote its log"
+    return logs[-1].read_text(encoding="utf-8")
+
+
+def _lanes_after(now: str, seconds_from_real_now: float) -> str:
+    """JURISTID_NIGHTLY_LANES_AFTER that puts 01:00 at real time + ``seconds``."""
+    return str(int(time.time() + seconds_from_real_now) - int(_epoch(now)))
+
+
+@pytest.mark.parametrize(
+    ("midnight", "one_oclock"),
+    [
+        (WINTER_MIDNIGHT, "2026-01-14T23:00:00Z"),
+        (SUMMER_MIDNIGHT, "2026-07-01T22:00:00Z"),
+        # The spring night: 00:00 and 01:00 are still UTC+2 (the change is at 03:00).
+        ("2026-03-28T22:00:00Z", "2026-03-28T23:00:00Z"),
+        # The autumn night: 00:00 and 01:00 are still UTC+3 (the change is at 04:00).
+        ("2026-10-24T21:00:00Z", "2026-10-24T22:00:00Z"),
+    ],
+    ids=["winter", "summer", "spring-change", "autumn-change"],
+)
+def test_the_lanes_are_not_before_one_oclock_tallinn(host, midnight, one_oclock) -> None:
+    result = run(host, now=midnight)
+    assert result.returncode == 0, result.stdout + result.stderr
+    log = _cycle_log(host)
+    assert f"LANES start (not before {one_oclock})" in log
+    assert log.index("LANES start") < log.index("STEP register-watch start")
+    assert log.index("STEP lovable start") < log.index("LANES start")
+
+
+def test_lovable_done_before_one_oclock_the_lanes_wait_under_the_cycle_lock(host) -> None:
+    began = time.monotonic()
+    result = run(host, JURISTID_NIGHTLY_LANES_AFTER=_lanes_after(WINTER_MIDNIGHT, 4))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert time.monotonic() - began >= 3, "the lanes waited for 01:00"
+    log = _cycle_log(host)
+    assert log.index("WAIT the other lanes start at") < log.index("STEP register-watch start")
+    assert log.index("WAIT the other lanes start at") < log.index("STEP government-agenda start")
+    assert all(
+        outcome.startswith("SUCCEEDED")
+        for name, outcome in outcomes(host).items()
+        if name != "riigikogu"
+    )
+
+
+def test_lovable_still_running_at_one_oclock_is_waited_for_not_raced(host) -> None:
+    (host["fake"] / "block-lovable").write_text("")
+    threading.Timer(3, lambda: (host["fake"] / "block-lovable").unlink()).start()
+    result = run(host, JURISTID_NIGHTLY_LANES_AFTER=_lanes_after(WINTER_MIDNIGHT, 1))
+    assert result.returncode == 0, result.stdout + result.stderr
+    log = _cycle_log(host)
+    assert "WAIT the other lanes" not in log, "01:00 had passed when Lovable ended"
+    order = calls(host)
+    assert order.index("end lovable") < order.index("start watch_registers")
+    assert order.index("end lovable") < order.index("start watch_government_agenda")
+
+
+def test_a_manual_recovery_does_not_wait_for_one_oclock(host) -> None:
+    began = time.monotonic()
+    result = run(
+        host,
+        "--manual",
+        now="2026-01-15T06:00:00Z",
+        JURISTID_NIGHTLY_LANES_AFTER=_lanes_after(WINTER_MIDNIGHT, 600),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert time.monotonic() - began < 60
+    log = _cycle_log(host)
+    assert "WAIT the other lanes" not in log and "LANES start" not in log

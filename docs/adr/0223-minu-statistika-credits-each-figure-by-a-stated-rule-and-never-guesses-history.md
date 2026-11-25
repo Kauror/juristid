@@ -1,6 +1,6 @@
 # 0223 — Minu statistika credits each figure by a stated rule and never guesses history
 
-Date: 2026-11-25 · Status: Proposed — overnight development 25.11.2026, subject to owner review;
+Date: 2026-11-25 · Status: Accepted (owner, 25.11.2026: accepted with the r93 release; developed overnight 25.11.2026);
 amended in the corrections round 25.11.2026 (§6–§9, also Proposed).
 Owner decision BLOCK-4 (UX programme preparation report, 24.11.2026): historical workload is
 credited to the owner *at the time*; the page is for the signed-in person only.

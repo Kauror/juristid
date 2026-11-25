@@ -1,6 +1,6 @@
 # 0222 — A person keeps named Teemad views, and the address is still the view
 
-Date: 2026-11-25 · Status: Proposed — overnight development 25.11.2026, subject to owner review. Owner decision BLOCK-1 (24.11.2026): Juristid may store personal named views on a development branch, personal only, at most 20 per persona. **Supersedes ADR 0043 §2** («A saved view is a named URL, and nothing is stored») where it says nothing is stored; everything else in 0043 stands. One additive migration, `matters/0052`.
+Date: 2026-11-25 · Status: Accepted (owner, 25.11.2026: accepted with the r93 release; developed overnight 25.11.2026). Owner decision BLOCK-1 (24.11.2026): Juristid may store personal named views on a development branch, personal only, at most 20 per persona. **Supersedes ADR 0043 §2** («A saved view is a named URL, and nothing is stored») where it says nothing is stored; everything else in 0043 stands. One additive migration, `matters/0052`.
 
 ## Context
 

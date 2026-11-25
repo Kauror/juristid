@@ -17,7 +17,7 @@ Teema is named only where the reader may see it.
 
   {% if not actions_on %}<p class="regwatch__meta">Riigikogu jälgimine ei ole sisse lülitatud: siin ei saa praegu midagi otsustada ega teemaga siduda. Allpool on viimati loetud andmed.</p>
   {% elif not watch_on %}<p class="regwatch__meta">Riigikogu öine jälgimine on välja lülitatud. Allpool on viimati loetud andmed.</p>
-  {% else %}<p class="regwatch__meta">Andmed loetakse kord ööl, Tallinna aja järgi kell 00:00 algava öise tsükli osana. Päeval Riigikogu andmeid uuesti ei loeta.</p>{% endif %}
+  {% else %}<p class="regwatch__meta">Andmed loetakse kord ööl öise tsükli osana, alates kella 01:00 Tallinna aja järgi. Päeval Riigikogu andmeid uuesti ei loeta.</p>{% endif %}
   {% if health %}
     <p class="rkpage__health" role="status">
       {% for stage in health %}{{ stage.label }}: {{ stage.line }}{% if not forloop.last %} · {% endif %}{% endfor %}

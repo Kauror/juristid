@@ -1,6 +1,6 @@
 # 0228 — Protocols, stenograms and answers to invitations are evidence, never verdicts
 
-Date: 2026-11-24 · Status: proposed (coordinator's brief, RK-4 and RK-5; development authorisation only)
+Date: 2026-11-24 · Status: accepted (owner, 25.11.2026: accepted with the r93 release and deterministic Riigikogu monitoring switched on; earlier: coordinator's brief, RK-4 and RK-5; development authorisation only)
 
 ## Context
 

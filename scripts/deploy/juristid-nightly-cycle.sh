@@ -162,7 +162,8 @@ if [ "$PLAN" = 1 ]; then
     if [ -e "$NIGHTLY_DIR/PAUSED-$name" ]; then note="  [SKIPPED_DELIBERATE PAUSED]"; fi
     printf '  %-18s %-10s needs %-15s %-21s %s%s\n' "$name" "$lane" "$need" "$order" "$command" "$note"
   done
-  echo "Lanes after lovable run side by side: registers (in order) || agenda."
+  echo "Lanes after lovable run side by side, not before 01:00 Tallinn (a --manual"
+  echo "recovery does not wait): registers (in order) || agenda."
   exit 0
 fi
 
@@ -343,6 +344,28 @@ run_step() {
 
 # Every step in an `||` context: `set -e` never ends the cycle inside one.
 run_step lovable - || true
+
+# The other lanes start no earlier than 01:00 Tallinn (owner, 25.11.2026; ADR 0229
+# §3): Lovable has the first hour alone. Lovable ends first in any case (the steps
+# above are in order), so a Lovable night still running at 01:00 is simply waited
+# for. The wait is inside this cycle, under its lock (fd 7): no second cron line,
+# and no release or restore can start in the gap. A person's recovery (--manual)
+# does not wait. Between 00:00 and 01:00 no DST change happens, so 01:00 is the
+# night's midnight in UTC plus 3600 s. JURISTID_NIGHTLY_LANES_AFTER (seconds after
+# midnight, default 3600) exists for the tests only.
+LANES_AFTER=${JURISTID_NIGHTLY_LANES_AFTER:-3600}
+if [ "$MANUAL" = 0 ]; then
+  midnight=$(($(date -u -d "$TALLINN_DATE 00:00" +%s) - ${TALLINN_OFFSET#+} * 3600))
+  lanes_at=$((midnight + LANES_AFTER))
+  if [ "$(date -u +%s)" -lt "$lanes_at" ]; then
+    say "WAIT the other lanes start at $(date -u -d "@$lanes_at" +%FT%TZ) (01:00 Tallinn)"
+    while [ "$(date -u +%s)" -lt "$lanes_at" ]; do
+      left=$((lanes_at - $(date -u +%s)))
+      sleep "$((left < 30 ? (left > 0 ? left : 1) : 30))"
+    done
+  fi
+  say "LANES start (not before $(date -u -d "@$lanes_at" +%FT%TZ))"
+fi
 
 # The two lanes, side by side; each step inside a lane in order.
 (

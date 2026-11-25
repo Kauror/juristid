@@ -328,6 +328,8 @@ own «Muutmata» chip). Emptied, the date is removed.
 
 ## Amendment, 2026-11-25 — one track, compact items, the rest in a popover (UX-001)
 
+*Accepted by the owner on 25.11.2026 with the r93 release.*
+
 Presentation only. What the rail holds, its order, every state, the reach of
 today, date precision, the acts, the year labels and the editing routes are
 unchanged; no migration.
@@ -369,6 +371,8 @@ This supersedes the 2026-11-23 note that the rail names an estimate's source
 and offers its ✕ under the date: both are kept, in the popover and in `Muuda`.
 
 ## Amendment 2026-11-25 (coordinator review): `Lõpetatud` reads inside the phase it ended in
+
+*Accepted by the owner on 25.11.2026 with the r93 release.*
 
 A point that has happened, with nothing in its window to date it, reads just
 before the current phase, because the file may have reached that phase after

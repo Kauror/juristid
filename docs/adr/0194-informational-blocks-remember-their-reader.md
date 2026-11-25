@@ -113,6 +113,8 @@ the status is unchanged (no formal acceptance was recorded).
 
 ## Amendment 2026-11-25 — «Varasemad», and a state shown for one view (A1, UX-004)
 
+*Accepted by the owner on 25.11.2026 with the r93 release.*
+
 This amends the decision above for presentation only. Nothing new is stored:
 the table, the save and reset endpoints and the registry rule are unchanged.
 

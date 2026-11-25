@@ -180,6 +180,8 @@ vocabulary, `title` empty).
 
 ## Amendment 2026-11-25 (coordinator review): a closed file gets no `Muuda`, enforced at three layers
 
+*Accepted by the owner on 25.11.2026 with the r93 release.*
+
 §1 says «a reader, and a closed file, still get nothing». The template's
 condition was `can_write and legal_process or can_write and matter.is_open`,
 which still offered `Muuda` on a closed file that had a procedure — a panel

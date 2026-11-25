@@ -1,6 +1,6 @@
 # 0161 — A current step the record already shows done is flagged beside it
 
-**Status:** accepted — owner's decision of 2026-10-13 (release preparation): the single deterministic, read-only workflow-consistency warning is accepted as specified here. No further alerts are authorised by this record. The amendment of 2026-11-25 (§4 and §5, work lists) is **Proposed — overnight development 25.11.2026, subject to owner review**.
+**Status:** accepted — owner's decision of 2026-10-13 (release preparation): the single deterministic, read-only workflow-consistency warning is accepted as specified here. No further alerts are authorised by this record. The amendment of 2026-11-25 (§4 and §5, work lists) is **accepted (owner, 25.11.2026, with the r93 release)**.
 **Date:** 2026-10-13
 
 **No migrations**, no data migration, no backfill, nothing written by the
@@ -121,7 +121,7 @@ kinds are unaffected. Pinned by `tests/test_one_rule_one_place.py`.
 
 ## Amendment of 2026-11-25 — the same alert on Minu asjad and Osakond rows
 
-**Status: Proposed — overnight development 25.11.2026, subject to owner review.**
+**Status: Accepted (owner, 25.11.2026, with the r93 release).**
 Owner decision BLOCK-2 of the UX programme (both parts approved) asked for
 FUNC-001: the existing alert, unchanged, where the work lists show the step.
 This amends §4 and states §5 for the new surfaces. No migrations.

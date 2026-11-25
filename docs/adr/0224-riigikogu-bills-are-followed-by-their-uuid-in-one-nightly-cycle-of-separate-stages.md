@@ -1,6 +1,6 @@
 # 0224 — Riigikogu bills are followed by their UUID, read in one nightly cycle of separate stages
 
-Date: 2026-11-24 · Status: proposed (coordinator's brief «Riigikogu legislative intelligence programme», 2026-11-24; development authorisation only — nothing activated, nothing deployed)
+Date: 2026-11-24 · Status: accepted (owner, 25.11.2026: accepted with the r93 release and deterministic Riigikogu monitoring switched on; earlier: coordinator's brief «Riigikogu legislative intelligence programme», 2026-11-24; development authorisation only — nothing activated, nothing deployed)
 
 ## Context
 

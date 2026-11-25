@@ -111,3 +111,20 @@ def test_the_host_monitor_uses_the_same_cycle_completion():
     text = (REPO / "scripts/deploy/juristid-monitor.sh").read_text(encoding="utf-8")
     hours = int(re.search(r"^NIGHTLY_COMPLETE_HOURS=(\d+)$", text, re.MULTILINE).group(1))
     assert dt.timedelta(hours=hours) == ns.CYCLE_COMPLETE_BY
+
+
+def test_the_lanes_after_lovable_fit_their_finish_by_from_one_oclock():
+    """Owner, 25.11.2026: the lanes start no earlier than 01:00. Their finish-by
+    still holds from the later of 01:00 and Lovable's own finish-by."""
+    from app.core import nightly_schedule as ns
+
+    assert ns.LANES_EARLIEST == dt.timedelta(hours=1)
+    assert ns.LANES_EARLIEST < ns.FINISH_BY["lovable"]
+    lanes_from = max(ns.LANES_EARLIEST, ns.FINISH_BY["lovable"])
+    for step in ("government-agenda", "register-watch"):
+        assert ns.FINISH_BY[step] >= lanes_from + ns.LOCK_WAIT, step
+    assert ns.CYCLE_COMPLETE_BY == dt.timedelta(hours=6)
+    script = (
+        Path(__file__).resolve().parents[1] / "scripts" / "deploy" / "juristid-nightly-cycle.sh"
+    ).read_text(encoding="utf-8")
+    assert "LANES_AFTER=${JURISTID_NIGHTLY_LANES_AFTER:-3600}" in script

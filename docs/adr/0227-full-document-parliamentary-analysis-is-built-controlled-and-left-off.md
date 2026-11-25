@@ -1,6 +1,6 @@
 # 0227 — Full-document parliamentary analysis is built, controlled, and left off
 
-Date: 2026-11-24 · Status: proposed — **the processing it describes is not authorised**; the code runs only against a mocked model (coordinator's brief, RK-3)
+Date: 2026-11-24 · Status: accepted for the code (owner, 25.11.2026: accepted with the r93 release) — **the full-document processing it describes is still not authorised** (JURISTID_RIIGIKOGU_DOCUMENT_AI off); the code runs only against a mocked model (coordinator's brief, RK-3)
 
 ## Context
 

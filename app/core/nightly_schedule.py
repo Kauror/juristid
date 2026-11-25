@@ -2,7 +2,9 @@
 
 One cycle a night starts at 00:00 Europe/Tallinn (summer 21:00 UTC, winter
 22:00 UTC; `scripts/deploy/juristid-nightly-cycle.sh`). Its steps run in order —
-the Lovable synchronisation alone first, then the registers lane (register watch,
+the Lovable synchronisation alone first, then, **not before 01:00 Tallinn**
+(`LANES_EARLIEST`, owner 25.11.2026: Lovable has the first hour alone; a Lovable
+night still running at 01:00 is waited for), the registers lane (register watch,
 the Riigikogu cycle, then the «Uued eelnõud» sweep) beside the Government agenda —
 so each step has a latest expected finish, measured from the cycle's start, that
 adds up the steps before it and the cycle's bounded lock waits (20 minutes for the
@@ -10,10 +12,10 @@ release lock before every step, 20 for the Lovable runner's lock):
 
 * ``lovable``: 1 h 30 — both lock waits, the backup and its level-2 check, the
   run (its own 20-minute timeout) and the observation;
-* ``government-agenda``: 2 h 30 — after Lovable (1 h 30), one lock wait (20 min)
-  and a short read (40 min allowed);
-* ``register-watch``: 3 h — after Lovable (1 h 30), one lock wait (20 min) and the
-  watch (≈ 12 min; 1 h 10 allowed);
+* ``government-agenda``: 2 h 30 — after the later of 01:00 and Lovable's end
+  (at most 1 h 30), one lock wait (20 min) and a short read (40 min allowed);
+* ``register-watch``: 3 h — after the later of 01:00 and Lovable's end (at most
+  1 h 30), one lock wait (20 min) and the watch (≈ 12 min; 1 h 10 allowed);
 * ``riigikogu``: 5 h — after the watch (3 h), one lock wait (20 min), the cycle's
   own wall-clock limit (`app.riigikogu.cycle.CYCLE_TIME_LIMIT`, 1 h 30: every
   request, retry, back-off and ledger wait of every stage stops inside it) and
@@ -45,6 +47,9 @@ TALLINN = ZoneInfo("Europe/Tallinn")
 CYCLE_START = dt.time(0, 0)
 #: The bounded wait for the release lock before every step (the cycle script's LOCK_WAIT).
 LOCK_WAIT = dt.timedelta(minutes=20)
+#: The lanes after Lovable start no earlier than this after the cycle's start
+#: (01:00 Tallinn; the cycle script's LANES_AFTER). No change of offset falls in it.
+LANES_EARLIEST = dt.timedelta(hours=1)
 
 FINISH_BY: dict[str, dt.timedelta] = {
     "lovable": dt.timedelta(hours=1, minutes=30),

@@ -1,6 +1,6 @@
 # 0226 — Monitooring gets a Riigikogu section, and the Teema its parliamentary sections
 
-Date: 2026-11-24 · Status: proposed (coordinator's brief, RK-2; development authorisation only)
+Date: 2026-11-24 · Status: accepted (owner, 25.11.2026: accepted with the r93 release and deterministic Riigikogu monitoring switched on; earlier: coordinator's brief, RK-2; development authorisation only)
 
 ## Context
 

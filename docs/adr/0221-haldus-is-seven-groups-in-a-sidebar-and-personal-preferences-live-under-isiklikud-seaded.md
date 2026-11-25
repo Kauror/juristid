@@ -1,6 +1,6 @@
 # 0221 — Haldus is seven groups in a sidebar, and personal preferences live under Isiklikud seaded
 
-Date: 2026-11-25 · Status: Proposed — overnight development 25.11.2026, subject to owner review.
+Date: 2026-11-25 · Status: Accepted (owner, 25.11.2026: accepted with the r93 release; developed overnight 25.11.2026).
 Brief: UX-002 (owner, 24.11.2026), preparation report §3 Package B, overnight brief Workstream B.
 Amends the shell part of docs/adr/0186 (the flat strip); keeps every rule of 0186, 0187, 0145 and 0194.
 

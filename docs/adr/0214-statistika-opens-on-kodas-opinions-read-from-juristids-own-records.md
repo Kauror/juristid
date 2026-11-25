@@ -111,8 +111,7 @@ The owner's conditions:
    the reader. No definition, count or rounding changed; `Record.when` reads
    as before.
 
-   **Zero and unknown** (*Proposed — corrections round 25.11.2026, subject to
-   owner review*). `opinion_stats.records` used to drop every falsy year
+   **Zero and unknown** (*Accepted by the owner 25.11.2026 with the r93 release; developed in the corrections round 25.11.2026*). `opinion_stats.records` used to drop every falsy year
    (`if bar.value`), so a measured 0 was treated like «andmed puuduvad». It
    now drops only unknown years (`None`); each metric was checked against its
    definition, and no definition changed:

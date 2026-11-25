@@ -1,6 +1,6 @@
 # 0229 — The nightly jobs run in one coordinated cycle at midnight in Tallinn
 
-Date: 2026-11-25 · Status: proposed (owner's decision of 2026-11-25, definitive: all routine synchronisation, external-source monitoring and AI analysis run nightly, in one coordinated cycle; prepared and tested only — no production schedule changed, nothing merged or deployed)
+Date: 2026-11-25 · Status: accepted (owner, 25.11.2026: accepted with the r93 release and deterministic Riigikogu monitoring switched on; the remaining lanes from 01:00 Tallinn, §3; earlier: owner's decision of 2026-11-25, definitive: all routine synchronisation, external-source monitoring and AI analysis run nightly, in one coordinated cycle; prepared and tested only — no production schedule changed, nothing merged or deployed)
 
 Numbering: 0221–0223 are the UI/UX programme's (PR #721), 0222–0226 the Riigikogu
 programme's (PR #723); this record took 0229 so that the proposed settlement — UI
@@ -51,9 +51,14 @@ catch-up; an authorised manual run remains possible.
    commands with the same logs. No limit, breaker or model setting changes; the agenda's
    `MAX_ATTEMPTS` = 3 and the batches and token caps stay; the run ledgers stay
    (`LovableSyncRun`, `WatchRun`, `SweepRun`, `GovernmentAgenda.ai_attempts`).
-3. **Order.** Lovable first and alone: a Teema it creates is followed by the watch the same
-   night, the sweep does not offer its draft as new, the agenda's model sees it. Then two
-   lanes side by side: *registers* — `watch_registers` → `watch_riigikogu` (§10) →
+3. **Order.** Lovable first and alone, at 00:00: a Teema it creates is followed by the watch
+   the same night, the sweep does not offer its draft as new, the agenda's model sees it.
+   **Then, not before 01:00 Tallinn** (owner's decision of 25.11.2026: Lovable has the first
+   hour alone), two lanes side by side. The 01:00 start is the lanes' earliest start inside
+   the same cycle (`LANES_AFTER`, `nightly_schedule.LANES_EARLIEST`), not a second cron
+   line: the cycle waits under its own lock, so no release or restore starts in the gap; a
+   Lovable night still running at 01:00 is waited for, never raced; a person's `--manual`
+   recovery does not wait. The lanes: *registers* — `watch_registers` → `watch_riigikogu` (§10) →
    `sweep_registers`, in order (they share the Riigikogu API's rate limit, and the sweep
    leaves out what the watch follows) — and *agenda* — `watch_government_agenda`. One hard
    need: the sweep needs the watch to have finished (SUCCEEDED, SUCCEEDED_NO_NEW or
