@@ -190,6 +190,29 @@ def test_an_unknown_year_is_no_column_and_a_dash_never_a_zero():
     assert workbook_bytes(book)[:2] == b"PK"
 
 
+def test_a_measured_zero_year_downloads_as_zero_and_a_year_without_data_as_blank(
+    client, specialist, world
+):
+    # The world's Teemad are of 2024 and 2026, none of them Koda's initiative:
+    # those years measure 0; 2025 has no Teema at all, so it is unknown
+    # (ADR 0214 §7, «Zero and unknown»).
+    client.force_login(specialist)
+    spec = _charts(client, "?trend=5")["trend-koda"]
+    by_year = dict(zip(spec.categories, spec.series[0].values, strict=True))
+    assert by_year["2024"] == 0 and by_year["2026"] == 0 and by_year["2025"] is None
+
+    data, _ = _sheet(client, "trend-koda", "?trend=5")
+    cells = {row[0]: row[1] for row in data[1:]}
+    assert cells["2024"] == 0 and cells["2026"] == 0
+    assert cells["2025"] is None
+
+    root, _ = _svg(client, "trend-koda", "?trend=5")
+    texts = _texts(root)
+    assert texts.count("0") >= 2  # each measured year prints its 0
+    assert "—" in texts
+    assert any("Andmed puuduvad:" in text and "2025" in text for text in texts)
+
+
 # ---------------------------------------------------------------------------
 # The file itself
 # ---------------------------------------------------------------------------
