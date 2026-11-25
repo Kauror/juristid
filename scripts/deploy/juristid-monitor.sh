@@ -513,7 +513,7 @@ check_lovable() {
 NIGHTLY_COMPLETE_HOURS=4
 check_nightly() {
   [ -n "$MONITOR_NIGHTLY_DIR" ] || return 0
-  local now night state verdict bad started pid steps
+  local now night state verdict bad pid steps
   now="${JURISTID_MONITOR_NOW:-$(date -u +%s)}"
   read -r night _ _ <<<"$(tallinn_clock "$((now - NIGHTLY_COMPLETE_HOURS * 3600))")"
   state="$MONITOR_NIGHTLY_DIR/state"
