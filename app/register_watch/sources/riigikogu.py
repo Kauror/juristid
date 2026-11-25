@@ -12,10 +12,22 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.register_watch.sources.http import FetchError, get_json
+from app.register_watch.sources.http import FetchError
 from app.register_watch.sources.items import Item, parse_day
 
 HOST = "api.riigikogu.ee"
+
+
+def get_json(host: str, path: str, params: dict[str, Any] | None = None) -> Any:
+    """Through the Riigikogu client, so this watch shares the published rate limits'
+    ledger with the sweep and the Riigikogu cycle (ADR 0224 §3)."""
+    from app.riigikogu import client
+
+    if host != client.HOST:
+        raise FetchError(f"keelatud aadress: {host}")
+    return client.get_json(path, params)
+
+
 #: «973 SE», «(1008 SE)», «973SE»: the number and the type, in a title.
 BILL_MARK = re.compile(r"\b(\d{1,4})\s?(SE|OE|AE|RKE)\b")
 

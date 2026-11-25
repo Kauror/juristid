@@ -401,8 +401,15 @@ def waiting() -> QuerySet[TopicCandidate]:
 
 
 def worth_telling() -> QuerySet[TopicCandidate]:
-    """What the bell and Osakond count: not folded, and named (a title that says which draft)."""
-    return waiting().exclude(strength__in=FOLDED).exclude(match_key="")
+    """What the bell and Osakond count: not folded, and named (a title that says which draft).
+
+    A candidate the Riigikogu invited koda on is always worth telling, whatever the
+    model's verdict and whether the model ran at all (ADR 0225 §6).
+    """
+    from django.db.models import Q
+
+    invited = Q(invitations__isnull=False)
+    return waiting().filter((~Q(strength__in=FOLDED) & ~Q(match_key="")) | invited).distinct()
 
 
 def _lock_new(candidate: TopicCandidate) -> TopicCandidate:
@@ -454,11 +461,39 @@ def _link_items(candidate: TopicCandidate, matter: Any, actor: Any) -> int:
     return written
 
 
+def _tie_bills(candidate: TopicCandidate, matter: Any, actor: Any) -> None:
+    """A candidate's Riigikogu bills become the Teema's followed bills (ADR 0224 §2).
+
+    The person's «Seo» or «Uus teema» is the confirmation: the tie is by the bill's
+    UUID, so the Teema is followed whatever its title says.
+    """
+    import uuid as uuid_module
+
+    from app.riigikogu import bills
+    from app.riigikogu.models import Bill
+
+    for external in candidate.items.filter(source=WatchSource.RIIGIKOGU).values_list(
+        "external_id", flat=True
+    ):
+        try:
+            key = uuid_module.UUID(external.removeprefix("draft:"))
+        except ValueError:
+            continue
+        bill = Bill.objects.filter(uuid=key).first()
+        if bill is None:
+            bill = Bill.objects.create(uuid=key, title=candidate.title[:1000])
+        try:
+            bills.link(matter, bill, actor=actor)
+        except DomainError:
+            continue
+
+
 @transaction.atomic
 def attach(candidate: TopicCandidate, matter: Any, *, actor: Any) -> TopicCandidate:
     """«Seo olemasolevaga»: the documents become the existing Teema's `Menetluse link`s."""
     locked = _lock_new(candidate)
     _link_items(locked, matter, actor)
+    _tie_bills(locked, matter, actor)
     _decide(locked, CandidateStatus.ATTACHED, actor, matter)
     return locked
 
@@ -475,6 +510,7 @@ def adopt_if_new(candidate: TopicCandidate, matter: Any, *, actor: Any) -> bool:
     if locked.status != CandidateStatus.NEW:
         return False
     _link_items(locked, matter, actor)
+    _tie_bills(locked, matter, actor)
     _decide(locked, CandidateStatus.ADDED, actor, matter)
     return True
 

@@ -41,7 +41,11 @@ def _waiting() -> Q:
         ).exclude(relevance=Relevance.UNRELATED)
     )
     items = Exists(agenda.proposals().filter(related_matter=OuterRef("matter")))
-    return Q(documents) | Q(items)
+    from app.riigikogu.invitations import waiting_on_teema
+
+    # A Riigikogu invitation to koda on one of the Teema's bills (ADR 0225 §7).
+    invitations = Exists(waiting_on_teema(OuterRef("matter")))
+    return Q(documents) | Q(items) | Q(invitations)
 
 
 def own(user: Any) -> QuerySet[RegisterNotice]:
@@ -75,21 +79,28 @@ def arrived_at(row: RegisterNotice) -> datetime:
     return row.updated_at
 
 
-def notify(matter: Any, documents: int) -> RegisterNotice | None:
+def notify(matter: Any, documents: int, *, invitations: int = 0) -> RegisterNotice | None:
     """Tell the Teema's owner; add to the Teema's unread notice if there is one.
 
     ``recipient`` records who was told last; who sees the notice is the
-    current owner (`own`).
+    current owner (`own`). ``invitations`` counts Riigikogu invitations to koda
+    (or a material change of one's deadline) on the Teema's bills (ADR 0225 §7);
+    with no active owner the caller tells the department head instead.
     """
     owner = getattr(matter, "owner", None)
-    if documents <= 0 or owner is None or not owner.is_active:
+    if (documents <= 0 and invitations <= 0) or owner is None or not owner.is_active:
         return None
     now = timezone.now()
     row = RegisterNotice.objects.filter(matter=matter, read_at__isnull=True).first()
     if row is None:
-        return RegisterNotice.objects.create(recipient=owner, matter=matter, documents=documents)
+        return RegisterNotice.objects.create(
+            recipient=owner, matter=matter, documents=max(documents, 0), invitations=invitations
+        )
     RegisterNotice.objects.filter(pk=row.pk).update(
-        recipient=owner, documents=row.documents + documents, updated_at=now
+        recipient=owner,
+        documents=row.documents + max(documents, 0),
+        invitations=row.invitations + invitations,
+        updated_at=now,
     )
     row.refresh_from_db()
     return row

@@ -74,6 +74,7 @@ LOCAL_APPS = [
     "app.intelligence",
     "app.related_materials",
     "app.register_watch",
+    "app.riigikogu",
     "app.mcp_access",
     "app.mcp_server",
     "app.mcp_writes",
@@ -1006,6 +1007,17 @@ REGISTER_SWEEP = env_bool(
 # facts only; needs ANTHROPIC_API_KEY.
 REGISTER_SWEEP_AI = env_bool("JURISTID_REGISTER_SWEEP_AI", default=False)
 REGISTER_SWEEP_AI_MODEL = env("JURISTID_REGISTER_SWEEP_AI_MODEL", "claude-opus-5-5")
+
+# The nightly Riigikogu cycle (app/riigikogu, docs/adr/0224–0228): invitations to
+# koda, amendment deadlines, committee agendas, protocols and stenograms. **Off by
+# default everywhere**, production included: it reads only when this is on *and*
+# JURISTID_REGISTER_WATCH_FETCH is on, and switching it on is an owner decision
+# recorded with the release (ADR 0224 §7). Nothing schedules it in this code.
+RIIGIKOGU_MONITORING = env_bool("JURISTID_RIIGIKOGU_MONITORING", default=False)
+# Full-document analysis by an external model (ADR 0227). Off; must stay off until
+# separately authorised. The analysis code runs against a mocked model in tests.
+RIIGIKOGU_DOCUMENT_AI = env_bool("JURISTID_RIIGIKOGU_DOCUMENT_AI", default=False)
+RIIGIKOGU_DOCUMENT_AI_MODEL = env("JURISTID_RIIGIKOGU_DOCUMENT_AI_MODEL", "claude-opus-5-5")
 
 
 def _revision() -> str:

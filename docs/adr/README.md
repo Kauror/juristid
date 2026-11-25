@@ -231,6 +231,11 @@ consequences and reversibility.
 | [0221](0221-haldus-is-seven-groups-in-a-sidebar-and-personal-preferences-live-under-isiklikud-seaded.md) | Haldus is seven groups in a sidebar, and personal preferences live under Isiklikud seaded (one registry with group-level visibility equal to each route's guard; Integratsioonid split into Lovable, OneNote and Registrite jälgimine; Ülevaade shows what needs attention) | Proposed |
 | [0222](0222-a-person-keeps-named-teemad-views-and-the-address-is-still-the-view.md) | A person keeps named Teemad views, and the address is still the view (at most 20 per persona; a canonical query, never rows or counts; private, the link still shareable; supersedes 0043 §2; migration `matters/0052`) | Proposed |
 | [0223](0223-minu-statistika-credits-each-figure-by-a-stated-rule-and-never-guesses-history.md) | Minu statistika credits each figure by a stated rule and never guesses history (self only; current owner, recorded actor or owner at the time; «andmed puuduvad» where the trail cannot say) | Proposed |
+| [0224](0224-riigikogu-bills-are-followed-by-their-uuid-in-one-nightly-cycle-of-separate-stages.md) | Riigikogu bills are followed by their UUID, read in one nightly cycle of separate stages (the tie stays a `WatchTarget`, origin LINKED; one shared ledger under the published 1/s and 12/min limits; stage runs with checkpoints that only success moves) | Proposed |
+| [0225](0225-riigikogu-invitations-to-koda-are-read-and-their-dates-stay-external-facts.md) | Riigikogu invitations to koda are read nightly, and their dates stay external facts (addressee from metadata; deterministic deadline reading, measured on 205 letters with 0 wrong accepted; informational date kinds; no Lovable field written) | Proposed |
+| [0226](0226-monitooring-gets-a-riigikogu-section-and-the-teema-its-parliamentary-sections.md) | Monitooring gets a Riigikogu section, and the Teema its parliamentary sections (invitations first; committees; the members' amendment deadlines; earlier invitations folded) | Proposed |
+| [0227](0227-full-document-parliamentary-analysis-is-built-controlled-and-left-off.md) | Full-document parliamentary analysis is built, controlled, and left off (one cached, validated, quote-verified pipeline; deterministic version comparison; official evidence first; work-victory candidates only) | Proposed — processing not authorised |
+| [0228](0228-protocols-stenograms-and-answers-are-evidence-never-verdicts.md) | Protocols, stenograms and answers to invitations are evidence, never verdicts («vajab kontrollimist», never «ei vastanud»; deferred extensions listed) | Proposed |
 | [0229](0229-the-nightly-jobs-run-in-one-coordinated-cycle-at-midnight-in-tallinn.md) | The nightly jobs run in one coordinated cycle at midnight in Tallinn (one cron line fires 21:00 and 22:00 UTC, the script runs the 00:00 Tallinn one; Lovable first, then the registers lane and the agenda side by side; outcomes from run records; one cycle lock a release must take; prepared, not deployed) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
@@ -245,25 +250,6 @@ requires every gap in the numbering to be named here:
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
   rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
   The record lands with that branch, which then removes this line.
-- 0221 — reserved for the UI/UX and functional improvement programme of
-  2026-11-24 (Haldus navigation and personal preferences), on
-  `integration/programme-cumulative` (PR #721) and the `ux/*` branches, not yet merged.
-- 0222 — reserved for the Riigikogu programme (`rk/programme`, PR #723, draft):
-  «Riigikogu bills are followed by their UUID, read in one nightly cycle of separate
-  stages». The UI programme's branches also number a record 0222 (saved views); the
-  clash is settled before either merges.
-- 0223 — reserved for the Riigikogu programme (PR #723): «Riigikogu invitations to
-  koda are read and their dates stay external facts». The UI programme also numbers
-  a record 0223 (Minu statistika); settled as 0222.
-- 0224 — reserved for the Riigikogu programme (PR #723): «Monitooring gets a Riigikogu
-  section and the Teema its parliamentary sections».
-- 0225 — reserved for the Riigikogu programme (PR #723): «Full-document parliamentary
-  analysis is built, controlled and left off».
-- 0226 — reserved for the Riigikogu programme (PR #723): «Protocols, stenograms and
-  answers are evidence, never verdicts».
-- 0227 — not used on main. Held for the proposed settlement of the 0222/0223 clash:
-  the UI programme keeps 0221–0223 and the Riigikogu programme moves to 0224–0228.
-- 0228 — not used on main; held as 0227.
 
 Naming: `NNNN-short-decision-title.md`.
 

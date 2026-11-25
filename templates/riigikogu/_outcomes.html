@@ -1,0 +1,30 @@
+{% comment %}
+«Koja ettepanekute arvestamine» (docs/adr/0227 §5–§6): per proposal, what happened
+to it, at which stage, and how strong the evidence is. Official evidence (the lead
+committee's list of amendments) comes first and is labelled as such; a match the
+texts show without any statement of who caused it is «sisuline kokkulangevus», not
+influence. A person may propose a `Töövõidu kandidaat`; only a person confirms one.
+{% endcomment %}
+<div class="rkanalysis">
+  <p class="rkanalysis__label">{% if analysis.mocked %}Näidis: mudeli vastus on simuleeritud.{% else %}Mudeli koostatud võrdlus{% endif %} · ametlik tõend on märgitud eraldi.</p>
+  <ul class="regwatch__list">
+    {% for row in analysis.result.proposals %}
+      <li class="regwatch__row">
+        <span class="regwatch__date rkoutcome rkoutcome--{{ row.outcome|lower }}">{% if row.outcome == "REFLECTED" %}Arvestatud{% elif row.outcome == "PARTIAL" %}Osaliselt{% elif row.outcome == "NOT_REFLECTED" %}Ei arvestatud{% elif row.outcome == "REVERSED" %}Hiljem tagasi võetud{% else %}Tõendeid napib{% endif %}</span>
+        <div class="regwatch__body">
+          <span class="regwatch__title">{{ row.proposal }}</span>
+          <span class="regwatch__meta">{% if row.provision %}{{ row.provision }} · {% endif %}{% if row.stage %}{{ row.stage }} · {% endif %}{% if row.evidence_level == "DIRECT" %}Otsene tõend: juhtivkomisjoni muudatusettepanekute loetelu{% elif row.evidence_level == "SHARED" %}Ühine panus: ettepanek ka teistelt{% elif row.evidence_level == "ALIGNMENT" %}Sisuline kokkulangevus, põhjuslikkust ei näita{% else %}Tõendeid napib{% endif %}</span>
+          <blockquote class="rkinv__evidence">{{ row.quote }}</blockquote>
+          {% if row.explanation %}<span class="regwatch__note">{{ row.explanation }}</span>{% endif %}
+          {% if row.counter %}<span class="rkinv__changed">Vastu räägib: {{ row.counter }}</span>{% endif %}
+        </div>
+        {% if can_write_business_content and matter.is_open and row.outcome != "NOT_REFLECTED" and row.outcome != "INSUFFICIENT" %}
+          <form class="regwatch__actions" method="post" action="{% url 'register_watch:riigikogu_victory' pk=analysis.pk index=forloop.counter0 %}">
+            {% csrf_token %}<input type="hidden" name="teema_id" value="{{ matter.pk }}">
+            <button type="submit" class="button button--secondary button--tiny">Lisa töövõidu kandidaadiks</button>
+          </form>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</div>

@@ -40,3 +40,7 @@
 # the same logs. Before the cycle they had their own lines (watch 03:30 UTC,
 # sweep 04:20 UTC, agenda every half hour Wednesday 12:00 to Thursday 12:00
 # Tallinn); --rollback restores them (docs/adr/0229 §8).
+# The Riigikogu cycle (docs/adr/0224 §5) has no line of its own either: when the owner
+# activates it, `watch_riigikogu` becomes a step of this same cycle, after the register
+# watch and before the new-drafts sweep, and it reads nothing unless
+# JURISTID_RIIGIKOGU_MONITORING=1. Until then the cycle does not call it.

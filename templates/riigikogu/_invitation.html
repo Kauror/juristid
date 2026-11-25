@@ -1,0 +1,96 @@
+{% comment %}
+One invitation to koda (docs/adr/0225). The deadline is shown with the sentence it
+was read from, so a lawyer checks it without opening the letter; a date that needs
+checking says so and is confirmed before it can be added. The Teema it belongs to
+is named only when the reader may see it. Nothing here writes `Arvamuse tähtaeg`:
+«Lisa tähtajana» adds an informational `Oluline tähtaeg`, and the comparison with
+the Teema's own deadline (Lovable's) is shown, never resolved.
+`row` is a `selectors.InvitationRow`; `from_teema` set on the Teema's tab.
+{% endcomment %}
+{% with invitation=row.invitation deadline=row.deadline document=row.invitation.document %}
+<li class="regwatch__row rkinv{% if row.needs_check %} rkinv--check{% endif %}" id="kutse-{{ invitation.pk }}">
+  <span class="regwatch__date rkinv__due{% if row.needs_check %} rkinv__due--check{% endif %}">
+    {% if deadline and deadline.due_on %}{{ deadline.due_on|date:"d.m.Y" }}{% if deadline.due_time %}<span class="rkinv__time"> kell {{ deadline.due_time|time:"H.i" }}</span>{% endif %}{% else %}—{% endif %}
+  </span>
+  <div class="regwatch__body">
+    <span class="regwatch__title">{{ invitation.committee|default:"Riigikogu komisjon" }} · {% if document.bill %}{{ document.bill.label|default:document.bill.title }}{% else %}{{ document.title }}{% endif %}</span>
+    <span class="rkinv__status rkinv__status--{{ deadline.extraction|default:'NOT_FOUND'|lower }}">{{ row.status_label }}{% if deadline.doubt %} — {{ deadline.doubt }}{% endif %}</span>
+    {% if row.changed %}<span class="rkinv__changed">Tähtaeg muutus: oli {{ row.previous.due_on|date:"d.m.Y"|default:"—" }}, nüüd {{ deadline.due_on|date:"d.m.Y"|default:"—" }}.</span>{% endif %}
+    {% if deadline.evidence %}<blockquote class="rkinv__evidence">{{ deadline.evidence }}</blockquote>{% endif %}
+    <span class="regwatch__meta">
+      Kiri {{ document.letter_date|date:"d.m.Y"|default:"—" }}{% if document.registered_on and document.registered_on != document.letter_date %} · registris {{ document.registered_on|date:"d.m.Y" }}{% endif %}
+      {% if row.attendance %} · osalemisest teatada {{ row.attendance.due_on|date:"d.m.Y"|default:"—" }}{% endif %}
+      {% if invitation.hearing_on %} · arutelu {{ invitation.hearing_on|date:"d.m.Y" }}{% endif %}
+      {% if deadline.source_url %} · <a href="{{ deadline.source_url }}" target="_blank" rel="noopener noreferrer">Kiri<span class="visually-hidden"> — avaneb uues aknas</span></a>{% endif %}
+      {% if document.bill.url %} · <a href="{{ document.bill.url }}" target="_blank" rel="noopener noreferrer">Eelnõu Riigikogus<span class="visually-hidden"> — avaneb uues aknas</span></a>{% endif %}
+    </span>
+    {% if not from_teema %}
+      {% if row.teemad %}
+        <span class="regwatch__meta">Teema: {% for matter in row.teemad %}<a href="{% url 'matters:matter_registers' pk=matter.pk %}#kutse-{{ invitation.pk }}">{{ matter.display_reference }} {{ matter.title }}</a>{% if matter.owner %} ({{ matter.owner.get_short_name|default:matter.owner }}){% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</span>
+      {% elif row.candidate %}
+        <span class="regwatch__meta rkinv__candidate">Riigikogu kutsus koda arvamust avaldama · <a href="{% url 'register_watch:candidates' %}#kandidaat-{{ row.candidate.pk }}">Uued eelnõud</a></span>
+      {% endif %}
+    {% endif %}
+    {% if row.lovable == "same" %}<span class="regwatch__meta">Sama mis teema arvamuse tähtaeg.</span>
+    {% elif row.lovable == "differs" %}<span class="rkinv__changed">Erineb teema arvamuse tähtajast ({{ row.lovable_date|date:"d.m.Y" }}). Teema tähtaeg tuleb Lovable'ist ja seda siin ei muudeta.</span>
+    {% elif row.lovable == "none" %}<span class="regwatch__meta">Teemal pole arvamuse tähtaega.</span>{% endif %}
+    {% if invitation.review != "NEW" %}<span class="regwatch__meta">{{ invitation.get_review_display }}{% if invitation.decided_by %} · {{ invitation.decided_by.get_short_name|default:invitation.decided_by }}{% endif %}{% if invitation.decided_at %} · {{ invitation.decided_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
+    {% if invitation.response == "NEEDS_CHECK" or invitation.response == "FOUND" or invitation.response_by %}<span class="regwatch__meta">{{ invitation.get_response_display }}{% if invitation.response_note %} — {{ invitation.response_note }}{% endif %}</span>{% endif %}
+  </div>
+  {% if can_act %}
+    <div class="regwatch__actions regwatch__actions--stack">
+      {% if invitation.review == "NEW" %}
+        <form method="post" action="{% url 'register_watch:riigikogu_decide' pk=invitation.pk %}"{% if from_teema %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
+          {% csrf_token %}
+          {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% elif row.teemad|length == 1 %}<input type="hidden" name="teema_id" value="{{ row.teemad.0.pk }}">{% elif row.teemad and not row.needs_check %}<label class="visually-hidden" for="tm-{{ invitation.pk }}">Teema</label><select id="tm-{{ invitation.pk }}" name="teema_id" class="field__input">{% for matter_choice in row.teemad %}<option value="{{ matter_choice.pk }}">{{ matter_choice.display_reference }} {{ matter_choice.title|truncatechars:40 }}</option>{% endfor %}</select>{% endif %}
+          {% if not row.needs_check and row.teemad %}<button type="submit" name="otsus" value="kuupaev" class="button button--primary button--tiny">Lisa tähtajana</button>{% endif %}
+          <button type="submit" name="otsus" value="pole_vaja" class="button button--quiet button--tiny">Edasist tööd pole vaja</button>
+        </form>
+        {% if row.needs_check %}
+          <details class="rkinv__more">
+            <summary>Kontrolli tähtaega</summary>
+            <form method="post" action="{% url 'register_watch:riigikogu_decide' pk=invitation.pk %}"{% if from_teema %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
+              {% csrf_token %}
+              {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% endif %}
+              <label class="field__label" for="kp-{{ invitation.pk }}">Kuupäev kirjast</label>
+              <input id="kp-{{ invitation.pk }}" type="date" name="paev" class="field__input" required>
+              <label class="field__label" for="kell-{{ invitation.pk }}">Kellaaeg (kui kirjas)</label>
+              <input id="kell-{{ invitation.pk }}" type="time" name="kell" class="field__input">
+              <button type="submit" name="otsus" value="kinnita" class="button button--secondary button--tiny">Kinnita tähtaeg</button>
+            </form>
+          </details>
+        {% endif %}
+        {% if row.teemad or from_teema %}
+          <details class="rkinv__more">
+            <summary>Lisa meeldetuletus</summary>
+            <form method="post" action="{% url 'register_watch:riigikogu_decide' pk=invitation.pk %}"{% if from_teema %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
+              {% csrf_token %}
+              {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% elif row.teemad|length == 1 %}<input type="hidden" name="teema_id" value="{{ row.teemad.0.pk }}">{% else %}<label class="field__label" for="mtt-{{ invitation.pk }}">Teema</label><select id="mtt-{{ invitation.pk }}" name="teema_id" class="field__input">{% for matter_choice in row.teemad %}<option value="{{ matter_choice.pk }}">{{ matter_choice.display_reference }} {{ matter_choice.title|truncatechars:40 }}</option>{% endfor %}</select>{% endif %}
+              <label class="field__label" for="mt-{{ invitation.pk }}">Päev</label>
+              <input id="mt-{{ invitation.pk }}" type="date" name="paev" class="field__input" min="{{ today|date:'Y-m-d' }}" required>
+              <label class="field__label" for="mm-{{ invitation.pk }}">Märkus</label>
+              <input id="mm-{{ invitation.pk }}" type="text" name="markus" class="field__input" maxlength="200" placeholder="Riigikogu kutse">
+              <button type="submit" name="otsus" value="meeldetuletus" class="button button--secondary button--tiny">Lisa meeldetuletus</button>
+            </form>
+          </details>
+        {% endif %}
+      {% elif invitation.response == "NEEDS_CHECK" %}
+        <details class="rkinv__more">
+          <summary>Märgi, kuidas vastati</summary>
+          <form method="post" action="{% url 'register_watch:riigikogu_decide' pk=invitation.pk %}"{% if from_teema %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
+            {% csrf_token %}
+            {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% endif %}
+            <label class="field__label" for="vs-{{ invitation.pk }}">Vastus</label>
+            <select id="vs-{{ invitation.pk }}" name="vastus" class="field__input">
+              {% for value, label in response_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+            <label class="field__label" for="vm-{{ invitation.pk }}">Märkus</label>
+            <input id="vm-{{ invitation.pk }}" type="text" name="markus" class="field__input" maxlength="500">
+            <button type="submit" name="otsus" value="vastus" class="button button--secondary button--tiny">Salvesta</button>
+          </form>
+        </details>
+      {% endif %}
+    </div>
+  {% endif %}
+</li>
+{% endwith %}

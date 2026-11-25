@@ -123,6 +123,16 @@ NOT_MATTER_DATA = {
     # A Government agenda item: public text; it acts only on an open Teema the
     # reader may see, else 404 (ADR 0219, amendment 2026-11-22).
     "register_watch:agenda_decide": "Government agenda item",
+    # A Riigikogu invitation to koda: a public letter; a decision acts only on a
+    # Teema the reader may see that follows the letter's bill, else 404, and the
+    # Monitooring page names a Teema only through `visible_to` (ADR 0225 §6).
+    "register_watch:riigikogu_decide": "Riigikogu invitation",
+    # A model analysis of public Riigikogu text; a work-victory candidate is added
+    # only on a Teema the reader may see that follows the bill (ADR 0227 §6).
+    "register_watch:riigikogu_victory": "Riigikogu analysis",
+    # A bill tie (`WatchTarget`): ended only when its Teema is visible to the reader,
+    # else 404 (ADR 0224 §2).
+    "register_watch:riigikogu_unlink": "Riigikogu bill tie",
     "legacy_import:opinion_archive_file": "archive",
     "legacy_import:opinion_archive_link": "archive",
     "legacy_import:opinion_decide": "archive",
@@ -326,7 +336,11 @@ def _key_for(route: str, param: str) -> str | None:
         return "suggestion"
     if route == "register_watch:decide":
         return "finding"
-    if route in ("register_watch:phrase", "register_watch:dismiss_all"):
+    if route in (
+        "register_watch:phrase",
+        "register_watch:dismiss_all",
+        "register_watch:riigikogu_link",
+    ):
         # «Otsingusõnad» name the Teema they search for (ADR 0217 §7); «Jäta kõik
         # vahele» the Teema whose waiting documents it skips (ADR 0219).
         return "matter"

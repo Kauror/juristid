@@ -65,6 +65,12 @@ watch's own routes and come back here (`tagasi=teema`).
     </ul>
   {% endif %}
 
+  {% comment %}
+    The Riigikogu: this Teema's followed bills, invitations to koda, external
+    dates, sittings and other organisations' opinions (docs/adr/0226 §3).
+  {% endcomment %}
+  {% if parliament %}{% include "riigikogu/_teema.html" %}{% endif %}
+
   {% if register_unrelated %}
     <details class="regwatch__unrelated">
       <summary>Ei puutu teemasse ({{ register_unrelated|length }})</summary>
