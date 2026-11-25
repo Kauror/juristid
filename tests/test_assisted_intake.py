@@ -1504,8 +1504,12 @@ def test_the_review_get_opens_no_evidence_bytes(signed_in, intake_matter, monkey
         monkeypatch.setattr(storage_class, method, refuse)
     for method in ("for_mime_type", "parsers"):
         monkeypatch.setattr(ParserRegistry, method, refuse)
-    for parser in set(registry._by_mime.values()):
-        monkeypatch.setattr(parser, "parse", refuse)
+    # On the class, never the instance: undoing an instance patch leaves the
+    # original bound method behind as an instance attribute, which then hides
+    # every later test's patch of the class (it broke test_access_log_privacy
+    # whenever both shared a CI shard).
+    for parser_class in {type(p) for p in registry._by_mime.values()}:
+        monkeypatch.setattr(parser_class, "parse", refuse)
 
     response = signed_in.get(_assisted(intake_matter))
     assert response.status_code == 200
