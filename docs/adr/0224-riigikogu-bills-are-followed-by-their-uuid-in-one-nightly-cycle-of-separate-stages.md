@@ -66,6 +66,44 @@ daytime polling.
    the cycle on, adding its cron line and its first supervised run are owner decisions
    recorded with a release.
 
+## What the switch disables
+
+`RIIGIKOGU_MONITORING` (`JURISTID_RIIGIKOGU_MONITORING`, default off) is the one switch
+for every new parliamentary action, read by `riigikogu.bills.switched_on()`; it is
+deliberately *not* `cycle.enabled()`, because `REGISTER_WATCH_FETCH` is already on in
+production for the register watch and must not switch anything new on with it
+(amendment 2026-11-25, coordinator's release review item 6). While it is off:
+
+| Entry point | Network | Writes | Off | On |
+|---|---|---|---|---|
+| `riigikogu.views.link_bill` («Seo eelnõu», by number) | `bills.find` → api.riigikogu.ee | `Bill`, `WatchTarget` LINKED | 404 before any read or write | as designed |
+| `riigikogu.views.unlink_bill` | none | `WatchTarget.active` | 404 | as designed |
+| `riigikogu.views.decide` (kuupaev, seo, meeldetuletus, pole_vaja, kinnita, vastus) | none | `Invitation`, `MatterImportantDate` RK_*, `ExternalDeadline`, personal reminder | 404, invitation stays NEW | as designed |
+| `riigikogu.views.propose_victory` | none | `MatterWorkVictory` candidate | 404 (also while document AI is off, and for a mocked analysis in production) | as designed |
+| `register_watch.candidates._tie_bills` (from `attach`, `adopt_if_new`) | none | `Bill`, `WatchTarget` LINKED — which the existing nightly watch would then read | does nothing; the candidate is attached / adopted exactly as in r92 | ties the candidate's bills |
+| Teema «Registritest» Riigikogu section (`register_watch.views.teema_panel` → `selectors.teema`, `_teema.html`) | none | none | not drawn at all: the tab is the register watch's, as in r92 | drawn, with its forms |
+| Monitooring → Riigikogu (`riigikogu.views.monitooring`, `selectors.monitooring`) | none | none | read-only: stored public record only (empty before the first night), no decision forms, says the monitoring is not switched on | forms for the deciders |
+| Monitooring tab count (`candidate_views._riigikogu_waiting`), notices (`notices._waiting`, `candidate_notices`) | none | none | counts rows only the cycle writes — 0 before activation | counts |
+| The nightly cycle (`cycle.run`, ADR 0229 step) | — | `StageRun` DISABLED only | records DISABLED, reads nothing (also needs `REGISTER_WATCH_FETCH`) | reads |
+
+Not disabled, by design: the register watch and the new-drafts sweep (ADR 0217, 0218)
+read the Riigikogu exactly as before under `REGISTER_WATCH_FETCH` alone; their calls now
+take their turn from the shared ledger (§3), which spaces them and changes no result.
+
+`RIIGIKOGU_DOCUMENT_AI` (ADR 0227) is separate and also off: `analysis.run` raises before
+it writes a row, whatever model it is given (a `MockModel` too); every surface reads
+stored analyses through `analysis.shown`, which returns none while the switch is off and
+never a `mocked` row where `APPLICATION_ENVIRONMENT` is `production`. The demonstration
+command (`seed_riigikogu_demo`) refuses to run in production and stores no analysis while
+document AI is off. Tests: `tests/test_riigikogu_disabled_boundaries.py` (each boundary
+off and on).
+
+Switching either on is an environment change on the host, visible in the deploy kit's
+configuration fingerprint like every other `JURISTID_*` switch, and an owner decision
+recorded with the release. Rolling back to r92 after a parliamentary date was accepted is
+`manage.py riigikogu_rollback_guard` (ADR 0225 §3; procedure in the release worklog
+ROLLBACK-AFTER-ACTIVATION.md).
+
 ## Consequences
 
 - A Teema that never names its bill can follow it, and a renamed bill stays followed.

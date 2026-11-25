@@ -270,6 +270,7 @@ class TeemaParliament:
 
 def teema(user: Any, matter: Any) -> TeemaParliament:
     """The Teema's parliamentary sections: only its own tied bills, nothing guessed."""
+    from app.riigikogu import analysis as document_ai
     from app.riigikogu import bills as bill_service
 
     targets = list(bill_service.linked_targets(matter).order_by("created_at"))
@@ -291,8 +292,11 @@ def teema(user: Any, matter: Any) -> TeemaParliament:
     rows = invitation_rows(user, invitations)
     now = timezone.now()
     analyses: dict[str, list[Analysis]] = defaultdict(list)
-    for analysis in Analysis.objects.filter(bill_id__in=ids, status=AnalysisStatus.DONE).order_by(
-        "-created_at"
+    # Nothing while document AI is off; never a mocked analysis in production.
+    for analysis in (
+        document_ai.shown(Analysis.objects.all())
+        .filter(bill_id__in=ids, status=AnalysisStatus.DONE)
+        .order_by("-created_at")
     ):
         analyses[analysis.analysis_type].append(analysis)
     return TeemaParliament(

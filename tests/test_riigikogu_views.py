@@ -17,6 +17,14 @@ from tests import factories
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def switched_on(settings):
+    """These tests are the switched-on behaviour; the switched-off boundaries are in
+    tests/test_riigikogu_disabled_boundaries.py."""
+    settings.RIIGIKOGU_MONITORING = True
+    settings.RIIGIKOGU_DOCUMENT_AI = True
+
+
 @pytest.fixture
 def world(db):
     """A lawyer and a head, then the fictional Riigikogu, which makes its own two Teemad."""

@@ -4,6 +4,10 @@ The page is Monitooring's (the department head's, or everyone's once the head
 opened it). The decisions are also taken from a Teema's «Registritest» tab by
 anyone who may write business content and see that Teema (``tagasi=teema``).
 Every decision is a POST through a named service; a GET changes nothing.
+
+**While the Riigikogu monitoring is switched off** (`bills.switched_on`, ADR 0224 «What
+the switch disables») every action here answers 404 before it reads the network or
+writes a row, and the page is read-only: its forms are not drawn.
 """
 
 from __future__ import annotations
@@ -30,6 +34,12 @@ from app.riigikogu.models import Invitation
 NO_TEEMA = "Sellist avatud teemat ei leitud."
 
 
+def _refuse_while_off() -> None:
+    """Every parliamentary action is unavailable until the monitoring is switched on."""
+    if not bills.switched_on():
+        raise Http404(NOT_HERE)
+
+
 @login_required
 @require_http_methods(["GET"])
 def monitooring(request: HttpRequest) -> HttpResponse:
@@ -44,7 +54,8 @@ def monitooring(request: HttpRequest) -> HttpResponse:
             **monitooring_context(request, "riigikogu"),
             "page": page,
             "everything": everything,
-            "may_decide": candidate_notices.may_decide(request.user),
+            "may_decide": bills.switched_on() and candidate_notices.may_decide(request.user),
+            "actions_on": bills.switched_on(),
             "watch_on": cycle.enabled(),
             "health": [h for h in cycle.health() if h.state not in ("ok", "disabled")],
             "response_choices": [(c.value, c.label) for c in responses.PERSON_CHOICES],
@@ -110,6 +121,7 @@ def _time(raw: str) -> dt.time | None:
 @require_http_methods(["POST"])
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     """One decision on one invitation: date, link, reminder, nothing, confirm, answer."""
+    _refuse_while_off()
     invitation = (
         Invitation.objects.select_related("document", "document__bill").filter(pk=pk).first()
     )
@@ -184,8 +196,13 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def link_bill(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Seo Riigikogu eelnõu» on a Teema: by number («1082 SE»), confirmed by a person."""
+    """«Seo Riigikogu eelnõu» on a Teema: by number («1082 SE»), confirmed by a person.
+
+    Reads api.riigikogu.ee (`bills.find`), so it is refused before anything else while
+    the monitoring is off."""
     from app.matters.models import Matter
+
+    _refuse_while_off()
 
     matter = Matter.objects.visible_to(request.user).filter(pk=pk, deleted_at__isnull=True).first()
     if matter is None:
@@ -212,6 +229,8 @@ def link_bill(request: HttpRequest, pk: Any) -> HttpResponse:
 def unlink_bill(request: HttpRequest, pk: Any) -> HttpResponse:
     from app.register_watch.models import WatchSource, WatchTarget
 
+    _refuse_while_off()
+
     target = (
         WatchTarget.objects.filter(pk=pk, source=WatchSource.RIIGIKOGU, active=True)
         .select_related("matter")
@@ -237,12 +256,18 @@ def propose_victory(request: HttpRequest, pk: Any, index: int) -> HttpResponse:
     """«Lisa töövõidu kandidaadiks»: a person proposes; the existing service records a
     candidate, never a confirmed win (docs/adr/0227 §6)."""
     from app.intelligence.services import add_work_victory_candidate
+    from app.riigikogu import analysis as document_ai
     from app.riigikogu.enums import AnalysisStatus, AnalysisType
     from app.riigikogu.models import Analysis
 
-    analysis = Analysis.objects.filter(
-        pk=pk, analysis_type=AnalysisType.PROPOSAL_OUTCOMES, status=AnalysisStatus.DONE
-    ).first()
+    _refuse_while_off()
+    # Only an analysis the Teema may show: none while document AI is off, and never a
+    # mocked one in production (`analysis.shown`).
+    analysis = (
+        document_ai.shown(Analysis.objects.all())
+        .filter(pk=pk, analysis_type=AnalysisType.PROPOSAL_OUTCOMES, status=AnalysisStatus.DONE)
+        .first()
+    )
     matter = _teema(request, str(request.POST.get("teema_id", "")))
     if analysis is None or matter is None or analysis.bill is None:
         raise Http404(NOT_HERE)

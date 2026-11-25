@@ -175,11 +175,14 @@ def teema_panel(user: Any, matter: Any) -> dict[str, Any]:
         (unrelated if finding.relevance == Relevance.UNRELATED else shown).append(finding)
     watching = list(matter.watch_targets.filter(active=True).order_by("source"))
     from app.register_watch import agenda
+    from app.riigikogu import bills
     from app.riigikogu import selectors as parliament
 
     return {
         # The Riigikogu: this Teema's tied bills, invitations, dates, sittings (ADR 0226 §3).
-        "parliament": parliament.teema(user, matter),
+        # Not drawn at all while the monitoring is off (ADR 0224 «What the switch
+        # disables»): the tab is then exactly the register watch's.
+        "parliament": parliament.teema(user, matter) if bills.switched_on() else None,
         # The Government's agenda items tied to this Teema, waiting for a decision.
         "agenda_proposals": agenda.teema_proposals(matter) if matter.is_open else [],
         "register_shown": shown,

@@ -362,7 +362,12 @@ class Command(BaseCommand):
                     else [],
                     requests=12,
                 )
-        self._analyses(bill)
+        # The simulated analyses only where document AI is switched on: `analysis.run`
+        # writes nothing while it is off, and no surface would show them (ADR 0227).
+        if analysis.enabled():
+            self._analyses(bill)
+        else:
+            self.stdout.write("Dokumentide analüüs on välja lülitatud: näidisanalüüse ei looda.")
         self.stdout.write("Riigikogu näidisandmed loodud (väljamõeldud, mudel simuleeritud).")
 
     def _teemad(self) -> list[Any]:

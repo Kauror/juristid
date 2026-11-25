@@ -466,11 +466,19 @@ def _tie_bills(candidate: TopicCandidate, matter: Any, actor: Any) -> None:
 
     The person's «Seo» or «Uus teema» is the confirmation: the tie is by the bill's
     UUID, so the Teema is followed whatever its title says.
+
+    **Nothing while the Riigikogu monitoring is off** (`bills.switched_on`, ADR 0224
+    «What the switch disables»): a `LINKED` tie is read every night by the existing
+    register watch, so tying here would switch the new following on through the
+    candidate workflow. The candidate is attached or adopted exactly as before.
     """
     import uuid as uuid_module
 
     from app.riigikogu import bills
     from app.riigikogu.models import Bill
+
+    if not bills.switched_on():
+        return
 
     for external in candidate.items.filter(source=WatchSource.RIIGIKOGU).values_list(
         "external_id", flat=True

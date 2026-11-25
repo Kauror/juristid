@@ -31,6 +31,7 @@ import uuid as uuid_module
 from dataclasses import dataclass
 from typing import Any
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
@@ -45,7 +46,21 @@ BILL_MARK = re.compile(r"\b(\d{1,4})\s?(SE|OE|AE|RKE)\b")
 _REFERENCE = re.compile(r"^\d+-\d+/(\d+)-(\d+)")
 
 NOT_A_BILL = "Riigikogust sellist eelnõu ei leitud."
+#: What a person is told when a parliamentary action is tried while it is off.
+SWITCHED_OFF = "Riigikogu jälgimine ei ole sisse lülitatud."
 ALREADY_LINKED = "See eelnõu on teemaga juba seotud."
+
+
+def switched_on() -> bool:
+    """Whether the new parliamentary *actions* are available (ADR 0224 «What the switch
+    disables»): linking and unlinking a bill, deciding an invitation, proposing a work
+    victory, and a candidate's «Seo» / «Uus teema» tying its bills to the Teema.
+
+    The owner's ``RIIGIKOGU_MONITORING`` alone, deliberately not `cycle.enabled()`: the
+    nightly reading also needs ``REGISTER_WATCH_FETCH``, which is on in production for
+    the existing register watch (ADR 0217/0218) and must not switch these on with it.
+    """
+    return bool(getattr(settings, "RIIGIKOGU_MONITORING", False))
 
 
 def mark_of(text: str) -> tuple[int, str] | None:

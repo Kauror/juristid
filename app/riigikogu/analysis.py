@@ -1,9 +1,11 @@
 """One controlled way to ask a model about public parliamentary text (ADR 0227). Off.
 
-**Disabled in production.** `run` refuses unless ``RIIGIKOGU_DOCUMENT_AI`` is on
-or the caller passes a model explicitly (tests and the demonstration command pass
-`MockModel`). Full-document processing by an external provider needs its own
-authorisation; nothing here switches it on.
+**Disabled in production.** `run` refuses — before it writes anything — unless
+``RIIGIKOGU_DOCUMENT_AI`` is on, whichever model is passed: a `MockModel` writes no
+row while the switch is off either. What is stored is shown only through `shown`:
+nothing while the switch is off, and never a mocked analysis where
+``APPLICATION_ENVIRONMENT`` is ``production``. Full-document processing by an
+external provider needs its own authorisation; nothing here switches it on.
 
 What every analysis has, whatever it is about:
 
@@ -37,6 +39,7 @@ from typing import Any, Protocol
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import QuerySet
 
 from app.riigikogu.enums import AnalysisStatus, AnalysisType
 from app.riigikogu.models import Analysis, Bill
@@ -130,6 +133,20 @@ class AnthropicModel:
 
 def enabled() -> bool:
     return bool(getattr(settings, "RIIGIKOGU_DOCUMENT_AI", False))
+
+
+def shown(queryset: QuerySet[Analysis]) -> QuerySet[Analysis]:
+    """The stored analyses a surface may show or act on (ADR 0227 §7).
+
+    None while document AI is off — whatever rows a test, a demonstration or an
+    earlier authorised period left behind — and never a mocked one in production,
+    so a production deploy cannot show a simulated answer even with the switch on.
+    """
+    if not enabled():
+        return queryset.none()
+    if getattr(settings, "APPLICATION_ENVIRONMENT", "") == "production":
+        return queryset.filter(mocked=False)
+    return queryset
 
 
 def _quote_schema() -> dict[str, Any]:
@@ -318,7 +335,13 @@ def run(
     model: Model | None = None,
     extra: dict[str, Any] | None = None,
 ) -> Analysis:
-    """Analyse once, cache, validate, verify. Returns the row (DONE, REJECTED or FAILED)."""
+    """Analyse once, cache, validate, verify. Returns the row (DONE, REJECTED or FAILED).
+
+    Refused (``RuntimeError``) while document AI is off, before any row is written —
+    with a `MockModel` too, so nothing simulated is ever stored by a switched-off
+    installation."""
+    if not enabled():
+        raise RuntimeError(DISABLED)
     mocked = isinstance(model, MockModel)
     if model is None:
         model = AnthropicModel()  # raises while disabled
