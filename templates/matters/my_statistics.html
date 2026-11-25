@@ -25,6 +25,7 @@ credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
     Statistika ja Minu asjade kokkuvõte loevad iga teema selle <b>praegusele vastutajale</b>.
     Siin loetakse kuude kaupa <b>sinu tehtut</b> ja <b>vastutust tol ajal</b> —
     seepärast võivad arvud neist erineda, ilma et kumbki oleks vale.
+    Arvud loevad Juristidesse salvestatud tegevusi, mitte kogu tööd, mida sa tegelikult tegid.
   </p>
 
   <section class="stattiles" aria-label="Praegu sinu vastutusel">
@@ -80,15 +81,16 @@ credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
         «Vastutusel avatud teemasid kuu lõpus» on <b>taastatud vastutus</b>, mitte kinnitatud tollane töökoormus: teema loetakse siis, kui ajalugu näitab nii sinu vastutust kui ka seda, et teema oli avatud. Kuu viimasel päeval lõpetatud teema seda kuud enam ei koorma; taasavatud teema loetakse taasavamise päevast.</dd>
       <dt>Kui palju on teada</dt>
       <dd>
-        <span class="mystats__legend">arv</span> — kogu kuu on salvestatud; 0 on päris null.
-        <span class="mystats__legend">osaline</span> — salvestatud on ainult osa kuust (salvestamine algas kuu sees või kuu kestab); arv ei ole terve kuu arv.
-        <span class="mystats__legend">vähemalt</span> — leitud kirjed on päris, aga kuu ajalugu on poolik või mõnda kirjet ei saa kellelegi omistada.
+        <span class="mystats__legend">arv</span> — kogu kuu jääb usaldusväärse salvestamise aega; 0 tähendab, et salvestatud tegevusi polnud.
+        <span class="mystats__legend">osaline</span> — usaldusväärselt on salvestatud ainult osa kuust (see algas kuu sees või kuu kestab); arv ei ole terve kuu arv.
+        <span class="mystats__legend">vähemalt</span> — leitud kirjed on päris, aga kuu jääb enne usaldusväärset salvestamist või mõnda kirjet ei saa kellelegi omistada.
         <span class="mystats__legend">andmed puuduvad</span> — usaldusväärseid andmeid pole; tühi tulemus ei tõenda nulli.
       </dd>
       <dt>Salvestatud alates</dt>
       <dd>
-        {% for label, since in stats.recorded_since %}{{ label }}: {% if since %}{{ since|date:"d.m.Y" }}{% else %}ei ole salvestatud{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}.
-        Varasemaid kuid ei saa nende kirjete põhjal täielikuks lugeda.
+        {% for label, since, reliable in stats.recorded_since %}{{ label }}: {% if since %}võimalik alates {{ since|date:"d.m.Y" }}, {% if reliable %}usaldusväärne alates {{ reliable|date:"d.m.Y" }}{% else %}usaldusväärset algust ei saa kindlaks teha{% endif %}{% else %}ei ole salvestatud{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}.
+        «Võimalik alates» on päev, mil Juristid sai selliseid kirjeid esimest korda salvestada; see ei tõenda, et kõik tehtu ka salvestati.
+        «Usaldusväärne alates» on päev, mil keegi sellise tegevuse esimest korda Juristidesse salvestas. Varasemad kuud näitavad «vähemalt N» või «andmed puuduvad», mitte 0.
       </dd>
     </dl>
   </section>

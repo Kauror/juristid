@@ -145,6 +145,24 @@ the responsible lawyer before then were never applied in Juristid.
    read as a contradiction. No ranking, no comparison; the page stays `request.user`'s own —
    no URL parameter (`?kasutaja=`, `?vastutaja=`, `?jurist=`, …) selects anyone else (tested).
 
+10. **Amendment (integration review 25.11.2026): a migration date is the earliest possible
+    boundary, not proof of complete history.** §7 treated the day a figure's migration was
+    applied as the start of complete coverage. It only says when recording became technically
+    possible. Each figure now has two boundaries (`my_statistics.recording_since`,
+    `reliable_since`): **earliest possible** — the migration day, as in §7 — and **reliable
+    coverage** — the day somebody first recorded that kind of activity in Juristid as it
+    happened (`RELIABLE_BY`: the first `SUBMISSION_SENT`, `ENTRY_ADDED`, `MATTER_CLOSED`,
+    `WEBSITE_OVERVIEW_PUBLISHED`, `ENGAGEMENT_ADDED` written by a person; for the ownership trail
+    the first `MATTER_ASSIGNED` by a person or by the Lovable synchronisation), on a Teema the
+    reader may see, never earlier than the migration day. Events with no actor (imports) or
+    naming a batch operation or provenance (the owner back-fill) do not count. Where no such
+    event exists the boundary is «not established» and no month of that figure is complete.
+    Only months inside reliable coverage are `VERIFIED` or `PARTIAL`; before it a positive count
+    is «vähemalt N» and none is «andmed puuduvad», never 0. The page lists both days per
+    figure and says the figures count activities recorded in Juristid, not all work actually
+    done; a `VERIFIED` 0 means no activity was recorded, not that none was done. Access (the
+    signed-in person only), stable owner ids and existing audit rows are unchanged.
+
 ## Consequences
 
 * On production most past months read «andmed puuduvad» today: almost every Teema arrived in

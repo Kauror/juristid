@@ -86,9 +86,15 @@ def state(pk, day, kind, *, hour=12):
     return {"matter_id": pk, "event_type": kind, "occurred_at": _at(day, hour), "payload": {}}
 
 
-def build(rows, events=(), names=None, *, since=SINCE):
+def build(rows, events=(), names=None, *, since=SINCE, reliable: object = "since"):
+    """``reliable`` defaults to ``since``: the trail reliably recorded from the start."""
     return ms.build_ownership(
-        list(rows), list(events), NAMES if names is None else names, TODAY, trail_since=since
+        list(rows),
+        list(events),
+        NAMES if names is None else names,
+        TODAY,
+        trail_since=since,
+        trail_reliable=since if reliable == "since" else reliable,  # type: ignore[arg-type]
     )
 
 
@@ -258,6 +264,25 @@ def test_nothing_is_known_when_the_trail_was_never_recorded():
     built = build([row(1, A, dt.date(2026, 1, 1))], since=None)
 
     assert owned(built, A, 2026, 6) == (U, None)
+
+
+def test_a_trail_recordable_but_not_yet_reliably_recorded_gives_lower_bounds_only():
+    # The migration made the trail recordable on 01.01.2026; nobody recorded a
+    # hand-over until 14.09.2026. Between the two, known Teemad are a lower bound.
+    built = build(
+        [row(1, A, dt.date(2026, 1, 2))],
+        since=dt.date(2026, 1, 1),
+        reliable=dt.date(2026, 9, 14),
+    )
+
+    assert owned(built, A, 2026, 6) == (AL, 1)
+    assert owned(built, B, 2026, 6) == (U, None)
+    assert owned(built, A, 2026, 10) == (V, 1)
+    assert owned(built, B, 2026, 10) == (V, 0)
+    # Never established: no month-end count is ever complete.
+    never = build([row(1, A, dt.date(2026, 1, 2))], since=dt.date(2026, 1, 1), reliable=None)
+    assert owned(never, A, 2026, 10) == (AL, 1)
+    assert owned(never, B, 2026, 10) == (U, None)
 
 
 # ---------------------------------------------------------------------------
@@ -538,8 +563,13 @@ def _assigned(matter, day, from_name, to_name, **ids):
     )
 
 
-def _recorded_since(monkeypatch, day):
+def _recorded_since(monkeypatch, day, *, reliable: bool = True):
+    """Recording possible from ``day``; with ``reliable``, reliably covered from it too."""
     monkeypatch.setattr(ms, "recording_since", lambda: dict.fromkeys(ms.RECORDED_BY, day))
+    if reliable:
+        monkeypatch.setattr(
+            ms, "reliable_since", lambda user, recording: dict.fromkeys(ms.RELIABLE_BY, day)
+        )
 
 
 def _cells(response, column: str) -> dict[dt.date, ms.Cell]:
@@ -679,6 +709,8 @@ def test_an_opinion_i_sent_on_a_teema_a_colleague_owns_now_is_mine(
     matter = factories.MatterFactory(owner=colleague, title="Näidisseadus üle antud")
     submission = sent(matter, capture_evidence, day=today)
     Submission.objects.filter(pk=submission.pk).update(sent_by=me)
+    # Sending is recorded in Juristid from today on, so a month with none is a 0.
+    _event(matter, ChangeEventType.SUBMISSION_SENT, today, actor=me)
 
     client.force_login(me)
     mine = client.get(reverse("matters:my_statistics")).context["stats"].rows[0].cells[0]
@@ -952,7 +984,7 @@ def test_a_hand_over_to_an_inactive_person_keeps_their_id(me):
     assign_matter(
         matter=matter, owner=gone, actor=None, provenance={"source": "synthetic-operation"}
     )
-    built = ms.load_ownership(me, timezone.localdate(), dt.date(2020, 1, 1))
+    built = ms.load_ownership(me, timezone.localdate(), dt.date(2020, 1, 1), dt.date(2020, 1, 1))
 
     assert _last_assignment(matter)["new_owner_id"] == str(gone.pk)
     assert built.owner_at(matter.pk, timezone.localdate()) == str(gone.pk)
@@ -968,3 +1000,122 @@ def test_older_name_only_events_are_left_as_they_were(me, colleague):
 
     assert old.payload == {"from_name": "Mina Näidis", "to_name": "Kolleeg Näidis"}
     assert not re.search(r"_owner_id", str(old.payload))
+
+
+# ---------------------------------------------------------------------------
+# Earliest possible versus reliable coverage (ADR 0223 §10)
+# ---------------------------------------------------------------------------
+
+
+def _event(matter, kind, day, *, actor=None, payload=None):
+    return ChangeEvent.objects.create(
+        matter=matter,
+        event_type=kind,
+        occurred_at=_at(day),
+        actor=actor,
+        object_type="matters.matter",
+        object_id=matter.pk,
+        payload=payload or {},
+    )
+
+
+@pytest.mark.django_db
+def test_reliable_coverage_starts_at_the_first_activity_a_person_recorded(me, colleague):
+    possible = dt.date(2026, 1, 1)
+    recording = dict.fromkeys(ms.RECORDED_BY, possible)
+    matter = factories.MatterFactory(owner=colleague, title="Näidisseadus algus")
+    # An import (no actor) and a back-fill run by a person do not establish it.
+    _event(matter, ChangeEventType.ENTRY_ADDED, dt.date(2026, 2, 1))
+    _event(
+        matter,
+        ChangeEventType.MATTER_ASSIGNED,
+        dt.date(2026, 2, 1),
+        actor=colleague,
+        payload={"operation": "backfill_legacy_owners"},
+    )
+    assert ms.reliable_since(me, recording) == dict.fromkeys(ms.RELIABLE_BY)
+
+    # A colleague's own recorded entry does, for the whole department's view.
+    _event(matter, ChangeEventType.ENTRY_ADDED, dt.date(2026, 5, 7), actor=colleague)
+    # The synchronisation's hand-over is the recorded channel for the trail.
+    _event(
+        matter,
+        ChangeEventType.MATTER_ASSIGNED,
+        dt.date(2026, 6, 3),
+        payload={"provenance_source": "LOVABLE_SYNC"},
+    )
+    found = ms.reliable_since(me, recording)
+    assert found["entries"] == dt.date(2026, 5, 7)
+    assert found["trail"] == dt.date(2026, 6, 3)
+    assert found["closed"] is None
+    # Never earlier than the day recording became possible.
+    later = ms.reliable_since(me, dict.fromkeys(ms.RECORDED_BY, dt.date(2026, 5, 20)))
+    assert later["entries"] == dt.date(2026, 5, 20)
+
+
+@pytest.mark.django_db
+def test_months_after_the_migration_but_before_reliable_coverage_are_never_a_zero(
+    client, me, colleague, monkeypatch
+):
+    today = timezone.localdate()
+    possible = _month_start(today, 6)
+    reliable = _month_start(today, 2)
+    # The migration made entries recordable six months ago ...
+    _recorded_since(monkeypatch, possible, reliable=False)
+    # ... but nobody recorded an entry in Juristid until two months ago.
+    theirs = factories.MatterFactory(owner=colleague, title="Näidisseadus kolleegi")
+    _event(theirs, ChangeEventType.ENTRY_ADDED, reliable, actor=colleague)
+    # My entry dated four months ago (written up later, or imported).
+    mine = factories.MatterFactory(owner=me, title="Näidisseadus minu vana")
+    factories.EntryFactory(matter=mine, author=me, occurred_at=_at(_month_start(today, 4)))
+    client.force_login(me)
+
+    response = client.get(reverse("matters:my_statistics"))
+    entries = _cells(response, "entries")
+    body = response.content.decode()
+
+    # After the migration, before reliable coverage, with a record: a lower bound.
+    assert (entries[_month_start(today, 4)].coverage, entries[_month_start(today, 4)].text) == (
+        AL,
+        "vähemalt 1",
+    )
+    # The same stretch without records: missing data, not 0.
+    assert (entries[_month_start(today, 3)].coverage, entries[_month_start(today, 3)].text) == (
+        U,
+        "andmed puuduvad",
+    )
+    assert entries[_month_start(today, 5)].coverage == U
+    # Inside established coverage, no records: a real zero.
+    assert (entries[_month_start(today, 1)].coverage, entries[_month_start(today, 1)].text) == (
+        V,
+        "0",
+    )
+    assert entries[reliable].coverage == V
+    # A figure nobody has ever recorded in Juristid has no reliable start at all.
+    closed = _cells(response, "closed")
+    assert {c.coverage for c in closed.values()} == {U}
+    assert "vähemalt 1" in body
+    assert f"usaldusväärne alates {reliable:%d.%m.%Y}" in body
+    assert "usaldusväärset algust ei saa kindlaks teha" in body
+    assert (
+        "Arvud loevad Juristidesse salvestatud tegevusi, mitte kogu tööd, "
+        "mida sa tegelikult tegid." in body
+    )
+
+
+@pytest.mark.django_db
+def test_the_coverage_boundaries_do_not_open_anybody_elses_page(client, me, colleague):
+    """Self only, still: the boundary is a day, read as the reader; no parameter
+    selects another person's figures or boundaries."""
+    matter = factories.MatterFactory(owner=colleague, title="Näidisseadus kolleegi oma")
+    _event(matter, ChangeEventType.ENTRY_ADDED, timezone.localdate(), actor=colleague)
+    factories.EntryFactory(matter=matter, author=colleague)
+    client.force_login(me)
+
+    plain = client.get(reverse("matters:my_statistics")).context["stats"]
+    asked = client.get(reverse("matters:my_statistics"), {"kasutaja": str(colleague.pk)})
+
+    assert asked.context["stats"] == plain
+    assert all((c.value or 0) == 0 for r in plain.rows for c in r.cells)
+    assert "Kolleeg Näidis" not in asked.content.decode()
+    assert client.get(f"/minu-asjad/statistika/{colleague.pk}/").status_code == 404

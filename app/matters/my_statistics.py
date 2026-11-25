@@ -25,26 +25,42 @@ Every figure says how it is credited, because the three answers differ:
 **Coverage is a stated state, never a guess** (ADR 0223 §4, corrections
 25.11.2026). Each monthly value is a :class:`Cell` with one of four states:
 
-* ``VERIFIED`` — the whole month was recorded and every record in it can be
-  credited: the count is the month's, and a 0 is a real zero;
-* ``PARTIAL`` — recording covers only part of the month (it began inside the
-  month, or the month is still running): the count is what was recorded, shown
-  with «osaline» and the covered days, never as a whole month;
-* ``AT_LEAST`` — records were found, but the month is not fully covered or some
-  record in it cannot be credited: a lower bound, shown as «vähemalt N»;
-* ``UNKNOWN`` — nothing reliable: «andmed puuduvad».
+* ``VERIFIED`` — the whole month lies inside the figure's reliable coverage
+  and every record in it can be credited: the count is the month's, and a 0 is
+  a real zero of *recorded* activities;
+* ``PARTIAL`` — reliable coverage spans only part of the month (it began inside
+  the month, or the month is still running): the count is what was recorded,
+  shown with «osaline» and the covered days, never as a whole month;
+* ``AT_LEAST`` — records were found, but the month is not inside reliable
+  coverage or some record in it cannot be credited: a lower bound, shown as
+  «vähemalt N»;
+* ``UNKNOWN`` — nothing reliable: «andmed puuduvad», never 0.
 
-When recording began is read from evidence, not from the earliest event seen:
-the time the migration that created each record's table or event type was
-applied to this database (`RECORDED_BY`, `django_migrations.applied`) — the
-first moment Juristid could write such a record at all. An empty set of
-records before that moment proves nothing and stays unknown.
+Every figure has two boundaries (ADR 0223 §10):
+
+* **earliest possible** (`recording_since`): the time the migration that
+  created the record's table or event type was applied to this database
+  (`RECORDED_BY`, `django_migrations.applied`) — the first moment Juristid
+  could write such a record at all. It says when recording became *possible*,
+  not that work was recorded from then on;
+* **reliable coverage** (`reliable_since`): the day somebody first recorded that
+  kind of activity in Juristid as it happened (`RELIABLE_BY`: the first
+  `ChangeEvent` of the figure's own event type written by a person — for the
+  ownership trail also by the Lovable synchronisation; imports and back-fills
+  never count), on a Teema the reader may see, and never earlier than the
+  earliest possible day. Where no such record exists the boundary is ``None``:
+  not established, and no month of that figure is ever complete.
+
+Only months inside reliable coverage can be ``VERIFIED`` or ``PARTIAL``; before
+it, records found are a lower bound and none found is missing data. The page
+counts what was recorded in Juristid, not all the work a person actually did.
 """
 
 from __future__ import annotations
 
 import calendar
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -76,6 +92,19 @@ RECORDED_BY: dict[str, tuple[tuple[str, str], ...]] = {
     # MATTER_ASSIGNED, MATTER_CLOSED and MATTER_REOPENED: the ownership and
     # open/closed trail.
     "trail": (("audit", "0001_initial"),),
+}
+
+#: The event whose first occurrence, written by a person as it happened, is
+#: where each figure's reliable coverage begins (ADR 0223 §10). The ownership
+#: trail also accepts the Lovable synchronisation's hand-overs: the recorded
+#: channel for owner changes made in Lovable.
+RELIABLE_BY: dict[str, str] = {
+    "sent": "SUBMISSION_SENT",
+    "entries": "ENTRY_ADDED",
+    "closed": "MATTER_CLOSED",
+    "overviews": "WEBSITE_OVERVIEW_PUBLISHED",
+    "engagements": "ENGAGEMENT_ADDED",
+    "trail": "MATTER_ASSIGNED",
 }
 
 #: Events that open a Teema, close it on their own day, or retire it at a
@@ -146,9 +175,12 @@ class Cell:
 
 
 def cell(month: Month, since: date | None, found: int, *, uncertain: bool = False) -> Cell:
-    """The state of a count of ``found`` records in ``month``, recorded from ``since``.
+    """The state of a count of ``found`` records in ``month``.
 
-    ``uncertain``: some record in the month could not be credited.
+    ``since`` is the figure's **reliable coverage** boundary (`reliable_since`),
+    not the day recording became possible: ``None`` when it cannot be
+    established, and then no month is complete. ``uncertain``: some record in
+    the month could not be credited.
     """
     if since is None or since > month.end or uncertain:
         return Cell(Coverage.AT_LEAST, found) if found else Cell(Coverage.UNKNOWN)
@@ -168,8 +200,11 @@ class Ownership:
     states: dict[Any, list[tuple[date, Any]]] = field(default_factory=dict)
     #: Per Teema: the first day it existed at all (arrival, else its year, else creation).
     exists_from: dict[Any, date] = field(default_factory=dict)
-    #: The first day the trail was recorded at all; before it no set of Teemad is complete.
+    #: The first day the trail could be recorded at all (earliest possible).
     since: date | None = None
+    #: The first day the trail is reliably recorded (`reliable_since`); before
+    #: it, or when ``None``, no month-end count is complete.
+    reliable: date | None = None
 
     @staticmethod
     def _at(segments: list[tuple[date, Any]] | None, day: date) -> Any:
@@ -225,6 +260,7 @@ def build_ownership(
     today: date,
     *,
     trail_since: date | None,
+    trail_reliable: date | None,
 ) -> Ownership:
     """Pure: Teemad, their trail events and people → `Ownership`.
 
@@ -232,7 +268,8 @@ def build_ownership(
     ``reference_year``, ``is_open`` and ``closed_at``; ``events`` carry
     ``matter_id``, ``event_type``, ``occurred_at`` and ``payload``, oldest first
     (``MATTER_ASSIGNED`` and the open/closed events of `STATE_EVENTS`).
-    ``trail_since`` is the first day the trail was recorded at all.
+    ``trail_since`` is the first day the trail could be recorded at all;
+    ``trail_reliable`` the first day it is reliably recorded, or ``None``.
     """
     resolve = _resolver(names)
     assigned: dict[Any, list[dict[str, Any]]] = {}
@@ -241,7 +278,7 @@ def build_ownership(
         kind = event.get("event_type", "MATTER_ASSIGNED")
         target = state_events if kind in STATE_EVENTS else assigned
         target.setdefault(event["matter_id"], []).append(event)
-    out = Ownership(since=trail_since)
+    out = Ownership(since=trail_since, reliable=trail_reliable)
     for row in rows:
         pk = row["pk"]
         created = _day(row["created_at"]) or today
@@ -336,7 +373,50 @@ def recording_since() -> dict[str, date | None]:
     return out
 
 
-def load_ownership(user: Any, today: date, trail_since: date | None) -> Ownership:
+def reliable_since(user: Any, recording: Mapping[str, date | None]) -> dict[str, date | None]:
+    """Where each figure's reliable coverage begins (`RELIABLE_BY`). One query.
+
+    The first day somebody recorded that kind of activity in Juristid as it
+    happened, on a Teema ``user`` may see, and never before ``recording`` (the
+    earliest possible day). ``None`` where no such record exists or recording
+    was never possible: coverage is then not established, and nothing is
+    invented in its place.
+    """
+    from django.db.models import Min, Q
+
+    from app.audit.models import ChangeEvent
+    from app.audit.provenance import LOVABLE_SYNC_SOURCE
+    from app.matters.models import Matter
+
+    # A person's own act. A batch names no actor (imports, the synchronisation)
+    # or names its operation or provenance (the owner back-fill run by a person).
+    by_a_person = Q(actor__isnull=False) & ~Q(
+        payload__has_any_keys=["provenance_source", "provenance", "operation"]
+    )
+    synchronised = Q(
+        event_type=RELIABLE_BY["trail"], payload__provenance_source=LOVABLE_SYNC_SOURCE
+    )
+    first = {
+        kind: _day(moment)
+        for kind, moment in ChangeEvent.objects.filter(
+            by_a_person | synchronised,
+            event_type__in=sorted(set(RELIABLE_BY.values())),
+            matter_id__in=Matter.objects.visible_to(user).values("pk"),
+        )
+        .values("event_type")
+        .annotate(first=Min("occurred_at"))
+        .values_list("event_type", "first")
+    }
+    out: dict[str, date | None] = {}
+    for key, kind in RELIABLE_BY.items():
+        possible, seen = recording.get(key), first.get(kind)
+        out[key] = None if possible is None or seen is None else max(possible, seen)
+    return out
+
+
+def load_ownership(
+    user: Any, today: date, trail_since: date | None, trail_reliable: date | None
+) -> Ownership:
     """`build_ownership` for every real Teema ``user`` may see. Three queries."""
     from app.accounts.models import User
     from app.audit.enums import ChangeEventType
@@ -371,7 +451,9 @@ def load_ownership(user: Any, today: date, trail_since: date | None) -> Ownershi
     for pk, name, joined in User.objects.values_list("pk", "display_name", "created_at"):
         if name:
             names.setdefault(name, []).append(Person(str(pk), joined))
-    return build_ownership(rows, events, names, today, trail_since=trail_since)
+    return build_ownership(
+        rows, events, names, today, trail_since=trail_since, trail_reliable=trail_reliable
+    )
 
 
 @dataclass(frozen=True)
@@ -428,9 +510,10 @@ def owned_at(ownership: Ownership, person_id: Any, day: date) -> Cell:
             count += 1
         else:
             uncertain += 1
-    if uncertain or ownership.since is None or day < ownership.since:
-        # Before the trail was recorded, the Teemad Juristid holds are not all
-        # there were (some were never imported): no count there is complete.
+    if uncertain or ownership.reliable is None or day < ownership.reliable:
+        # Before the trail is reliably recorded, the Teemad Juristid holds are
+        # not all there were (some were never imported) and owner changes may
+        # have gone unrecorded: no count there is complete.
         return Cell(Coverage.AT_LEAST, count) if count else Cell(Coverage.UNKNOWN)
     return Cell(Coverage.VERIFIED, count)
 
@@ -497,15 +580,18 @@ class MyStatistics:
     #: Per column key: the first day this database could record it, or ``None``.
     recording: dict[str, date | None]
     today: date
+    #: Per column key: where reliable coverage begins, or ``None`` if not established.
+    reliable: dict[str, date | None] = field(default_factory=dict)
 
     @property
-    def recorded_since(self) -> list[tuple[str, date | None]]:
-        """Each column's label and the first day this database could record it."""
+    def recorded_since(self) -> list[tuple[str, date | None, date | None]]:
+        """Each column's label, its earliest possible day and its reliable-coverage day."""
         source = {"owned": "trail"}
-        return [
-            (column.label, self.recording.get(source.get(column.key, column.key)))
-            for column in self.columns
-        ]
+        out = []
+        for column in self.columns:
+            key = source.get(column.key, column.key)
+            out.append((column.label, self.recording.get(key), self.reliable.get(key)))
+        return out
 
 
 def my_statistics(person: Any, today: date) -> MyStatistics:
@@ -519,7 +605,8 @@ def my_statistics(person: Any, today: date) -> MyStatistics:
     shown = months(today)
     oldest = shown[-1].start
     recording = recording_since()
-    ownership = load_ownership(person, today, recording["trail"])
+    reliable = reliable_since(person, recording)
+    ownership = load_ownership(person, today, recording["trail"], reliable["trail"])
     work = opinion_work(person, person, today)
     current = [
         Figure(
@@ -555,13 +642,13 @@ def my_statistics(person: Any, today: date) -> MyStatistics:
     rows = []
     for month in shown:
         cells = (
-            sent_in_month(facts, ownership, person.pk, month, recording["sent"]),
+            sent_in_month(facts, ownership, person.pk, month, reliable["sent"]),
             owned_at(ownership, person.pk, month.end),
-            cell(month, recording["entries"], entries[month.start]),
+            cell(month, reliable["entries"], entries[month.start]),
             *(
-                cell(month, recording[key], acted[(key, month.start)])
+                cell(month, reliable[key], acted[(key, month.start)])
                 for key in ("closed", "overviews", "engagements")
             ),
         )
         rows.append(MonthRow(month, cells))
-    return MyStatistics(current, COLUMNS, rows, recording, today)
+    return MyStatistics(current, COLUMNS, rows, recording, today, reliable)
