@@ -10591,6 +10591,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-size: var(--typography-size-meta);
 }
 
+/* The foldout counts by the owner now; the page by the person who did it. */
+.pw-stats__rule {
+  display: block;
+  margin-top: var(--spacing-1);
+  padding: 0 var(--spacing-2);
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
 .pw-stats a,
 .pw-stats > span {
   display: flex;
@@ -17185,6 +17194,15 @@ a.statcol:hover .statcol__value {
   white-space: nowrap;
 }
 
+/* The month stays in view while a narrow screen scrolls the columns. */
+.mystats__table tbody th,
+.mystats__table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface-raised);
+}
+
 .mystats__basis {
   display: block;
   font-size: var(--typography-size-meta-sm);
@@ -17196,6 +17214,33 @@ a.statcol:hover .statcol__value {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.mystats__lead {
+  max-width: 72ch;
+  margin: var(--spacing-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.mystats__cell {
+  vertical-align: top;
+}
+
+.mystats__cell[data-coverage="partial"],
+.mystats__cell[data-coverage="at_least"] {
+  color: var(--text-secondary);
+}
+
+.mystats__note {
+  display: block;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mystats__legend {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
 }
 
 .mystats__rules {
