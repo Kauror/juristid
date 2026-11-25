@@ -22,6 +22,8 @@ changes = [
   "Kui menetluse kulul on rohkem samme, kui ekraanile mahub, näitab serv seda ning ‹ ja › kerivad ülejäänud nähtavale; kerida saab ka klaviatuuri nooltega ja puudutusega.",
   "Kolleegi lisatud eeldatava jõustumise eemaldamise ✕ ei ole enam menetluse kulus endas, vaid menetluse kulu «Muuda» paneelis loendis «Eeldatavad jõustumised», sama kinnitusega nagu varem.",
   "Telefonis on menetluse kulg püstine loend, mida ei pea külgsuunas kerima.",
+  "Suletud teema menetluse kulul ei ole enam nuppu «Muuda» ega kuupäeva lisamise otseteid: suletud teemat ei saa muuta, ja kui teema suletakse ajal, mil kellelgi on muutmisaken lahti, siis selle salvestamisest keeldutakse. Teema uuesti avamine annab muutmise tagasi.",
+  "Suletud teema menetluse kulus on «Lõpetatud» nüüd selle etapi järel, milles koja töö lõppes, mitte enne seda. Menetluse hilisemad etapid on endiselt selle järel.",
 ]
 
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
