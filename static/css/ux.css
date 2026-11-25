@@ -859,6 +859,29 @@
   box-shadow: var(--shadow-menu);
 }
 
+/* «+N» after «Minu vaated» counts the chips this width does not draw. */
+.uxviews__more--narrow {
+  display: none;
+}
+
+/* A narrow screen draws three own chips, not six (`NARROW_CHIPS`), so twenty
+   saved views never push the list itself below a phone's first screen; the
+   rest are in «Minu vaated». */
+@media (max-width: 720px) {
+  .uxchip--minewide,
+  .uxviews__more--wide {
+    display: none;
+  }
+
+  .uxviews__more--narrow {
+    display: inline;
+  }
+
+  .uxchip--mine {
+    max-width: 11rem;
+  }
+}
+
 .uxviews__list {
   display: flex;
   flex-direction: column;

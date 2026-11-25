@@ -33,9 +33,10 @@ localStorage (Stage-2E.1 brief 12).
     What is stored is the canonical query and nothing else — no rows, no count,
     no access decision — so opening one is the ordinary register request, and
     its count comes from the same pipeline in one statement for all of them
-    (app/matters/saved_views.py). Six are chips; all of them, with «Nimeta
-    ümber» and «Eemalda», are under «Minu vaated ▾», which keeps the strip short
-    whatever a person saves. Private to the person; the address is still the
+    (app/matters/saved_views.py). Six are chips — three on a narrow screen, so
+    the strip does not push the list itself down a phone's first screen; all of
+    them, with «Nimeta ümber» and «Eemalda», are under «Minu vaated ▾», which
+    keeps the strip short whatever a person saves. Private to the person; the address is still the
     thing that is shared.
   {% endcomment %}
   <div class="uxviews" role="group" aria-label="Salvestatud vaated">
@@ -46,7 +47,7 @@ localStorage (Stage-2E.1 brief 12).
     {% endfor %}
 
     {% for view in personal_views_shown %}
-      <a class="uxchip uxchip--mine{% if view.active %} is-selected{% endif %}"
+      <a class="uxchip uxchip--mine{% if forloop.counter > personal_views_narrow %} uxchip--minewide{% endif %}{% if view.active %} is-selected{% endif %}"
          {% if view.active %}aria-current="true"{% endif %}
          href="?{{ view.query }}"
          title="Minu vaade{% if view.dropped %} — filtrid, mida enam ei ole, jäeti välja{% endif %}">{{ view.name }} · {{ view.count }}</a>
@@ -54,7 +55,8 @@ localStorage (Stage-2E.1 brief 12).
 
     {% if personal_views %}
       <details class="uxviews__mine" data-uxpopover>
-        <summary class="uxchip uxchip--dashed">Minu vaated{% if personal_views_hidden %} · +{{ personal_views_hidden }}{% endif %} ▾</summary>
+        {# One inline run inside the chip, so the flex chip keeps the spaces around «+N». #}
+        <summary class="uxchip uxchip--dashed"><span>Minu vaated{% if personal_views_hidden %}<span class="uxviews__more--wide"> · +{{ personal_views_hidden }}</span>{% endif %}{% if personal_views_hidden_narrow %}<span class="uxviews__more--narrow"> · +{{ personal_views_hidden_narrow }}</span>{% endif %} ▾</span></summary>
         <div class="uxviews__minebody">
           <p class="uxviews__note">Sinu vaated ({{ personal_views|length }}/{{ personal_views_max }}). Neid näed ainult sina; iga vaate link on jagatav.</p>
           <ul class="uxviews__list">

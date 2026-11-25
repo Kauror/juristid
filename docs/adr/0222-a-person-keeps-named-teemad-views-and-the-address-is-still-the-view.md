@@ -58,21 +58,28 @@ owner approved storing them (BLOCK-1). This record answers 0043's five questions
    its chip says why (0043 §3, register_filters). Nothing is rewritten in place.
 8. **Deletion.** «Eemalda» deletes the person's row and nothing else, after a
    confirmation inside the list. Deleting a person deletes their views
-   (`CASCADE`). There is no undo and no audit row: this is presentation state
+   (`CASCADE`). Writes to one person's views queue on that person's own row, so
+   two tabs saving or renaming to one name at once end with one write and one
+   refusal in words; the database's one-name constraint, if ever reached past
+   that, is answered the same way inside a savepoint, never as a server error.
+   There is no undo and no audit row: this is presentation state
    (class C in `tests/test_business_write_boundary.py`), like a remembered block.
 9. **One filtering engine, bounded counts.** Each chip shows a count. Counts go
    through `register_selection.selection_from` → `searched` → `filtered`
    (`apply_register_filters`) — the path the register's table and its Excel
    export read — so a chip reading 12 opens twelve rows. All of a person's views
    are counted in **one aggregate statement** (`COUNT(*) FILTER (WHERE id IN
-   (<view>))` per view over the reader's visible Matters), plus one search read
-   for each view carrying free text and at most one shared read of the work
+   (<view>))` per view over the reader's visible Matters), plus the search's own
+   two reads (word normalisation, search index) for each view carrying free text and at most one shared read of the work
    model for every `?too=` view. With the cap of 20 the cost is bounded and does
    not grow with the register. Counted on the full page only, never on a
    keystroke of the live search (as the four chips).
 10. **A compact strip.** The four predefined chips first, then the person's first
-    six as chips, then «Minu vaated ▾» (with «+N» when more are hidden), whose
-    list holds every view with its count, «Nimeta ümber» and «Eemalda».
+    six as chips — three on a screen 720 px wide or narrower, so twenty views
+    never push the list below a phone's first screen (CSS only, `NARROW_CHIPS`)
+    — then «Minu vaated ▾» (with «+N» counting the chips that width does not
+    draw), whose list holds every view with its count, «Nimeta ümber» and
+    «Eemalda».
     «+ Salvesta praegune filter vaatena» gains a name field and keeps the copy
     link. Plain forms and redirects: everything works without script.
 11. **Migration.** `matters/0052_saved_register_view` creates the table; it is
