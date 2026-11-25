@@ -20,6 +20,13 @@ credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
     <span class="pagehead__context">ainult sinu enda andmed</span>
   </div>
 
+  <p class="mystats__lead">
+    Siin on ainult sinu enda arvud; kellegi teise omi ei näidata ega võrrelda.
+    Statistika ja Minu asjade kokkuvõte loevad iga teema selle <b>praegusele vastutajale</b>.
+    Siin loetakse kuude kaupa <b>sinu tehtut</b> ja <b>vastutust tol ajal</b> —
+    seepärast võivad arvud neist erineda, ilma et kumbki oleks vale.
+  </p>
+
   <section class="stattiles" aria-label="Praegu sinu vastutusel">
     {% for figure in stats.current %}
       <a class="stattile stattile--link" href="{{ figure.url }}">
@@ -33,7 +40,7 @@ credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
   <section class="statpanel" aria-labelledby="mystats-kuud">
     <div class="statpanel__head">
       <h2 class="statpanel__title" id="mystats-kuud">Kuude kaupa</h2>
-      <span class="statpanel__note">viimased {{ stats.rows|length }} kuud · jooksev kuu kuni tänaseni</span>
+      <span class="statpanel__note">viimased {{ stats.rows|length }} kuud · jooksev kuu kuni {{ stats.today|date:"d.m.Y" }}; vastutus jooksval kuul: täna</span>
     </div>
     <div class="stattable__wrap">
       <table class="stattable mystats__table">
@@ -49,8 +56,8 @@ credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
           {% for row in stats.rows %}
             <tr>
               <th scope="row">{{ row.month.label }}</th>
-              {% for value in row.cells %}
-                <td class="stattable__num">{% if value is None %}<span class="mystats__unknown">andmed puuduvad</span>{% else %}{{ value }}{% endif %}</td>
+              {% for cell in row.cells %}
+                <td class="stattable__num mystats__cell" data-coverage="{{ cell.coverage }}">{% if cell.coverage == "unknown" %}<span class="mystats__unknown">andmed puuduvad</span>{% else %}{{ cell.text }}{% endif %}{% if cell.note %}<span class="mystats__note">{{ cell.note }}</span>{% endif %}</td>
               {% endfor %}
             </tr>
           {% endfor %}
@@ -65,14 +72,24 @@ credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
     </div>
     <dl class="mystats__rules">
       <dt>Praegune vastutaja</dt>
-      <dd>Teema, mille vastutaja sa praegu oled. Sama arv nagu Minu asjades ja Osakonnas.</dd>
+      <dd>Teema, mille vastutaja sa praegu oled. Samad arvud nagu Minu asjades, Statistikas ja Osakonnas.</dd>
       <dt>Sinu tehtud</dt>
-      <dd>Kirje, mille tegijaks Juristid on salvestanud sinu: sissekande autor, teema lõpetaja, ülevaate avaldaja, kaasamise lisaja, arvamuse saatjaks märgitud inimene.
-        {% if stats.actions_since %}Juristid on tegijaid salvestanud alates {{ stats.actions_since|date:"d.m.Y" }}; varasemad kuud: andmed puuduvad.{% else %}Juristid ei ole veel ühtegi tegijat salvestanud.{% endif %}</dd>
+      <dd>Kirje, mille tegijaks Juristid on salvestanud sinu: sissekande autor, teema lõpetaja, ülevaate avaldaja, kaasamise lisaja, arvamuse saatjaks märgitud inimene.</dd>
       <dt>Vastutaja tol ajal</dt>
-      <dd>Teema vastutaja sel päeval, Juristide vastutaja muutmise ajaloo järgi. Hilisem vastutaja ei saa varasema töö eest arvet. Imporditud «välja saadetud» arvamus, millel saatjat pole, läheb saatmise päeva vastutajale.
-        {% if stats.owned_since %}Kõik teemad on ajaloos kirjas alates {{ stats.owned_since|date:"m.Y" }}.{% endif %}
-        Kuu on «andmed puuduvad», kui mõni teema oli siis olemas, aga Juristidisse jõudis hiljem, või kui vastutajate ajalugu ei ole järjepidev.</dd>
+      <dd>Teema vastutaja selle päeva lõpus, Juristide vastutaja muutmise ajaloo järgi. Hilisem vastutaja ei saa varasema töö eest arvet. Imporditud «välja saadetud» arvamus, millel saatjat pole, läheb saatmise päeva vastutajale.
+        «Vastutusel avatud teemasid kuu lõpus» on <b>taastatud vastutus</b>, mitte kinnitatud tollane töökoormus: teema loetakse siis, kui ajalugu näitab nii sinu vastutust kui ka seda, et teema oli avatud. Kuu viimasel päeval lõpetatud teema seda kuud enam ei koorma; taasavatud teema loetakse taasavamise päevast.</dd>
+      <dt>Kui palju on teada</dt>
+      <dd>
+        <span class="mystats__legend">arv</span> — kogu kuu on salvestatud; 0 on päris null.
+        <span class="mystats__legend">osaline</span> — salvestatud on ainult osa kuust (salvestamine algas kuu sees või kuu kestab); arv ei ole terve kuu arv.
+        <span class="mystats__legend">vähemalt</span> — leitud kirjed on päris, aga kuu ajalugu on poolik või mõnda kirjet ei saa kellelegi omistada.
+        <span class="mystats__legend">andmed puuduvad</span> — usaldusväärseid andmeid pole; tühi tulemus ei tõenda nulli.
+      </dd>
+      <dt>Salvestatud alates</dt>
+      <dd>
+        {% for label, since in stats.recorded_since %}{{ label }}: {% if since %}{{ since|date:"d.m.Y" }}{% else %}ei ole salvestatud{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}.
+        Varasemaid kuid ei saa nende kirjete põhjal täielikuks lugeda.
+      </dd>
     </dl>
   </section>
 </div>

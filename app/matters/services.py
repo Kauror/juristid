@@ -801,6 +801,10 @@ def assign_matter(
         payload={
             "from_name": getattr(previous, "display_name", None),
             "to_name": getattr(owner, "display_name", None),
+            # Stable ids beside the readable names (docs/adr/0223 §6): a name
+            # changes with a rename; the id does not. ``None`` is nobody.
+            "previous_owner_id": str(previous.pk) if previous is not None else None,
+            "new_owner_id": str(owner.pk) if owner is not None else None,
             # Named in the payload rather than raised as a second event: one
             # thing happened — the file changed hands — and the step going with
             # it is part of that, not a separate decision somebody made.
