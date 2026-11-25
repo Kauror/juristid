@@ -119,6 +119,23 @@ def test_a_name_is_one_per_person_whatever_its_case(specialist, other_specialist
         SavedRegisterView.objects.create(user=specialist, name="kIIRE", query="olek=koik")
 
 
+def test_a_name_clash_the_check_missed_is_still_a_refusal_in_words(specialist, monkeypatch):
+    """The database's one-name guard, reached past the service's own check (as a
+    racing writer would), answers in words and leaves the transaction usable."""
+    saved_views.save_view(user=specialist, name="Kiire", params=QueryDict("olek=koik"))
+    other = saved_views.save_view(user=specialist, name="Teine", params=QueryDict("olek=avatud"))
+    monkeypatch.setattr(saved_views, "_name_taken", lambda *args, **kwargs: False)
+
+    with pytest.raises(DomainError, match="on sul juba olemas"):
+        saved_views.save_view(user=specialist, name="KIIRE", params=QueryDict("q=sona"))
+    with pytest.raises(DomainError, match="on sul juba olemas"):
+        saved_views.rename_view(view=other, name="kiire")
+
+    assert SavedRegisterView.objects.filter(user=specialist).count() == 2
+    other.refresh_from_db()
+    assert other.name == "Teine"
+
+
 def test_the_bare_register_is_not_a_view(specialist):
     with pytest.raises(DomainError, match="vaikevaade"):
         saved_views.save_view(user=specialist, name="Kõik", params=QueryDict("leht=3"))
@@ -180,6 +197,94 @@ def test_every_personal_chip_opens_exactly_the_rows_it_counted(client, specialis
         assert _total(client, view.query) == view.count, (
             f"«{view.name}» promises what it cannot show"
         )
+
+
+def test_several_free_text_views_count_what_their_search_finds(
+    client, specialist, django_assert_max_num_queries
+):
+    """Free text, with Estonian letters, a phrase and a filter beside it: each
+    count is the rows its link opens, and each search adds its own two reads
+    (the words' normalisation and the search index), nothing more."""
+    factories.MatterFactory(owner=specialist, title="Pakendiseaduse muutmine")
+    factories.MatterFactory(owner=specialist, title="Jäätmeseaduse täiendamine")
+    factories.MatterFactory(owner=None, title="Õhusaaste vähendamise kava")
+    factories.ArchiveMatterFactory(owner=specialist, title="Pakendiaktsiisi seadus", is_open=False)
+    definitions = {
+        "Pakend": "q=pakend",
+        "Pakend kõik": "q=pakend&olek=koik",
+        "Jäätmed": "q=jäätme",
+        "Õhk vastutajata": "q=õhusaaste&vastutaja=puudub",
+        "Fraas": "q=seaduse muutmine",
+    }
+    for name, query in definitions.items():
+        saved_views.save_view(user=specialist, name=name, params=QueryDict(query))
+
+    with django_assert_max_num_queries(2 + 2 * len(definitions)):
+        views = saved_views.personal_views(specialist, QueryDict())
+    client.force_login(specialist)
+    counts = {view.name: view.count for view in views}
+    for view in views:
+        assert _total(client, view.query) == view.count, view.name
+    assert counts["Pakend"] == 1 and counts["Pakend kõik"] == 2
+    assert counts["Jäätmed"] == 1 and counts["Õhk vastutajata"] == 1
+
+
+def test_a_complex_view_round_trips_through_its_address(client, specialist):
+    """Repeated values, search, status, order, columns, page size and a work
+    window: stored canonically, and the chip's address opens the same rows as
+    the address it was saved from."""
+    today = timezone.localdate()
+    for number in range(6):
+        factories.MatterFactory(
+            owner=specialist if number % 2 else None,
+            title=f"Näidisseadus {number} muutmine",
+            response_deadline=today + timedelta(days=number),
+        )
+    address = (
+        "q=näidisseadus&olek=koik&vastutaja=puudub&vastutaja=minu"
+        "&jarjestus=title&kaupa=30&leht=2&too=tahtaeg-vahemik"
+        f"&too_alates={today.isoformat()}&too_kuni={(today + timedelta(days=4)).isoformat()}"
+    )
+    client.force_login(specialist)
+    expected = _total(client, address)
+
+    response = client.post(SAVE, {"nimi": "Keeruline", "vaade": address, "next": "/teemad/"})
+
+    view = SavedRegisterView.objects.get(user=specialist, name="Keeruline")
+    assert "leht" not in view.query, "the page a reader was on is not part of a view"
+    assert parse_qsl(view.query).count(("vastutaja", "minu")) == 1
+    assert parse_qsl(view.query).count(("vastutaja", "puudub")) == 1
+    assert response["Location"] == f"{REGISTER}?{view.query}"
+    assert _total(client, view.query) == expected
+    (chip,) = saved_views.personal_views(specialist, QueryDict(view.query))
+    assert chip.active and chip.count == expected
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "olek=avatud&vana_filter=1",
+        "jarjestus=ei_ole_selline&olek=koik",
+        "aasta=pole-aasta&olek=koik",
+        "hetkeseis=kadunud_etapp&olek=koik",
+        "too=ammu-kaotatud&olek=koik",
+        "kaupa=999&olek=koik",
+        "too_alates=31.02.2026&too=tahtaeg-vahemik",
+    ],
+)
+def test_a_view_with_obsolete_parameters_still_opens(client, specialist, stored):
+    """A name the register no longer reads, or a value it no longer knows: the
+    strip draws, the chip counts and the link opens — never a server error."""
+    factories.MatterFactory(owner=specialist, title="Näidisseadus")
+    SavedRegisterView.objects.create(user=specialist, name="Vana", query=stored)
+    client.force_login(specialist)
+
+    page = client.get(REGISTER)
+    assert page.status_code == 200
+    (view,) = saved_views.personal_views(specialist, QueryDict())
+    opened = client.get(f"{REGISTER}?{view.query}")
+    assert opened.status_code == 200
+    assert opened.context["total"] == view.count
 
 
 def test_all_of_a_persons_views_are_counted_in_one_statement(
@@ -345,8 +450,49 @@ def test_the_strip_stays_compact_with_many_views(client, specialist):
     strip = body.split('class="uxviews"')[1].split('class="filters"')[0]
 
     assert strip.count('class="uxchip uxchip--mine') == saved_views.VISIBLE_CHIPS
-    assert "Minu vaated · +3 ▾" in strip
+    assert '<span class="uxviews__more--wide"> · +3</span>' in strip
     assert strip.count('class="uxviews__item"') == 9, "every view is in the list"
+
+
+def test_twenty_views_draw_six_chips_three_of_them_on_a_narrow_screen(client, specialist):
+    """Twenty views: six chips (three of them kept at ≤ 720 px, the rest marked
+    for the narrow rule in ux.css), «+14» / «+17» after «Minu vaated», all
+    twenty in its list — and the twenty-first refused in words."""
+    for number in range(saved_views.MAX_VIEWS):
+        saved_views.save_view(
+            user=specialist, name=f"Vaade {number}", params=QueryDict(f"aasta={2000 + number}")
+        )
+    client.force_login(specialist)
+
+    body = client.get(REGISTER).content.decode()
+    strip = body.split('class="uxviews"')[1].split('class="filters"')[0]
+
+    assert strip.count('class="uxchip uxchip--mine') == saved_views.VISIBLE_CHIPS
+    assert strip.count("uxchip--minewide") == saved_views.VISIBLE_CHIPS - saved_views.NARROW_CHIPS
+    assert '<span class="uxviews__more--wide"> · +14</span>' in strip
+    assert '<span class="uxviews__more--narrow"> · +17</span>' in strip
+    assert strip.count('class="uxviews__item"') == saved_views.MAX_VIEWS
+
+    response = client.post(
+        SAVE, {"nimi": "Kahekümne esimene", "vaade": "olek=koik", "next": "/teemad/"}, follow=True
+    )
+    assert response.status_code == 200
+    assert "Sul on juba 20 vaadet" in response.content.decode()
+    assert SavedRegisterView.objects.filter(user=specialist).count() == saved_views.MAX_VIEWS
+
+
+def test_a_few_views_need_no_more_than_their_chips(client, specialist):
+    """Three views fit a narrow screen too: no «+N» at either width."""
+    for number in range(saved_views.NARROW_CHIPS):
+        saved_views.save_view(
+            user=specialist, name=f"Vaade {number}", params=QueryDict(f"aasta={2000 + number}")
+        )
+    client.force_login(specialist)
+
+    strip = client.get(REGISTER).content.decode().split('class="uxviews"')[1]
+
+    assert "uxchip--minewide" not in strip.split('class="filters"')[0]
+    assert "uxviews__more--" not in strip.split('class="filters"')[0]
 
 
 def test_at_the_limit_the_save_form_says_why_instead(client, specialist):

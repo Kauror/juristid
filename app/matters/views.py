@@ -2260,6 +2260,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     context["personal_views"] = personal
     context["personal_views_shown"] = personal[: saved_views.VISIBLE_CHIPS]
     context["personal_views_hidden"] = max(0, len(personal) - saved_views.VISIBLE_CHIPS)
+    context["personal_views_narrow"] = saved_views.NARROW_CHIPS
+    context["personal_views_hidden_narrow"] = max(0, len(personal) - saved_views.NARROW_CHIPS)
     context["personal_views_max"] = saved_views.MAX_VIEWS
     context["current_view_query"] = saved_views.canonical_query(params)
 
