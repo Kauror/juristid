@@ -262,7 +262,7 @@
 .searchfield__group {
   margin: 0;
   padding: var(--spacing-15) var(--spacing-2) var(--spacing-1);
-  font-size: 11px;
+  font-size: var(--typography-size-label);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1234,6 +1234,26 @@ p.formnote {
   width: 132px;
 }
 
+/* The two date columns hold their widest real content at Tavaline (above); at
+   Suur and Väga suur the same dates are wider, so the columns grow with the
+   type instead of running into the next one (docs/adr/0221, text size).
+   Tavaline and Väike keep the widths above. */
+:root[data-text-size="suur"] .table--register .table__date {
+  width: 220px;
+}
+
+:root[data-text-size="suur"] .table--register .table__lastactivity {
+  width: 152px;
+}
+
+:root[data-text-size="vaga-suur"] .table--register .table__date {
+  width: 250px;
+}
+
+:root[data-text-size="vaga-suur"] .table--register .table__lastactivity {
+  width: 174px;
+}
+
 /* Columns added with «Vali veerud». Each has a width, and the table's
    minimum grows by that width per added column (`--extra-columns`, the count
    the template writes), so the layout stays fixed and the title keeps what is
@@ -1968,7 +1988,7 @@ th[aria-sort="descending"] .colhead__mark::after {
   border-radius: 999px;
   background: var(--accent-primary);
   color: var(--text-inverse);
-  font-size: 11px;
+  font-size: var(--typography-size-label);
   font-weight: 700;
   line-height: 1.6;
   text-align: center;
@@ -3666,7 +3686,7 @@ button.personaoption:focus-visible {
 
 .personahead__title {
   margin: 0;
-  font-size: 21px;
+  font-size: calc(var(--typography-size-page-title) + 1px);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: var(--typography-tracking-title);
 }
@@ -3813,7 +3833,7 @@ button.personarow:focus-visible .personarow__action {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-medium);
 }
 
@@ -6886,7 +6906,7 @@ fieldset,
 }
 
 .teema .matterhead__title {
-  font-size: 21px;
+  font-size: calc(var(--typography-size-page-title) + 1px);
   letter-spacing: var(--typography-tracking-title);
   /* 76ch, so a formal legislative title wraps where a reader's eye can follow
      it rather than running the width of a 1440px screen. */
@@ -6913,7 +6933,7 @@ fieldset,
   display: inline-flex;
   align-items: baseline;
   gap: var(--spacing-15);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
   min-width: 0;
   /* The anchor for this fact's inline editor. `.inlineedit__form` is
@@ -7058,7 +7078,7 @@ fieldset,
 }
 
 .summary__action {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
   color: var(--accent-link);
   white-space: nowrap;
@@ -7073,7 +7093,7 @@ fieldset,
    summarised yet should look short, not unfinished. */
 .summary__prompt {
   display: inline-block;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
   border-bottom: 1px dashed var(--border-strong);
   padding-bottom: 1px;
@@ -7207,14 +7227,14 @@ fieldset,
 
 .accordion__title {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
   flex: none;
 }
 
 .accordion__summary {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-body);
   min-width: 0;
   overflow: hidden;
@@ -7228,7 +7248,7 @@ fieldset,
 }
 
 .accordion__action {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-secondary);
   flex: none;
@@ -7247,7 +7267,7 @@ button.accordion__action {
   margin: 0;
   padding: 0;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
   line-height: inherit;
   color: var(--text-secondary);
@@ -7288,7 +7308,7 @@ button.accordion__action:focus-visible {
 .webrow {
   padding: var(--spacing-3) var(--spacing-8);
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
 }
 
 .webrow__list {
@@ -7318,7 +7338,7 @@ button.accordion__action:focus-visible {
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
-  font-size: 10.5px;
+  font-size: calc(var(--typography-size-label) - 0.5px);
   letter-spacing: 0.04em;
 }
 
@@ -7411,7 +7431,7 @@ button.accordion__action:focus-visible {
 }
 
 .teema .railcard__row {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   align-items: baseline;
 }
 
@@ -7525,7 +7545,7 @@ button.accordion__action:focus-visible {
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.55;
   color: var(--text-body);
   resize: vertical;
@@ -7589,7 +7609,7 @@ button.accordion__action:focus-visible {
 
 .docsection__title {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
 }
@@ -8354,7 +8374,7 @@ button.opinionmenu__item {
   list-style: none;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   line-height: 1;
   padding: 2px var(--spacing-1);
   border-radius: var(--radius-chip);
@@ -8439,7 +8459,7 @@ button.opinionmenu__item {
 }
 
 .railcard__none {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
 }
 
@@ -8481,7 +8501,7 @@ button.opinionmenu__item {
 .workhead__title,
 .ovhead__title {
   margin: 0;
-  font-size: 21px;
+  font-size: calc(var(--typography-size-page-title) + 1px);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: var(--typography-tracking-title);
 }
@@ -8556,7 +8576,7 @@ button.opinionmenu__item {
 }
 
 .seis__number {
-  font-size: 19px;
+  font-size: var(--typography-size-matter-title);
   font-weight: var(--typography-weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -8571,7 +8591,7 @@ button.opinionmenu__item {
 }
 
 .seis__caption {
-  font-size: 13.5px;
+  font-size: var(--typography-size-row);
   color: var(--text-secondary);
 }
 
@@ -8712,7 +8732,7 @@ button.opinionmenu__item {
 .workband__title,
 .ovsection__title {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
 }
@@ -8958,7 +8978,7 @@ button.opinionmenu__item {
 
 .workrow2__meaning,
 .interrow__meaning {
-  font-size: 10.5px;
+  font-size: calc(var(--typography-size-label) - 0.5px);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: 0.03em;
   line-height: 1.25;
@@ -9252,7 +9272,7 @@ button.opinionmenu__item {
 }
 
 .foldout__label {
-  font-size: 14px;
+  font-size: calc(var(--typography-size-lg) - 1px);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
 }
@@ -9627,6 +9647,9 @@ button.opinionmenu__item {
 
 .feedfilter {
   display: flex;
+  /* Wraps at Suur and Väga suur on a phone instead of pushing the page sideways;
+     at Tavaline the four filters fit one line, as before (docs/adr/0221). */
+  flex-wrap: wrap;
   gap: var(--spacing-1);
   padding-bottom: var(--spacing-2);
 }
@@ -10075,7 +10098,7 @@ button.opinionmenu__item {
 }
 
 .seis--compact .seis__number {
-  font-size: 20px;
+  font-size: var(--typography-size-page-title);
 }
 
 .seis--compact .seis__caption {
@@ -10288,8 +10311,15 @@ button.opinionmenu__item {
 
 /* ---- Aktiivsed teemad ----------------------------------------------- */
 
+/* At Väga suur on a 320px phone the heading beside it grows; the search gives
+   way rather than pushing the page sideways. Tavaline keeps its 200px. */
+.pw-search {
+  min-width: 0;
+}
+
 .pw-search input {
   width: 200px;
+  max-width: 100%;
   padding: 5px var(--spacing-25);
   border: 1px solid var(--border-input);
   border-radius: var(--radius-md);
@@ -11205,7 +11235,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 .teemamain .factsection__head .sectionlabel,
 .teemamain .accordion--timeline .accordion__title,
 .teema .rail .railcard__label {
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-bold);
   letter-spacing: var(--typography-tracking-label);
   line-height: 1.2;
@@ -11431,7 +11461,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .cx-f__lab {
-  font-size: 10px;
+  font-size: var(--typography-size-chip);
   font-weight: var(--typography-weight-bold);
   line-height: 1.2;
   letter-spacing: var(--typography-tracking-label);
@@ -11458,7 +11488,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: flex;
   align-items: center;
   gap: var(--spacing-15);
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.4;
   color: var(--text-secondary);
 }
@@ -11497,7 +11527,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .cx-note {
   margin: 0;
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.5;
   color: var(--text-muted);
 }
@@ -11679,7 +11709,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .cx-drop__text,
 .uploadpanel .cx-drop__text {
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   line-height: 1.4;
   color: var(--text-muted);
   /* A chosen file's name is often one token —
@@ -11841,7 +11871,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   list-style: none;
   padding-bottom: 1px;
   border-bottom: 1px dashed var(--border-strong);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-regular);
   color: var(--text-muted);
 }
@@ -11958,7 +11988,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .uxtl__audit {
   margin: var(--spacing-4) 0 0;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
 }
 
 #teema-vaade-wrap .changelog__head {
@@ -11967,14 +11997,14 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 #teema-vaade-wrap .changelog__title {
   margin: 0 0 var(--spacing-2);
-  font-size: 20px;
+  font-size: var(--typography-size-page-title);
   line-height: 1.3;
 }
 
 #teema-vaade-wrap .changelog__matter,
 #teema-vaade-wrap .changelog__note {
   margin: 0 0 var(--spacing-1);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
 }
 
@@ -11992,7 +12022,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   gap: var(--spacing-2);
   padding: 6px 0;
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.45;
 }
 
@@ -12027,7 +12057,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .changelog__none {
   padding: var(--spacing-3) 0;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
 }
 
 #teema-vaade-wrap .changelog__older,
@@ -12072,7 +12102,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: baseline;
   gap: var(--spacing-2);
   margin: 0 0 var(--spacing-2);
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -12085,12 +12115,12 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: baseline;
   gap: var(--spacing-2);
   margin: var(--spacing-2) 0 0;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-body);
 }
 
 #teema-vaade-wrap .lprail__asidelabel {
-  font-size: 11px;
+  font-size: var(--typography-size-label);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -12216,7 +12246,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .kulgform__lede {
   margin: 0 0 var(--spacing-3);
   max-width: 62ch;
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   line-height: 1.45;
   color: var(--text-muted);
 }
@@ -12248,7 +12278,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * beside it is `disabled`, and this is the word that makes that legible
  * instead of merely unresponsive. */
 #teema-vaade-wrap .kulgform__protected {
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.3;
   color: var(--text-muted);
 }
@@ -12304,7 +12334,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .kulgform__stepdate {
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -12313,7 +12343,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * row reads as a record first and a control second. */
 #teema-vaade-wrap .kulgform__stepmuuda {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   color: var(--accent-link);
 }
 
@@ -12423,7 +12453,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step__type {
-  font-size: 10.5px;
+  font-size: calc(var(--typography-size-label) - 0.5px);
   font-weight: var(--typography-weight-semibold);
   line-height: 1.2;
   letter-spacing: 0.04em;
@@ -12587,7 +12617,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   position: absolute;
   top: -18px;
   left: 0;
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-muted);
 }
@@ -12621,7 +12651,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step__actslink {
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.3;
 }
 
@@ -12672,7 +12702,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow-wrap: break-word;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
   line-height: 1.3;
   color: var(--text-primary);
@@ -12710,7 +12740,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.3;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -12772,7 +12802,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   background: none;
   cursor: pointer;
   list-style: none;
-  font: 400 11.5px/1.3 var(--typography-font-sans);
+  font: 400 var(--typography-size-meta-sm)/1.3 var(--typography-font-sans);
   color: var(--text-muted);
 }
 
@@ -12817,7 +12847,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   line-height: 1.3;
   color: var(--text-muted);
 }
@@ -12886,7 +12916,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-menu);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-regular);
   line-height: 1.4;
   color: var(--text-primary);
@@ -12930,7 +12960,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 /* Allikas is always the fact's last line. */
 #teema-vaade-wrap .tl-tip__source {
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
 }
 
@@ -13249,7 +13279,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .uxtl__mssub {
   display: block;
   margin-top: 1px;
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   line-height: 1.45;
   color: var(--text-body);
   /* QA-10b. The same defect QA-10 fixed in `.richtext`, in the surfaces the
@@ -13282,7 +13312,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-top: var(--spacing-15);
   padding-left: var(--spacing-25);
   border-left: 2px solid var(--border-subtle);
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   line-height: 1.45;
   color: var(--text-body);
   /* QA-10b. The same defect QA-10 fixed in `.richtext`, in the surfaces the
@@ -13323,7 +13353,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   min-width: 0;
   overflow-wrap: anywhere;
   margin-top: 3px;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.4;
   color: var(--accent-link);
   text-decoration: none;
@@ -13373,7 +13403,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: center;
   gap: var(--spacing-1);
   margin-right: var(--spacing-3);
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.4;
   color: var(--accent-link);
   text-decoration: none;
@@ -13390,7 +13420,7 @@ section:has(.pw-more[open]) tbody.uxextra {
   align-items: baseline;
   gap: var(--spacing-1);
   margin-top: 2px;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.4;
   color: var(--text-body);
 }
@@ -13471,7 +13501,7 @@ section:has(.pw-more[open]) tbody.uxextra {
  * with the stylesheet off (docs/adr/0092 §6). */
 #teema-vaade-wrap .uxtl__next .uxtl__nextlabel {
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--typography-size-meta-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -13769,7 +13799,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .curact__flag {
-  font-size: 11px;
+  font-size: var(--typography-size-label);
   letter-spacing: var(--typography-tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
@@ -14042,7 +14072,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 .teemamain .addzone .rowlabel {
   display: block;
   margin: 0 0 var(--spacing-2);
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-bold);
   letter-spacing: var(--typography-tracking-label);
   line-height: 1.2;
@@ -14472,7 +14502,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .kaikstage__stage {
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   font-weight: var(--typography-weight-semibold);
   color: var(--text-secondary);
 }
@@ -14490,14 +14520,14 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 .kaikstage__repeat,
 .kaikstage__period {
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .kaikstage__count {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--typography-size-meta);
   color: var(--text-muted);
 }
 
@@ -16399,7 +16429,7 @@ a.jcal__daynum {
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-menu);
   color: var(--text-primary);
-  font: 400 11.5px/1.3 var(--typography-font-sans);
+  font: 400 var(--typography-size-meta-sm)/1.3 var(--typography-font-sans);
   white-space: nowrap;
   pointer-events: none;
 }
@@ -16582,7 +16612,7 @@ a.jcal__daynum {
 }
 
 .chkpi__value {
-  font-size: 19px;
+  font-size: var(--typography-size-matter-title);
   font-weight: var(--typography-weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -17111,7 +17141,7 @@ a.jcal__daynum {
  * broken rather than pushing the page sideways at 375 px. */
 #teema-vaade-wrap .uxtl__histtext {
   margin-bottom: var(--spacing-15);
-  font-size: 13px;
+  font-size: var(--typography-size-base);
   line-height: 1.45;
   color: var(--text-body);
   overflow-wrap: anywhere;
@@ -17184,7 +17214,7 @@ a.jcal__daynum {
 
 #teema-vaade-wrap .uxtl__histcomment {
   display: block;
-  font-size: 12.5px;
+  font-size: var(--typography-size-sm);
   line-height: 1.4;
   color: var(--text-body);
 }

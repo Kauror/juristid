@@ -41,6 +41,27 @@ endpoints). A group is shown only when at least one of its items is.
   session, as before: `visible_sections()` is empty for a reader who cannot open Ülevaade, and the
   pages open to everybody behind the gate do not count towards it.
 
+### 1a. Teavitused: the route and the menu differ on purpose
+
+This is the one place where what the sidebar offers and what the route answers are not the same
+set, and it is intentional (final review, corrections round 25.11.2026):
+
+* **The route** `notifications:settings` (`/teavitused/seaded/`) is `login_required` and reads and
+  writes only the signed-in person's own choices. It was so on r92 and is unchanged: every
+  signed-in persona or account — a reader and the administrator persona included — still gets 200
+  at that address, and a bookmark keeps working for them.
+* **The sidebar item** «Isiklikud seaded → Teavitused» is offered only to the readers the bell is
+  drawn for (`may_read_business_content`, the same rule as the account menu's
+  `haldus.notification_settings_link`, UI-03). A technical administrator, or the administrator
+  persona without a business role, receives no notifications, so a menu entry would invite them
+  to configure something that never reaches them.
+* **Why it is safe.** Narrower can only hide a page that opens; it can never offer a page that
+  refuses, and the page reveals nothing about anybody else. The exception is named in one place in
+  the tests (`NARROWER` in `tests/test_haldus_route_inventory.py`); any other item whose menu and
+  route disagree fails there.
+* **Reversible** by switching the item's predicate to `may_open_settings` (signed in). Not done,
+  because UI-03 decided the bell's readers.
+
 ### 2. The mapping (route → sidebar home)
 
 | Group | Item | Primary route (unchanged unless marked new) | Other routes it is home of | Visible to (= route guard) |
@@ -76,6 +97,14 @@ without a lawyer persona, verified account administrator, shared gate only) plus
 that are no persona behind the gate (the administrator persona and a reader, signed in), that
 every item is shown exactly when its route answers 200.
 
+`tests/test_haldus_b1_final_review.py` (final review, 25.11.2026) adds three proofs against a
+frozen copy of r92 (`e344a474`): every one of the 71 URL names under `/haldus/` and the gathered
+outside pages still exists **at the same address**; for the reader (Testlugeja) and an ordinary
+lawyer every one of them answers a GET with **the same status as on r92** (same refusal, same
+openings), and every sidebar item they are offered was already open to them there (no new item
+reveals anything); and every item is reachable — shown in the sidebar and opening — for at least
+one authorized persona, its GET sub-pages linked from its own page.
+
 ### 3. The sidebar
 
 `templates/haldus/base.html` draws the sidebar (`{% haldus_sidebar %}`, `_sidebar.html`) beside
@@ -99,6 +128,12 @@ the capture check, the import and its sub-strip (Ülevaade, Ootel kirjed). A rec
 check or import now returns to the OneNote page instead of `data_sync#onenote`. The request
 history stays one page (it lists both lanes) under Lovable, linked from OneNote. No new
 synchronisation function; every fresh-proof, audit and runner rule is the same code.
+
+**OneNote's diagnostic detail is folded** (final review, 25.11.2026): the counts that only
+explain the corpus — operational pages per state, other catalogued pages and their states,
+uncovered sections and the scope note — sit in one remembered block (docs/adr/0194, key
+`haldus.onenote.diagnostics`, closed by default). The last capture, the operational counts, the
+held readings and their page, the capture check, the import and the requests stay visible.
 
 ### 5. Ülevaade is an attention page
 
@@ -145,9 +180,21 @@ pattern: a separate non-deferred script in `<head>` sets `<html data-text-size>`
 is parsed — no flash at the wrong size — and stores one key; Tavaline is the absence of key and
 attribute, so the server-rendered page is byte-for-byte the old one. The sizes are the eleven
 typography tokens redefined per value in `tokens.css`; spacing (rem) stays, keeping pages dense.
-About seventy rules with a fixed pixel size (small chips and badges) do not scale; that is
-deliberate for now and listed as a follow-up. Signing out clears it with the rest of the origin's
+Signing out clears it with the rest of the origin's
 storage (ENG-009), like the theme.
+
+**Fixed pixel sizes (corrections round 25.11.2026).** 116 declarations in `static/css` named a
+pixel size (`font-size: Npx` and the `font:` shorthand in `ux.css`) and so ignored the choice —
+filter chips, status and kind labels, timeline labels, the deadline list, menus, row text. 106 of
+them now name the typography token with the same Tavaline value (`12px` → `--typography-size-meta`
+and so on; the four sizes with no token of their own are an offset from the nearest one, e.g.
+`14px` → `calc(var(--typography-size-lg) - 1px)`), so **Tavaline computes to exactly the same
+pixels** — checked element by element on ten pages at 1440 and 375 (8,364 elements, 0 changed).
+Kept fixed on purpose: nine glyphs or initials drawn inside a fixed circle or square (avatars,
+the «i»/«!» marks, the × and arrow icon buttons) and the SVG trend chart's axis ticks; one
+deliberate exception, the phone-width Statistika column labels (9 px), which must fit their bars.
+`e2e/test_text_size_scaling.py` measures one element per surface at all four sizes on a desktop
+and a phone: exact at Tavaline, strictly growing, no sideways scroll on the phone.
 
 Alternative recorded (N-B2): a server-side size would follow the person across devices but needs
 the size at render time on every page and a field in the same table; rejected for v1 to match the
