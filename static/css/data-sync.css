@@ -47,6 +47,16 @@
   color: var(--text-primary);
 }
 
+/* OneNote's purely diagnostic counts, folded (corrections round 25.11): the
+   remembered block keeps its own frame; its first heading needs no top gap. */
+.dsync__details {
+  margin-top: var(--spacing-4);
+}
+
+.dsync__details > .dsync__subtitle:first-of-type {
+  margin-top: 0;
+}
+
 .dsync__warnings {
   margin: var(--spacing-2) 0;
   padding-left: var(--spacing-5);
