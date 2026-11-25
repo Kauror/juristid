@@ -7657,8 +7657,9 @@ def sync_health(*, now: dt.datetime | None = None) -> SyncHealth:
 def due(*, trigger: str, now: dt.datetime | None = None) -> str:
     """``DUE APPLY``, ``DUE COMPARE`` or ``NOT_DUE <reason>``.
 
-    The host's cron fires at 21:15 and 22:15 UTC; exactly one of them is 00:15 in
-    Tallinn, summer or winter, and only that one is due. The run key then makes a
+    The host starts it from the nightly cycle (ADR 0229), fired at 21:00 and 22:00
+    UTC: exactly one firing is in Tallinn's hour 00, summer or winter, and only that
+    one is due. The run key then makes a
     second attempt on the same date refuse."""
     moment = now or timezone.now()
     ctl = control()

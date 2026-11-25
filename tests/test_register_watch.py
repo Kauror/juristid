@@ -912,26 +912,46 @@ def _switched(*, migrated: dt.datetime) -> None:
 @pytest.mark.parametrize(
     ("migrated", "now", "ok"),
     [
-        # Released 19.11 02:00Z: the first run is 19.11 03:30Z, late from 09:30Z.
+        # Winter. Released 19.11 02:00Z (04:00 Tallinn): the first cycle is 20.11
+        # 00:00 Tallinn = 19.11 22:00Z, and the watch is late after its finish-by,
+        # three hours later (20.11 01:00Z).
         (
             dt.datetime(2026, 11, 19, 2, 0, tzinfo=UTC),
-            dt.datetime(2026, 11, 19, 9, 0, tzinfo=UTC),
+            dt.datetime(2026, 11, 20, 0, 59, tzinfo=UTC),
             True,
         ),
         (
             dt.datetime(2026, 11, 19, 2, 0, tzinfo=UTC),
-            dt.datetime(2026, 11, 19, 10, 0, tzinfo=UTC),
+            dt.datetime(2026, 11, 20, 1, 1, tzinfo=UTC),
             False,
         ),
-        # Released 19.11 12:00Z: nothing is due before 20.11 03:30Z.
+        # Released half an hour before that cycle: still that cycle.
         (
-            dt.datetime(2026, 11, 19, 12, 0, tzinfo=UTC),
-            dt.datetime(2026, 11, 20, 9, 0, tzinfo=UTC),
+            dt.datetime(2026, 11, 19, 21, 30, tzinfo=UTC),
+            dt.datetime(2026, 11, 20, 1, 1, tzinfo=UTC),
+            False,
+        ),
+        # Summer: the cycle is 21:00Z, so the watch is late from 00:00Z.
+        (
+            dt.datetime(2026, 7, 1, 12, 0, tzinfo=UTC),
+            dt.datetime(2026, 7, 1, 23, 59, tzinfo=UTC),
             True,
         ),
         (
-            dt.datetime(2026, 11, 19, 12, 0, tzinfo=UTC),
-            dt.datetime(2026, 11, 20, 9, 31, tzinfo=UTC),
+            dt.datetime(2026, 7, 1, 12, 0, tzinfo=UTC),
+            dt.datetime(2026, 7, 2, 0, 1, tzinfo=UTC),
+            False,
+        ),
+        # The night the clocks go forward (29.03.2026 01:00Z): released at 23:00Z on
+        # 28.03, after that night's 22:00Z cycle; the next is 30.03 00:00 at UTC+3.
+        (
+            dt.datetime(2026, 3, 28, 23, 0, tzinfo=UTC),
+            dt.datetime(2026, 3, 29, 23, 59, tzinfo=UTC),
+            True,
+        ),
+        (
+            dt.datetime(2026, 3, 28, 23, 0, tzinfo=UTC),
+            dt.datetime(2026, 3, 30, 0, 1, tzinfo=UTC),
             False,
         ),
     ],
@@ -941,8 +961,8 @@ def test_a_watch_that_never_ran_is_late_only_after_its_first_run_was_due(
 ):
     """QA-NEW-05 (coordinator QA 2026-11-20): an enabled watch with no run was
     green «never run» for ever, hiding a cron line never installed. Now it is
-    green until the first scheduled 03:30 UTC run after it was switched on was
-    due (plus six hours), then red, with Haldus's words."""
+    green until the watch's finish-by in the first nightly cycle (00:00 Tallinn,
+    ADR 0229) after it was switched on, then red, with Haldus's words."""
     assert not WatchRun.objects.exists()
     _switched(migrated=migrated)
     health = watch.watch_health(now)
@@ -963,10 +983,12 @@ def test_a_watch_installed_two_weeks_before_it_was_switched_on_is_not_late_early
     evening = dt.datetime(2026, 11, 19, 20, 0, tzinfo=UTC)
     with override_settings(REGISTER_WATCH_ENABLED_AT=switched.isoformat()):
         assert watch.watch_switched_on_at() == switched
-        assert watch.first_run_due(switched) == dt.datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+        # The first cycle after 14:00Z is 20.11 00:00 Tallinn (19.11 22:00Z); the
+        # watch's finish-by in it is three hours later.
+        assert watch.first_run_due(switched) == dt.datetime(2026, 11, 20, 1, 0, tzinfo=UTC)
         assert watch.watch_health(evening) == watch.Health(True, "not run yet")
-        # The cron line was never installed: red once the first run was due.
-        assert not watch.watch_health(dt.datetime(2026, 11, 20, 9, 31, tzinfo=UTC)).ok
+        # The cycle was never installed: red once the first run was due.
+        assert not watch.watch_health(dt.datetime(2026, 11, 20, 1, 1, tzinfo=UTC)).ok
     with override_settings(REGISTER_WATCH_ENABLED_AT="2026-11-19T14:00:00Z"):
         assert watch.watch_switched_on_at() == switched  # «Z» reads as UTC
     with override_settings(REGISTER_WATCH_ENABLED_AT="eile õhtul"):
@@ -1010,9 +1032,10 @@ def test_the_switch_moment_reads_utc_offsets_and_dates(declared, switched):
     _switched(migrated=dt.datetime(2026, 11, 1, tzinfo=UTC))
     with override_settings(REGISTER_WATCH_ENABLED_AT=declared):
         assert watch.watch_switched_on_at(dt.datetime(2026, 11, 20, tzinfo=UTC)) == switched
-    # A switch at 03:30 exactly is due that same morning (09:30), not a day later.
-    assert watch.first_run_due(dt.datetime(2026, 11, 19, 3, 30, tzinfo=UTC)) == dt.datetime(
-        2026, 11, 19, 9, 30, tzinfo=UTC
+    # A switch exactly at a cycle's start (00:00 Tallinn = 22:00Z in winter) is
+    # that cycle's, due three hours later — not a day later.
+    assert watch.first_run_due(dt.datetime(2026, 11, 19, 22, 0, tzinfo=UTC)) == dt.datetime(
+        2026, 11, 20, 1, 0, tzinfo=UTC
     )
 
 

@@ -35,13 +35,14 @@ changes = [
 ]
 
 # Kavandatud väljalase r93: pakett A1 (UX-003, UX-004; #711), pakett A2 (UX-001; #712) ja Lovable'i
-# tavamuudatuste piir 20 → 100 (#725, ADR 0213 §14, omaniku otsus 25.11) ühes kirjes.
+# tavamuudatuste piir 20 → 100 (#725, ADR 0213 §14) ning üks öine tsükkel kell 00.00 Tallinna aja järgi
+# (#726, ADR 0229), mõlemad omaniku otsused 25.11, ühes kirjes.
 # Kuupäev on oodatav paigalduspäev ja pannakse lõplikult paika väljalaske ettevalmistamisel; kui r93 jõuab
 # tootmisse muul päeval, tõsta read selle päeva kirjesse (README: üks kirje päevas, kuupäev = paigalduspäev).
 [[day]]
 date = 2026-11-25
 basis = "deployment"
-prs = [711, 712, 725]
+prs = [711, 712, 725, 726]
 changes = [
   "Minu asjade «Viimastes tegevustes» on iga tegevus ühel real: teema pealkirja järel on kohe kuupäev ja tegevuse liik (ja kolleegi nimi, kui tegevuse tegi keegi teine). Korraga on näha 20 tegevust, ülejäänud on nagu varem «Näita veel» all.",
   "Teavituste lehe «Varasemad» on nüüd kokku volditav ja vaikimisi kinni; pealkirjas on varasemate teavituste arv. Juristid jätab meelde, kas hoiad selle lahti või kinni. «Näita varasemaid» avab selle alati, ning lahti- või kinnivoltimine ei märgi ühtegi teavitust loetuks ega lugemata.",
@@ -53,6 +54,8 @@ changes = [
   "Suletud teema menetluse kulul ei ole enam nuppu «Muuda» ega kuupäeva lisamise otseteid: suletud teemat ei saa muuta, ja kui teema suletakse ajal, mil kellelgi on muutmisaken lahti, siis selle salvestamisest keeldutakse. Teema uuesti avamine annab muutmise tagasi.",
   "Suletud teema menetluse kulus on «Lõpetatud» nüüd selle etapi järel, milles koja töö lõppes, mitte enne seda. Menetluse hilisemad etapid on endiselt selle järel.",
   "Lovable'i öine sünkroonimine kirjutab ühe ööga nüüd kuni 100 Lovable'is muudetud teemat (varem 20). Kui muudetud teemasid on rohkem, jääb öö nagu varemgi kirjutamata ja ootab inimese otsust. Vastutaja üleandmistel on endiselt oma piir, 150 teemat ööga. Varasemate käivituste kokkuvõtetes on alles piir, mis neil öödel kehtis.",
+  "Lovable'i sünkroonimine, registrite kontroll, «Uued eelnõud» ja «Valitsuse info» käivad nüüd kõik ühe korra öösel, alates kella 00.00-st. Registritest leitud dokumendid ja uued eelnõud on seega ootel juba hommikul, ja ka samal ööl Lovable'ist tulnud teemad on kontrollis kaasas. Päeval allikaid enam automaatselt ei loeta; Halduse «Sünkrooni nüüd» töötab nagu varem.",
+  "«Valitsuse info»: valitsuse istungi päevakord loetakse öösel. Kolmapäeval avaldatud päevakord on Monitooringus neljapäeva hommikul; kui päevakord avaldatakse hiljem, jõuab see sinna reede hommikul. Hoiatus «Selle nädala päevakorda ei leitud» ilmub alles reede hommikul, kui ka viimane öine lugemine päevakorda ei leidnud.",
 ]
 
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,

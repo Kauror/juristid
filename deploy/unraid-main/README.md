@@ -526,6 +526,31 @@ If it says the index has been owed a rebuild for too long, the worker is what to
 look at first. `rebuild_search_index` remains the manual answer and is always
 safe to run.
 
+### The nightly cycle (ADR 0229)
+
+Once installed (an authorised deployment), every routine synchronisation and
+monitoring job runs in one cycle at 00:00 Europe/Tallinn, started by
+`deploy/unraid-main/cron/juristid-nightly.cron`: the Lovable synchronisation,
+then the register watch → «Uued eelnõud» sweep beside the Government agenda.
+There is no daytime polling; the 5-minute on-demand line for «Sünkrooni nüüd»
+stays. What the night did:
+
+```bash
+cat /mnt/user/appdata/juristid-main/nightly/last-cycle.txt
+bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-nightly-cycle.sh --plan
+```
+
+Each step has one outcome — SUCCEEDED, SUCCEEDED_NO_NEW, PARTIAL,
+SKIPPED_DELIBERATE, SKIPPED_UNEXPECTED, FAILED or INTERRUPTED — read from its own
+run record, and the daily monitor reports a night that never started, was
+refused, interrupted or overdue, or had a problem step (`nightly` in
+`docs/alerts.md`). An interrupted night is never re-run by cron; after reading
+its log, recover it by hand: `juristid-nightly-cycle.sh --manual`. Pause it with
+`touch /mnt/user/appdata/juristid-main/nightly/PAUSED` (one step:
+`PAUSED-<step>`). The cycle holds `/tmp/juristid-nightly-cycle.lock` from start to
+end; a release or a restore takes the same lock first and refuses while the
+cycle runs, and the cycle refuses to start under them.
+
 ## Recurring operations — refreshing the register
 
 > **Historical — superseded by ADR 0203 (2026-11-03). Do not run this cycle
@@ -1244,8 +1269,9 @@ scripts/deploy/juristid-deploy-preflight.sh --repo /mnt/user/appdata/juristid-ma
 
 It verifies that the commit exists, that it is ahead of what is running, that
 the checkout is clean, that the Compose file resolves with no host port and a
-read-only corpus, that the environment file exists and is mode 600, and that
-there is room to write a backup.
+read-only corpus, that the environment file exists and is mode 600, that
+there is room to write a backup, and that the nightly cycle is not running
+(ADR 0229 §5: the release itself must then hold the cycle lock to its end).
 
 **If it says the checkout is dirty, stop.** Somebody changed something on the
 server, and finding out what matters more than this release. Do not

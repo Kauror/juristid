@@ -12,8 +12,8 @@
 #           one, every alert below ends in the WebGUI bell and nobody is told
 #
 # Times are UTC (the host has no Tallinn zoneinfo). The nightly backup runs
-# before the host's own 23:00 database dump and the 21:15/22:15 Lovable sync
-# windows; the backup takes the host lock, so if a sync is running the backup
+# before the host's own 23:00 database dump and the nightly cycle's 21:00/22:00
+# firings (docs/adr/0229); the backup takes the host lock, so if a sync is running the backup
 # refuses and says so in its log, and the daily monitor reports the age.
 #
 # Paths follow deploy/unraid-main/README.md; the monitor's environment file is
@@ -28,26 +28,15 @@
 5 4 * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier daily --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
 0 5 * * 1 bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier weekly --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
 
-# Register watch (docs/adr/0217): the open Teemad's Riigikogu bills and the
-# ministry registers, nightly at 03:30 UTC (05:30 Tallinn), outside the backup,
-# sync and release windows. It writes proposals only. The model step reads
-# JURISTID_REGISTER_WATCH_AI=1 and ANTHROPIC_API_KEY from its own file,
-# config/register-watch.env (root, 0600), handed to this one exec — not
-# juristid.env, so no service holds the key. The file must exist: `docker exec
-# --env-file` refuses a missing one. Log: one line per run plus its errors; the
-# runs are also in Haldus → Registrite jälgimine.
-30 3 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py watch_registers >> /mnt/user/appdata/juristid-main/register-watch.log 2>&1
-
-# New topics sweep (docs/adr/0218): drafts in the same registers that are not a
-# Teema yet, for the «Uued eelnõud» page. At 04:20 UTC, after the register watch
-# has finished (~16 min), so a draft a Teema already follows is left out. The
-# sweep is on by default in production; the model step reads
-# JURISTID_REGISTER_SWEEP_AI=1 and the key from the same env file.
-20 4 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py sweep_registers >> /mnt/user/appdata/juristid-main/register-sweep.log 2>&1
-
-# The Government's commented agenda for Monitooring → «Valitsuse info» (docs/adr/0219):
-# every half hour from Wednesday 12:00 to Thursday 12:00 Tallinn. In winter (UTC+2) that
-# is Wed 10:00 UTC – Thu 09:59 UTC; in summer (UTC+3) move both lines an hour earlier. A
-# week already read costs one query. Same env file (the model step and its key).
-*/30 10-23 * * 3 docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py watch_government_agenda >> /mnt/user/appdata/juristid-main/government-agenda.log 2>&1
-*/30 0-9 * * 4 docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py watch_government_agenda >> /mnt/user/appdata/juristid-main/government-agenda.log 2>&1
+# The nightly monitoring and the Lovable synchronisation run in ONE coordinated
+# cycle at 00:00 Europe/Tallinn (docs/adr/0229). It is scheduled by its OWN file,
+# deploy/unraid-main/cron/juristid-nightly.cron, installed (with the removal of
+# the lines it replaces) by deploy/unraid-main/cron/juristid-nightly-transition.sh
+# --apply — never by a line copied into this file, so the cycle cannot be
+# installed twice. It runs the Lovable sync, then side by side the register watch
+# (docs/adr/0217) → the new-drafts sweep (docs/adr/0218) and the Government's
+# agenda (docs/adr/0219), each command as its own cron line ran it before, with
+# config/register-watch.env (root, 0600: the model step's switches and key) and
+# the same logs. Before the cycle they had their own lines (watch 03:30 UTC,
+# sweep 04:20 UTC, agenda every half hour Wednesday 12:00 to Thursday 12:00
+# Tallinn); --rollback restores them (docs/adr/0229 §8).
