@@ -81,7 +81,11 @@ while :; do
   if mkdir "$held" 2>/dev/null; then echo "$PPID" > "$held/pid"; exit 0; fi
   holder="$(cat "$held/pid" 2>/dev/null || true)"
   [ "$holder" = "$PPID" ] && exit 0
-  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -rf "$held"; continue; fi
+  # A dead holder (or a zombie nobody has reaped yet) holds nothing.
+  if [ -n "$holder" ] && { ! kill -0 "$holder" 2>/dev/null ||
+    [ "$(awk '{print $3}' "/proc/$holder/stat" 2>/dev/null)" = Z ]; }; then
+    rm -rf "$held"; continue
+  fi
   [ "$nb" = 1 ] && exit 1
   [ "$SECONDS" -ge "$deadline" ] && exit 1
   sleep 0.2
@@ -151,7 +155,7 @@ def _env(host: dict[str, Path], now: str) -> dict[str, str]:
 
 
 def run(
-    host: dict[str, Path], *arguments: str, now: str = WINTER_MIDNIGHT
+    host: dict[str, Path], *arguments: str, now: str = WINTER_MIDNIGHT, **extra: str
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - a fixed interpreter and a repository script
         [BASH, str(SCRIPT), *arguments],
@@ -159,7 +163,7 @@ def run(
         capture_output=True,
         text=True,
         timeout=120,
-        env=_env(host, now),
+        env={**_env(host, now), **extra},
     )
 
 
@@ -597,8 +601,13 @@ def test_an_on_demand_run_finishes_before_the_night_sync_starts(host) -> None:
         env=_env(host, WINTER_MIDNIGHT),
     )
     _wait_for(Path(str(sync_lock) + ".held"))
-    threading.Timer(1.0, hold.unlink).start()
-    result = run(host)
+
+    def finish() -> None:
+        hold.unlink()
+        on_demand.wait(timeout=30)  # reaped: its lock is free, as the kernel's would be
+
+    threading.Timer(1.0, finish).start()
+    result = run(host, JURISTID_NIGHTLY_LOCK_WAIT_SECONDS="20")
     on_demand.wait(timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     sequence = calls(host)
