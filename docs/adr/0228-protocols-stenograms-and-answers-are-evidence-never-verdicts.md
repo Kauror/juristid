@@ -40,7 +40,7 @@ attendance, a mention is not support, a missing public opinion is not a missed d
    descriptors; voting dashboards; EU monitoring (a separate programme); integration with
    the Riigikogu Chancellery's own assistant (no API verified; no outreach made).
 
-## Amendment 2026-11-25 (r94 candidate): a protocol the source refuses
+## Amendment 2026-11-25 (accepted with the r94 release, owner 25.11.2026): a protocol the source refuses
 
 Production's first activation met a committee protocol whose metadata the Riigikogu API
 answers 403, and the PROTOCOLS stage read PARTIAL — as it would every night while the
