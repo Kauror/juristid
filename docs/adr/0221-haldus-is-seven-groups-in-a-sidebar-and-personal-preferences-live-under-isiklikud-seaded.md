@@ -180,9 +180,21 @@ pattern: a separate non-deferred script in `<head>` sets `<html data-text-size>`
 is parsed — no flash at the wrong size — and stores one key; Tavaline is the absence of key and
 attribute, so the server-rendered page is byte-for-byte the old one. The sizes are the eleven
 typography tokens redefined per value in `tokens.css`; spacing (rem) stays, keeping pages dense.
-About seventy rules with a fixed pixel size (small chips and badges) do not scale; that is
-deliberate for now and listed as a follow-up. Signing out clears it with the rest of the origin's
+Signing out clears it with the rest of the origin's
 storage (ENG-009), like the theme.
+
+**Fixed pixel sizes (corrections round 25.11.2026).** 116 declarations in `static/css` named a
+pixel size (`font-size: Npx` and the `font:` shorthand in `ux.css`) and so ignored the choice —
+filter chips, status and kind labels, timeline labels, the deadline list, menus, row text. 106 of
+them now name the typography token with the same Tavaline value (`12px` → `--typography-size-meta`
+and so on; the four sizes with no token of their own are an offset from the nearest one, e.g.
+`14px` → `calc(var(--typography-size-lg) - 1px)`), so **Tavaline computes to exactly the same
+pixels** — checked element by element on ten pages at 1440 and 375 (8,364 elements, 0 changed).
+Kept fixed on purpose: nine glyphs or initials drawn inside a fixed circle or square (avatars,
+the «i»/«!» marks, the × and arrow icon buttons) and the SVG trend chart's axis ticks; one
+deliberate exception, the phone-width Statistika column labels (9 px), which must fit their bars.
+`e2e/test_text_size_scaling.py` measures one element per surface at all four sizes on a desktop
+and a phone: exact at Tavaline, strictly growing, no sideways scroll on the phone.
 
 Alternative recorded (N-B2): a server-side size would follow the person across devices but needs
 the size at render time on every page and a field in the same table; rejected for v1 to match the
