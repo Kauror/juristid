@@ -233,3 +233,22 @@ def test_adr_numbers_0221_to_0229_each_have_exactly_one_record():
     for number in range(221, 230):
         found = sorted(adr.glob(f"{number:04d}-*.md"))
         assert len(found) == 1, (number, [p.name for p in found])
+
+
+# ---------------------------------------------------------------------------
+# A page a persona may not open, on a phone (#721 text sizes × Monitooring)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=False)
+def test_production_not_found_is_the_applications_own_phone_ready_page(client, specialist):
+    """The 375px overflow reported on `/monitooring/` was Django's DEBUG 404 page
+    (`table.meta`, no viewport). Without DEBUG a refused or missing page is
+    `templates/404.html`, inside the application's own layout."""
+    client.force_login(specialist)
+    response = client.get("/monitooring/olematu-leht/")
+    assert response.status_code == 404
+    html = response.content.decode()
+    assert 'name="viewport"' in html
+    assert 'class="meta"' not in html
