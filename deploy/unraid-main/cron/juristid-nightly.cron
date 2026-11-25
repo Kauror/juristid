@@ -1,0 +1,27 @@
+# Juristid coordinated nightly cycle (docs/adr/0227). PREPARED, NOT INSTALLED.
+#
+# Installed only by an authorised deployment, as
+# /boot/config/plugins/dynamix/juristid-nightly.cron, then `update_cron`. Unraid
+# rebuilds / at every boot and update_cron concatenates every
+# /boot/config/plugins/dynamix/*.cron into /etc/cron.d/root, so this file is what
+# makes the schedule survive a restart.
+#
+# The cycle belongs at 00:00 Europe/Tallinn. The host keeps UTC and has no Tallinn
+# zone, so it fires at 21:00 AND 22:00 UTC; the script says which firing is 00:00
+# in Tallinn, summer (21:00 UTC) or winter (22:00 UTC), and the other exits with no
+# trace. It runs, in order: the Lovable synchronisation; then side by side the
+# registers lane (register watch → Riigikogu once installed → «Uued eelnõud»
+# sweep) and the Government's agenda. Each step keeps its own gates and locks;
+# Lovable APPLY still takes a fresh backup set verified to level 2.
+#
+# The same deployment REMOVES the lines this replaces (ADR 0227 §7):
+#   juristid-lovable-sync.cron  `15 21,22 * * *` (the nightly sync; the on-demand
+#                               `2-59/5` line stays)
+#   juristid-register-watch.cron  the whole file: watch 03:30, sweep 04:20 and the
+#                               Wednesday/Thursday half-hourly agenda lines
+# Neighbours: Juristid backup set 20:45, d2 release window (widen to 20:30-23:00),
+# DB dumps 23:00, USB backup 23:30, DashKoda/Juristid backups 00:30, Appdata
+# Backup Mon 01:00, media tier 01:15, mover 01:40, DashKoda feeds 02:00-07:00.
+# Pause: touch /mnt/user/appdata/juristid-main/nightly/PAUSED (or PAUSED-<step>).
+# Logs: /mnt/user/appdata/juristid-main/nightly/logs (30 days), last-cycle.txt.
+0 21,22 * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-nightly-cycle.sh &> /dev/null

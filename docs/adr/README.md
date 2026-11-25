@@ -228,6 +228,7 @@ consequences and reversibility.
 | [0218](0218-new-drafts-in-the-registers-are-proposed-to-the-department-head-as-new-teemad.md) | New drafts in the registers are proposed to the department head as new Teemad (nightly sweep, the model judges, «Uued eelnõud», the bell's sixth source) | Proposed, amended 2026-11-24 (the verdict is written only on a candidate still waiting and unjudged, re-read under lock) |
 | [0219](0219-monitooring-gathers-new-drafts-the-government-agenda-and-the-registers-list.md) | «Monitooring» gathers the new drafts, the Government's agenda and the registers' list (top-bar tab, the head's until opened; valitsus.ee agenda read and judged weekly; the bell, no e-mail) | Proposed |
 | [0220](0220-a-lawyer-leaving-and-arriving-is-prepared-in-juristid-and-handed-over-in-lovable.md) | A lawyer leaving and arriving is prepared in Juristid and handed over in Lovable (a recorded Lovable hand-over has its own nightly limit of 150; «Lovable'i nimed» and pinned names; held work shown and confirmed before switching a person off; «Töö ilma aktiivse vastutajata») | Accepted |
+| [0227](0227-the-nightly-jobs-run-in-one-coordinated-cycle-at-midnight-in-tallinn.md) | The nightly jobs run in one coordinated cycle at midnight in Tallinn (one cron line fires 21:00 and 22:00 UTC, the script runs the 00:00 Tallinn one; Lovable first, then the registers lane and the agenda side by side; per-step outcome, one hard need; prepared, not deployed) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -241,6 +242,22 @@ requires every gap in the numbering to be named here:
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
   rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
   The record lands with that branch, which then removes this line.
+- 0221 — reserved for the UI/UX and functional improvement programme of
+  2026-11-24 (Haldus navigation and personal preferences), on
+  `integration/programme-cumulative` (PR #721) and the `ux/*` branches, not yet merged.
+- 0222 — reserved for the Riigikogu programme (`rk/programme`, PR #723, draft):
+  «Riigikogu bills are followed by their UUID, read in one nightly cycle of separate
+  stages». The UI programme's branches also number a record 0222 (saved views); the
+  clash is settled before either merges.
+- 0223 — reserved for the Riigikogu programme (PR #723): «Riigikogu invitations to
+  koda are read and their dates stay external facts». The UI programme also numbers
+  a record 0223 (Minu statistika); settled as 0222.
+- 0224 — reserved for the Riigikogu programme (PR #723): «Monitooring gets a Riigikogu
+  section and the Teema its parliamentary sections».
+- 0225 — reserved for the Riigikogu programme (PR #723): «Full-document parliamentary
+  analysis is built, controlled and left off».
+- 0226 — reserved for the Riigikogu programme (PR #723): «Protocols, stenograms and
+  answers are evidence, never verdicts».
 
 Naming: `NNNN-short-decision-title.md`.
 
