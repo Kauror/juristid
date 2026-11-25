@@ -13,13 +13,22 @@ answered:
 ===============================  ==========================================
 ``/jalgimine/toovoidud/``        ``/teemad/?toovoit=on`` — the register,
                                  narrowed to files carrying a Töövõit.
-``/jalgimine/joustumised/``      ``/teemad/?joustumine=on`` — the same, for
-                                 files carrying a Jõustumine.
-``/jalgimine/tahtajad/``         ``/minu-asjad/`` — an important deadline is
-                                 personal work, so it goes to the reader's
-                                 own queue rather than to a list of
-                                 everybody's.
+``/jalgimine/joustumised/``      ``/minu-asjad/joustumised/`` — the
+                                 reader's own commencements (Minu
+                                 jõustumised); without a persona, the
+                                 register narrowed to files carrying a
+                                 Jõustumine (``/teemad/?joustumine=on``).
+``/jalgimine/tahtajad/``         ``/minu-asjad/tahtajad/`` — an important
+                                 deadline is personal work, so it goes to the
+                                 reader's own dates (Minu tähtajad) rather
+                                 than to a list of everybody's; without a
+                                 persona, the register.
 ===============================  ==========================================
+
+Since 2026-11-25 the two personal pages exist (Minu tähtajad, Minu
+jõustumised), and a signed-in person's old bookmark lands on the page that now
+answers its question for them. A reader with no persona keeps the register
+fallback: both new pages are ``login_required``.
 
 **The old query strings are dropped, and that is the honest answer rather than
 a shortfall.** ``?suund=moodunud``, ``?allikad=joustumised``, ``?aasta=2024``
@@ -81,20 +90,27 @@ def work_victories(request: HttpRequest) -> HttpResponse:
 
 
 def effective_dates(request: HttpRequest) -> HttpResponse:
-    """Jõustuvad aktid, as a narrowing of the register."""
+    """Jõustuvad aktid, to the reader's own commencements.
+
+    Minu jõustumised for somebody signed in as a person; the register narrowed
+    to files carrying a Jõustumine for anybody else (see `important_dates` for
+    why a reader with no persona is not sent to a ``login_required`` page).
+    """
+    if request.user.is_authenticated:
+        return redirect(reverse("matters:my_effective_dates"))
     return redirect(_register(COMMENCEMENT_PARAM))
 
 
 def important_dates(request: HttpRequest) -> HttpResponse:
-    """Olulised tähtajad, to the reader's own upcoming work.
+    """Olulised tähtajad, to the reader's own dates.
 
-    Minu asjad for somebody who is signed in as a person, and the register for
-    anybody else. Behind the shared gate with no persona chosen there is no
-    "minu" to show, and ``matters:my_work`` is ``login_required`` — so sending
-    that reader there would bounce them to the persona page with no explanation
-    of why the link they followed did not open. The register is a real
-    destination for them, and it is where the same Matters are.
+    Minu tähtajad for somebody who is signed in as a person, and the register
+    for anybody else. Behind the shared gate with no persona chosen there is no
+    "minu" to show, and ``matters:my_deadlines`` is ``login_required`` — so
+    sending that reader there would bounce them to the persona page with no
+    explanation of why the link they followed did not open. The register is a
+    real destination for them, and it is where the same Matters are.
     """
     if request.user.is_authenticated:
-        return redirect(reverse("matters:my_work"))
+        return redirect(reverse("matters:my_deadlines"))
     return redirect(reverse("matters:matter_list"))

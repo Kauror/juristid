@@ -395,7 +395,9 @@ def test_the_retired_page_redirects_for_every_persona(client, request, path, per
     client.force_login(request.getfixturevalue(persona))
     response = client.get(path)
     assert response.status_code == 302
-    assert response["Location"] == f"{REGISTER}?joustumine=on&olek=koik"
+    # A signed-in person lands on their own commencements (Minu jõustumised);
+    # only a reader with no persona keeps the register fallback.
+    assert response["Location"] == reverse("matters:my_effective_dates")
 
 
 def test_no_commencement_destination_on_the_bar(signed_in):

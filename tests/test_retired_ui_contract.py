@@ -196,11 +196,12 @@ def test_teemaviide_is_under_teema_andmed_and_not_in_the_header(signed_in, speci
 
 
 @pytest.mark.parametrize("path", ["/jalgimine/joustumised/", "/joustuvad-aktid/"])
-def test_the_retired_commencement_page_still_redirects_to_the_register(signed_in, path):
+def test_the_retired_commencement_page_redirects_to_minu_joustumised(signed_in, path):
+    """The department-wide page stays retired; a person lands on their own list."""
     response = signed_in.get(path)
 
     assert response.status_code == 302
-    assert response["Location"] == f"{reverse('matters:matter_list')}?joustumine=on&olek=koik"
+    assert response["Location"] == reverse("matters:my_effective_dates")
 
 
 @pytest.mark.parametrize("query", ["", "?joustumine=on&vaade=kalender"])

@@ -708,9 +708,7 @@ def test_a_chosen_value_comes_back_selected_in_the_panel(signed_in):
     "route,destination",
     [
         ("intelligence:work_victories", f"{REGISTER}?toovoit=on&olek=koik"),
-        ("intelligence:effective_dates", f"{REGISTER}?joustumine=on&olek=koik"),
         ("intelligence:work_victories_legacy", f"{REGISTER}?toovoit=on&olek=koik"),
-        ("intelligence:effective_dates_legacy", f"{REGISTER}?joustumine=on&olek=koik"),
     ],
 )
 def test_a_retired_fact_page_lands_on_the_register_filter_that_replaced_it(
@@ -728,16 +726,23 @@ def test_a_retired_fact_page_lands_on_the_register_filter_that_replaced_it(
 
 
 @pytest.mark.parametrize(
-    "route", ["intelligence:important_dates", "intelligence:important_dates_legacy"]
+    "route,destination",
+    [
+        ("intelligence:important_dates", "matters:my_deadlines"),
+        ("intelligence:important_dates_legacy", "matters:my_deadlines"),
+        ("intelligence:effective_dates", "matters:my_effective_dates"),
+        ("intelligence:effective_dates_legacy", "matters:my_effective_dates"),
+    ],
 )
-def test_olulised_tahtajad_lands_on_the_readers_own_work(client, specialist, route):
-    """A deadline belongs to whoever owns the file, so the destination is the
-    reader's own queue rather than a list of everybody's."""
+def test_a_retired_date_page_lands_on_the_readers_own_dates(client, specialist, route, destination):
+    """A deadline or a commencement belongs to whoever owns the file, so the
+    destination is the reader's own page (Minu tähtajad, Minu jõustumised)
+    rather than a list of everybody's."""
     client.force_login(specialist)
     response = client.get(reverse(route))
 
     assert response.status_code == 302
-    assert response["Location"] == reverse("matters:my_work")
+    assert response["Location"] == reverse(destination)
     assert client.get(response["Location"]).status_code == 200
 
 
@@ -760,6 +765,8 @@ def test_a_reader_with_no_persona_is_not_sent_somewhere_that_bounces(client, set
 
     response = client.get(reverse("intelligence:important_dates"))
     assert response["Location"] == REGISTER
+    response = client.get(reverse("intelligence:effective_dates"))
+    assert response["Location"] == f"{REGISTER}?joustumine=on&olek=koik"
 
 
 def test_no_retired_address_redirects_to_another_redirect(client, specialist):
@@ -826,7 +833,6 @@ def test_the_new_filters_do_not_cost_a_query_per_row(signed_in, django_assert_ma
     "route,param",
     [
         ("intelligence:work_victories", register_filters.VICTORY_PARAM),
-        ("intelligence:effective_dates", register_filters.COMMENCEMENT_PARAM),
     ],
 )
 def test_a_retired_page_does_not_lose_its_closed_matters_on_the_way(
@@ -850,11 +856,26 @@ def test_a_retired_page_does_not_lose_its_closed_matters_on_the_way(
         disposition=Disposition.COMPLETED,
         closed_at=timezone.now(),
     )
-    if param == register_filters.VICTORY_PARAM:
-        _victory(closed)
-    else:
-        _commencement(closed, start=datetime.date(2026, 4, 1), end=datetime.date(2026, 4, 1))
+    _victory(closed)
     client.force_login(specialist)
 
     landing = client.get(client.get(reverse(route))["Location"])
     assert titles_on(landing) == ["Suletud võiduga"]
+
+
+def test_minu_joustumised_does_not_lose_a_closed_teema_on_the_way(client, specialist):
+    """Jõustuvad aktid had no open/closed dimension, and its replacement has none
+    either: a commencement often lands after the file is closed (ADR 0158 §2)."""
+    closed = factories.MatterFactory(
+        title="Suletud jõustumisega",
+        owner=specialist,
+        is_open=False,
+        disposition=Disposition.COMPLETED,
+        closed_at=timezone.now(),
+    )
+    day = timezone.localdate() + datetime.timedelta(days=10)
+    _commencement(closed, start=day, end=day)
+    client.force_login(specialist)
+
+    landing = client.get(client.get(reverse("intelligence:effective_dates"))["Location"])
+    assert "Suletud jõustumisega" in landing.content.decode()
