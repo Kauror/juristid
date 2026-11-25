@@ -1,0 +1,592 @@
+/* ====================================================================
+ * Minu tähtajad · Minu jõustumised (templates/matters/my_deadlines.html,
+ * my_effective_dates.html, _my_tabs.html, partials/my_month_calendar.html).
+ *
+ * One stylesheet for the two personal date pages, linked from their own
+ * templates. Tokens only, so both themes come from tokens.css; nothing here
+ * may widen the document past the viewport at 375px.
+ * ==================================================================== */
+
+.mytabs {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mydates a:focus-visible,
+.mydates button:focus-visible,
+.mydates .field__input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+/* -- count cards ------------------------------------------------------- */
+
+.mydates__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: var(--spacing-3);
+}
+
+.mydates__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-3) var(--spacing-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  text-decoration: none;
+  min-width: 0;
+}
+
+.mydates__card:hover {
+  background: var(--surface-hover);
+}
+
+.mydates__card.is-active {
+  border-color: var(--accent-primary);
+  box-shadow: inset 0 0 0 1px var(--accent-primary);
+}
+
+.mydates__cardvalue {
+  font-size: var(--typography-size-page-title);
+  font-weight: var(--typography-weight-bold);
+  line-height: var(--typography-line-tight);
+}
+
+.mydates__cardlabel {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.mydates__card--alert {
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-soft);
+}
+
+.mydates__card--alert .mydates__cardvalue,
+.mydates__card--alert .mydates__cardlabel {
+  color: var(--status-danger);
+}
+
+/* -- headline and next cards (Minu jõustumised) ------------------------ */
+
+.mydates__headline {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+}
+
+.mydates__headline a {
+  color: var(--text-primary);
+}
+
+.mydates__sectiontitle {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.mydates__nextlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--spacing-3);
+}
+
+.mydates__nextcard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-1);
+  padding: var(--spacing-3) var(--spacing-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-panel);
+  min-width: 0;
+}
+
+.mydates__nextdate {
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-bold);
+}
+
+.mydates__nextmatter {
+  font-weight: var(--typography-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* -- calendar + day panel ---------------------------------------------- */
+
+.mydates__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-4);
+}
+
+@media (min-width: 64rem) {
+  .mydates__split {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: start;
+  }
+}
+
+.mycal,
+.mydates__panel {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-panel);
+  padding: var(--spacing-3) var(--spacing-4);
+  min-width: 0;
+}
+
+.mycal__head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+}
+
+.mycal__title {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+  min-width: 9rem;
+  text-align: center;
+}
+
+.mycal__nav,
+.mycal__today {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: var(--typography-size-lg);
+}
+
+.mycal__today {
+  margin-left: auto;
+  padding: 0 var(--spacing-3);
+  font-size: var(--typography-size-sm);
+}
+
+.mycal__nav:hover,
+.mycal__today:hover {
+  background: var(--surface-hover);
+}
+
+.mycal__grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+  table-layout: fixed;
+}
+
+.mycal__grid th {
+  font-size: var(--typography-size-meta-sm);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-muted);
+  padding: var(--spacing-1) 0;
+}
+
+.mycal__cell {
+  padding: 0;
+}
+
+.mycal__day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  min-height: 2.75rem;
+  padding: var(--spacing-1) 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.mycal__day:hover {
+  background: var(--surface-hover);
+}
+
+.mycal__day--busy {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.mycal__cell--outside .mycal__day {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.mycal__day--today {
+  border-color: var(--accent-primary);
+}
+
+.mycal__day--selected {
+  background: var(--surface-selected);
+  border-color: var(--accent-border);
+}
+
+.mycal__num {
+  font-size: var(--typography-size-sm);
+}
+
+.mycal__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-circle);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-size: 0.625rem;
+  line-height: 1;
+}
+
+.mycal__mark:not(:empty) {
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 3px;
+}
+
+.mycal__mark--past {
+  background: var(--status-danger);
+}
+
+.mycal__periods {
+  margin-top: var(--spacing-3);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-2);
+}
+
+.mycal__periodstitle {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.mycal__periodlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--typography-size-sm);
+  display: grid;
+  gap: var(--spacing-1);
+}
+
+.mycal__periodlist li {
+  overflow-wrap: anywhere;
+}
+
+.mycal__perioddate {
+  color: var(--text-secondary);
+}
+
+.mydates__paneltitle {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.mydates__daylist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--spacing-2);
+}
+
+.mydates__dayitem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-left: 3px solid var(--accent-primary);
+  background: var(--surface-elevated);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.mydates__dayitem.is-past {
+  border-left-color: var(--status-danger);
+}
+
+.mydates__daymatter {
+  font-weight: var(--typography-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.mydates__daywhat {
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.mydates__dayempty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--typography-size-sm);
+}
+
+/* -- relative wording, badges ------------------------------------------ */
+
+.mydates__rel {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.mydates__rel--past {
+  color: var(--status-danger);
+}
+
+.mydates__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border-control);
+  font-size: var(--typography-size-label);
+  color: var(--text-secondary);
+  background: var(--surface-elevated);
+  white-space: nowrap;
+}
+
+.mydates__badge--taps {
+  color: var(--status-success);
+  background: var(--status-success-soft);
+  border-color: var(--status-success-border);
+}
+
+.mydates__badge--ligikaudne {
+  color: var(--status-warning);
+  background: var(--status-warning-soft);
+  border-color: var(--status-warning-border);
+}
+
+.mydates__badge--uldine {
+  color: var(--status-info);
+  background: var(--status-info-soft);
+}
+
+.mydates__passed,
+.mydates__closed,
+.mydates__ref {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.mydates__passed {
+  display: block;
+  margin-top: 2px;
+}
+
+/* -- the table --------------------------------------------------------- */
+
+.mydates__tablesection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  scroll-margin-top: calc(var(--layout-topbar) + var(--spacing-3));
+}
+
+.mydates__tablehead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+}
+
+.mydates__tabletitle {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.mydates__tablecount {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.mydates__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--spacing-2) var(--spacing-3);
+}
+
+.mydates__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 14rem;
+}
+
+.mydates__fieldlabel {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.mydates__clear {
+  font-size: var(--typography-size-sm);
+  align-self: center;
+}
+
+.mydates__tablewrap {
+  min-width: 0;
+}
+
+.mydates__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--typography-size-row);
+}
+
+.mydates__table th {
+  text-align: left;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-default);
+  padding: var(--spacing-2);
+}
+
+.mydates__table td {
+  padding: var(--spacing-2);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.mydates__table tr.is-past td:first-child {
+  box-shadow: inset 3px 0 0 var(--status-danger);
+}
+
+.mydates__sort {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mydates__when {
+  white-space: nowrap;
+}
+
+.mydates__when .mydates__rel,
+.mydates__when .mydates__date,
+.mydates__kind,
+.mydates__what {
+  display: block;
+}
+
+.mydates__date {
+  color: var(--text-primary);
+}
+
+.mydates__date--none {
+  color: var(--text-muted);
+}
+
+.mydates__kind {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--typography-tracking-label);
+}
+
+.mydates__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.mydates__source {
+  font-size: var(--typography-size-meta);
+  margin-left: var(--spacing-1);
+}
+
+/* Narrow: each row becomes a small card; the column names travel with the
+   cells (`data-label`), so nothing scrolls sideways. */
+@media (max-width: 47.99rem) {
+  .mydates__table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .mydates__table,
+  .mydates__table tbody,
+  .mydates__table tr,
+  .mydates__table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .mydates__table tr {
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-card);
+    padding: var(--spacing-2) var(--spacing-3);
+    margin-bottom: var(--spacing-2);
+    background: var(--surface-panel);
+  }
+
+  .mydates__table tr.is-past {
+    border-left: 3px solid var(--status-danger);
+  }
+
+  .mydates__table tr.is-past td:first-child {
+    box-shadow: none;
+  }
+
+  .mydates__table td {
+    border: none;
+    padding: var(--spacing-1) 0;
+  }
+
+  .mydates__table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: var(--typography-size-meta-sm);
+    color: var(--text-muted);
+  }
+
+  .mydates__when {
+    white-space: normal;
+  }
+
+  .mydates__actions {
+    text-align: left;
+  }
+
+  .mydates__field {
+    flex: 1 1 100%;
+  }
+
+  .mycal,
+  .mydates__panel {
+    padding: var(--spacing-2) var(--spacing-25);
+  }
+
+  .mycal__title {
+    min-width: 0;
+    flex: 1;
+    font-size: var(--typography-size-base);
+  }
+
+  .mycal__day {
+    min-height: 2.5rem;
+  }
+}

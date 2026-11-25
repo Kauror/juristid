@@ -4,6 +4,7 @@ from django.views.generic import RedirectView
 from app.matters import (
     department_views,
     export_views,
+    my_dates_views,
     preview_views,
     saved_view_views,
     views,
@@ -50,6 +51,9 @@ urlpatterns = [
         RedirectView.as_view(pattern_name="matters:my_work", permanent=True, query_string=True),
         name="my_work_legacy",
     ),
+    # The signed-in person's own dates; self only, no person in the path.
+    path("minu-asjad/tahtajad/", my_dates_views.my_deadlines, name="my_deadlines"),
+    path("minu-asjad/joustumised/", my_dates_views.my_effective_dates, name="my_effective_dates"),
     # One person's desk. Keyed on the id and never on a display name: a name
     # changes and is not unique, and a URL that carried one would break the day
     # somebody married (03-BACKEND §4).
