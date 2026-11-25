@@ -164,10 +164,26 @@ catch-up; an authorised manual run remains possible.
    proves the union of every cron source in `deploy/` holds exactly one cycle line, so
    following the instructions cannot install the cycle twice. The checkout must hold the
    script before the cron file goes in.
-8. **Rollback**: `juristid-nightly-transition.sh … --rollback` puts back the byte-for-byte
-   copies (`*.cron.pre-0229`) and removes `juristid-nightly.cron`; then `update_cron`. A
-   test applies and rolls back the transition on a copy of the host's cron files of
-   25.11.2026 and checks the result byte for byte. No data step is needed.
+8. **Rollback and recovery**: `juristid-nightly-transition.sh … --rollback`, then
+   `update_cron`. `--apply` first writes a journal (`juristid-nightly-transition.journal` in
+   the cron directory, not a `*.cron` file) recording the sha256 and size of the originals,
+   then writes and verifies the complete backup set (`*.cron.pre-0229`, `cp -p`, checked
+   against the live files and the journal by sha256 and size) and stages the new files.
+   Only then does it change a live file — it replaces the sync file and installs the cycle
+   file by atomic rename and removes the watch file — recording the sha256 and size of each
+   file as installed. The journal names the step reached (`PREPARING`, `BACKED_UP`,
+   `SYNC_REPLACED`, `WATCH_REMOVED`, `APPLIED`, `ROLLING_BACK`): an interrupted `--apply` is
+   finished by running it again or undone by `--rollback`; an interrupted `--rollback` is
+   finished by running it again; anything the journal does not explain is refused with
+   what to do. `--rollback` compares each live file with the journal: one that is neither
+   the original nor as installed was edited later, and the rollback refuses — naming the
+   file and showing the change — unless `--force-recover` is given, which keeps the edited
+   file as `<name>.edited-<time>` and restores the original. The originals come back byte
+   for byte, with mode and mtime; the copies and the journal are removed last. A test
+   applies and rolls back the transition on a copy of the host's cron files of 25.11.2026,
+   injects a failure after every filesystem operation of both directions, and checks
+   sha256, size, mode and mtime of every file, the unrelated ones included. No data step
+   is needed.
 9. **Neighbours and releases.** The cycle starts 15 minutes after the 20:45 backup in
    summer, 75 in winter, and normally ends ≈ 21:20 / 22:20 UTC, before the 23:00 dumps and
    the 23:30 USB backup, the 00:30 backups, the Monday 01:00 Appdata Backup, the 01:15

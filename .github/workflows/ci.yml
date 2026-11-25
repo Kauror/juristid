@@ -178,7 +178,7 @@ jobs:
       - name: Shell scripts
         run: >-
           shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR
-          scripts/*.sh scripts/deploy/*.sh
+          scripts/*.sh scripts/deploy/*.sh deploy/unraid-main/cron/*.sh
 
       # The proof that the sharded jobs below still run the whole suite. It
       # collects every shard of every sharded suite and compares node ids
