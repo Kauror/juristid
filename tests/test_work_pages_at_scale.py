@@ -116,7 +116,10 @@ STATISTIKA_BUDGET = 40
 #: Täpsem otsing's «Õigusakt» checkbox group reads the legal-instrument
 #: vocabulary once — a fixed cost of the page, never per row.
 #: +1 for «Monitooring» on the bar (docs/adr/0219), as Minu asjad.
-TEEMAD_BUDGET = 29
+#: +1 for «Minu vaated» (UX-007, docs/adr/0222): the signed-in person's own saved
+#: views, read once for the chip strip — a fixed cost of the page, measured the
+#: same at 36 and 72 rows, never per row.
+TEEMAD_BUDGET = 30
 
 
 def _days_ago(days: int) -> datetime.datetime:

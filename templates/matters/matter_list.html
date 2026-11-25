@@ -564,3 +564,5 @@ localStorage (Stage-2E.1 brief 12).
   {% include "submissions/partials/embedded.html" %}
 </div>
 {% endblock %}
+
+{% block preview_drawer %}{% if user.is_authenticated %}{% include "matters/partials/preview_drawer.html" %}{% endif %}{% endblock %}

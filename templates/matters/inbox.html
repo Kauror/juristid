@@ -74,3 +74,5 @@ are the two places it is visible at all, which is why the strip leads with it
   </section>
 </div>
 {% endblock %}
+
+{% block preview_drawer %}{% if user.is_authenticated %}{% include "matters/partials/preview_drawer.html" %}{% endif %}{% endblock %}
