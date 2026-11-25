@@ -7,10 +7,6 @@
  * may widen the document past the viewport at 375px.
  * ==================================================================== */
 
-.mytabs {
-  border-bottom: 1px solid var(--border-subtle);
-}
-
 .mydates a:focus-visible,
 .mydates button:focus-visible,
 .mydates .field__input:focus-visible {
@@ -589,4 +585,14 @@
   .mycal__day {
     min-height: 2.5rem;
   }
+}
+
+/* -- «Järgmised jõustumised» and a period row's description ------------ */
+
+.mydates__next {
+  margin-block: var(--spacing-4);
+}
+
+.mycal__periodwhat {
+  color: var(--text-muted);
 }

@@ -10673,6 +10673,18 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 /* The way from the foldout to Minu statistika's own page (docs/adr/0223). */
+/* The personal pages' tab row (templates/matters/_my_tabs.html). */
+.mytabs {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pw-stats__links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 0;
+}
+
 .pw-stats__more {
   display: inline-block;
   margin-top: var(--spacing-2);

@@ -32,8 +32,8 @@ that already edits the record on its Teema.
     {% include "matters/partials/my_month_calendar.html" with calendar_noun="tähtajad" %}
 
     <section class="mydates__panel" aria-labelledby="mydates-day" aria-live="polite">
+      <h2 class="mydates__paneltitle" id="mydates-day">{% if page.selected_day %}{{ page.selected_label }}{% if page.selected_day == page.today %} · täna{% endif %}{% else %}Päev{% endif %}</h2>
       {% if page.selected_day %}
-        <h2 class="mydates__paneltitle" id="mydates-day">{{ page.selected_label }}{% if page.selected_day == page.today %} · täna{% endif %}</h2>
         {% if page.day_rows %}
           <ul class="mydates__daylist">
             {% for row in page.day_rows %}
@@ -48,7 +48,6 @@ that already edits the record on its Teema.
           <p class="mydates__dayempty">Sel päeval sul tähtaegu ei ole.</p>
         {% endif %}
       {% else %}
-        <h2 class="mydates__paneltitle" id="mydates-day">Päev</h2>
         <p class="mydates__dayempty">Vali kalendrist päev, et näha selle päeva tähtaegu.</p>
       {% endif %}
     </section>

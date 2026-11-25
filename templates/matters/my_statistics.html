@@ -20,9 +20,7 @@ A value that is not the period's whole count reads «≥ N» or «—» with an
 {% block content %}
 {% with period=stats.period %}
 <div class="page mystats">
-  <nav class="crumbs" aria-label="Asukoht">
-    <a href="{% url 'matters:my_work' %}">← Minu asjad</a>
-  </nav>
+  {% include "matters/_my_tabs.html" with my_tab="statistika" %}
 
   <div class="pagehead">
     <h1 class="pagehead__title">Minu statistika</h1>

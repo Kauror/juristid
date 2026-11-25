@@ -29,6 +29,7 @@ The rail holds only what has no honest place on a timeline.
 
 {% block content %}
 <div class="page page--work">
+  {% if is_self %}{% include "matters/_my_tabs.html" with my_tab="asjad" %}{% endif %}
   {% if not is_self %}
     <p class="pw-crumb"><a href="{% url 'matters:department' %}">← Osakond</a></p>
   {% endif %}
@@ -543,7 +544,11 @@ The rail holds only what has no honest place on a timeline.
               {% endfor %}
             </div>
             {# Minu statistika's own page (docs/adr/0223): one's own desk only. #}
-            {% if is_self %}<a class="quietlink pw-stats__more" href="{% url 'matters:my_statistics' %}">Kõik minu statistika →</a>{% endif %}
+            {% if is_self %}<p class="pw-stats__links">
+              <a class="quietlink pw-stats__more" href="{% url 'matters:my_statistics' %}">Kõik minu statistika →</a>
+              <a class="quietlink pw-stats__more" href="{% url 'matters:my_deadlines' %}">Minu tähtajad →</a>
+              <a class="quietlink pw-stats__more" href="{% url 'matters:my_effective_dates' %}">Minu jõustumised →</a>
+            </p>{% endif %}
           </div>
         </details>
       </section>
