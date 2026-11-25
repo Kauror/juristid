@@ -20,6 +20,7 @@ changes = [
   "Monitooring → Riigikogu: kutse, millele on koja arvamus juba registris, on «Varasemad kutsed» all; kutse, mille vastamist tuleb kontrollida, on «Kutsele vastamine vajab kontrollimist» all. Üleval ja Riigikogu vahelehe arvus on ainult kutsed, mis ootavad otsust.",
   "«Koja mainimised täiskogus»: päevakorrapunktide pealkirjad on ilma HTML-märgenditeta, sama lõik ei ole enam kaks korda ja eelnõu arutelul tehtud mainimise juures on eelnõu number.",
   "Halduse «Registrite jälgimine»: Riigikogu etappide loendurid on etapi all omaette real (tabel ei veni enam väga kõrgeks) ning «Seis» näitab iga silti koos selle väärtusega.",
+  "Menetluse kulus sulgeb Esc nüüd ka selle etapi hüpiku, mis avanes hiirega etapile peatudes, ning suletud hüpik ei avane enam iseenesest uuesti.",
   "Halduse vasakpoolne menüü on nüüd nähtaval kõigil Halduse lehtedel, ka Isiklikud seaded → Teavitused, Kiirklahvid, Arendusseis, Arvamuste arhiiv, Andmekvaliteet, Ajaloolised materjalid, Statistika definitsioonid, uue kasutaja lisamine ja halduri sisselogimine.",
   "Kutsete loendis ei ole enam ridu «Tähtaeg tuvastatud» ja «Koja arvamus registris» ega selgitusi öise lugemise ja registri kohta; alles on see, mis vajab tähelepanu, näiteks «Tähtaeg vajab kontrollimist».",
 ]

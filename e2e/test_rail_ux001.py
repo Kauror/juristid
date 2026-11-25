@@ -333,3 +333,37 @@ def test_the_popover_opens_at_its_words_not_at_the_far_edge(page, base_url, teem
         panel["y"] >= trigger["y"] + trigger["height"] - 1
         or panel["y"] + panel["height"] <= trigger["y"] + 1
     )
+
+
+def test_escape_closes_a_popover_the_pointer_opened_wherever_focus_is(page, base_url, teema_url):
+    """r93 production review UI-01 (WCAG 1.4.13): a popover opened by resting the
+    mouse closed on Escape only when its step held keyboard focus, and a hover
+    timer still pending after Escape reopened it (the old CI flake). The page's
+    clock is Playwright's, so the 180 ms hover delay is stepped, never slept."""
+    page.clock.install()
+    _open_teema(page, base_url, teema_url, 1440)
+    joustumine = page.locator(".tl-step--tip").filter(has_text="Jõustumine").last
+    summary = joustumine.locator(".tl-step__sum")
+    tip = joustumine.locator(".tl-tip")
+
+    # Opened by the pointer alone, focus on the page: Escape closes it.
+    page.mouse.move(0, 0)
+    page.evaluate("() => document.activeElement && document.activeElement.blur()")
+    summary.hover()
+    page.clock.run_for(400)
+    expect(tip).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(tip).to_be_hidden()
+    page.clock.run_for(400)
+    expect(tip).to_be_hidden()
+
+    # The race: hover, click and Escape before the hover's timer fires.
+    page.mouse.move(0, 0)
+    page.clock.run_for(400)
+    summary.hover()
+    summary.click()
+    expect(tip).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(tip).to_be_hidden()
+    page.clock.run_for(400)
+    expect(tip).to_be_hidden()
