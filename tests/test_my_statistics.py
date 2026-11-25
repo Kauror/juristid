@@ -1095,8 +1095,9 @@ def test_months_after_the_migration_but_before_reliable_coverage_are_never_a_zer
     closed = _cells(response, "closed")
     assert {c.coverage for c in closed.values()} == {U}
     assert "vähemalt 1" in body
-    assert f"usaldusväärne alates {reliable:%d.%m.%Y}" in body
-    assert "usaldusväärset algust ei saa kindlaks teha" in body
+    assert f"kasutusel alates {reliable:%d.%m.%Y}" in body
+    assert "kasutuselevõttu ei saa kindlaks teha" in body
+    assert "usaldusv" not in body
     assert (
         "Arvud loevad Juristidesse salvestatud tegevusi, mitte kogu tööd, "
         "mida sa tegelikult tegid." in body

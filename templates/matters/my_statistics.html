@@ -81,16 +81,16 @@ credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
         «Vastutusel avatud teemasid kuu lõpus» on <b>taastatud vastutus</b>, mitte kinnitatud tollane töökoormus: teema loetakse siis, kui ajalugu näitab nii sinu vastutust kui ka seda, et teema oli avatud. Kuu viimasel päeval lõpetatud teema seda kuud enam ei koorma; taasavatud teema loetakse taasavamise päevast.</dd>
       <dt>Kui palju on teada</dt>
       <dd>
-        <span class="mystats__legend">arv</span> — kogu kuu jääb usaldusväärse salvestamise aega; 0 tähendab, et salvestatud tegevusi polnud.
-        <span class="mystats__legend">osaline</span> — usaldusväärselt on salvestatud ainult osa kuust (see algas kuu sees või kuu kestab); arv ei ole terve kuu arv.
-        <span class="mystats__legend">vähemalt</span> — leitud kirjed on päris, aga kuu jääb enne usaldusväärset salvestamist või mõnda kirjet ei saa kellelegi omistada.
-        <span class="mystats__legend">andmed puuduvad</span> — usaldusväärseid andmeid pole; tühi tulemus ei tõenda nulli.
+        <span class="mystats__legend">arv</span> — salvestatud tegevuste arv kuul, mil selle tegevuse salvestamine oli Juristides juba kasutusel; 0 tähendab, et salvestatud tegevusi polnud, mitte et tööd ei tehtud.
+        <span class="mystats__legend">osaline</span> — salvestamine oli kasutusel ainult osa kuust (see algas kuu sees või kuu kestab); arv ei ole terve kuu arv.
+        <span class="mystats__legend">vähemalt</span> — leitud kirjed on päris, aga kuu jääb enne salvestamise kasutuselevõttu või mõnda kirjet ei saa kellelegi omistada.
+        <span class="mystats__legend">andmed puuduvad</span> — salvestatud andmeid pole; tühi tulemus ei tõenda nulli.
       </dd>
       <dt>Salvestatud alates</dt>
       <dd>
-        {% for label, since, reliable in stats.recorded_since %}{{ label }}: {% if since %}võimalik alates {{ since|date:"d.m.Y" }}, {% if reliable %}usaldusväärne alates {{ reliable|date:"d.m.Y" }}{% else %}usaldusväärset algust ei saa kindlaks teha{% endif %}{% else %}ei ole salvestatud{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}.
+        {% for label, since, reliable in stats.recorded_since %}{{ label }}: {% if since %}võimalik alates {{ since|date:"d.m.Y" }}, {% if reliable %}kasutusel alates {{ reliable|date:"d.m.Y" }}{% else %}kasutuselevõttu ei saa kindlaks teha{% endif %}{% else %}ei ole salvestatud{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}.
         «Võimalik alates» on päev, mil Juristid sai selliseid kirjeid esimest korda salvestada; see ei tõenda, et kõik tehtu ka salvestati.
-        «Usaldusväärne alates» on päev, mil keegi sellise tegevuse esimest korda Juristidesse salvestas. Varasemad kuud näitavad «vähemalt N» või «andmed puuduvad», mitte 0.
+        «Kasutusel alates» on päev, mil keegi sellise tegevuse esimest korda Juristidesse salvestas. See näitab, et salvestamine oli kasutusel, mitte et kõik hilisem tehtu ka salvestati. Varasemad kuud näitavad «vähemalt N» või «andmed puuduvad», mitte 0.
       </dd>
     </dl>
   </section>
