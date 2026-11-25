@@ -152,7 +152,7 @@ catch-up; an authorised manual run remains possible.
    1st at 21:30 overlaps it as it overlapped the sync. The release kits' refusal window
    widens to **20:30–23:00 UTC**, and — the real guarantee, overruns included — the kit
    takes the cycle lock (kit change below). Changing `lib.sh` changes a blob that a
-   future kit pins (`juristid-lovable-sync.sh` is not changed).
+   future kit pins (`juristid-lovable-sync.sh` changes in its comments only, in the r93 integration).
 10. **Riigikogu** plugs into the registers lane between the watch and the sweep once PR
     #723 is on main and the owner switches it on: the cron line gains `--with-riigikogu`.
     Until then the step is SKIPPED_DELIBERATE (NOT_INSTALLED). A failing Riigikogu step
@@ -182,6 +182,7 @@ takes it).
   to Thursday noon, and «missing this week» appears on Friday morning, not Thursday noon.
 - A release and the cycle exclude each other atomically; the register commands wait for
   a release, which they never did.
-- `lib.sh`, `juristid-restore.sh`, `juristid-deploy-preflight.sh` and
-  `juristid-monitor.sh` change, so a kit that pins their blobs must be regenerated.
+- `lib.sh`, `juristid-restore.sh`, `juristid-deploy-preflight.sh`,
+  `juristid-monitor.sh` and `juristid-lovable-sync.sh` (comments only, r93 integration)
+  change, so a kit that pins their blobs must be regenerated.
 - The deployment is a host change the owner approves, with its rollback in §8.

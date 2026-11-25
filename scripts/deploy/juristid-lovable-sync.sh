@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # The nightly Lovable → Juristid synchronisation, host side (docs/adr/0192).
 #
-#   juristid-lovable-sync.sh             # from cron: 15 21,22 * * * (UTC)
+#   juristid-lovable-sync.sh             # the nightly run: step «lovable» of the coordinated
+#                                        # cycle (scripts/deploy/juristid-nightly-cycle.sh,
+#                                        # cron 0 21,22 * * * UTC; docs/adr/0229)
 #   juristid-lovable-sync.sh --manual    # now, with every check the nightly run makes
-#   juristid-lovable-sync.sh --on-demand # from the same cron file every few minutes:
+#   juristid-lovable-sync.sh --on-demand # from juristid-lovable-sync.cron every few minutes:
 #                                        # runs only an administrator's waiting request
 #
 # A short-lived container of the image the site is serving now runs
 # `manage.py lovable_sync`; nothing stays running and no compose service changes.
-# The host keeps UTC and has no Tallinn zone, so cron fires twice and the
-# container says which firing is 00:15 Europe/Tallinn (`lovable_sync due`).
+# The host keeps UTC and has no Tallinn zone: the cycle fires at 21:00 and 22:00
+# UTC and runs at 00:00 Europe/Tallinn, and the container checks that the run
+# falls in Tallinn's hour 00 (`lovable_sync due`).
 #
 # Order: one runner (flock) → no release in progress (host lock) → web healthy →
 # the observation's retention (`lovable_sync prune-observations`, docs/adr/0201
@@ -54,8 +57,9 @@
 # a backup set is taken and verified to level 2 and handed to the run as
 # LOVABLE_SYNC_BACKUP_SET. The on-demand mode skips the observation's retention
 # and the wider observation (both are the night's), and a firing with nothing to
-# do leaves no log file behind. It is the same cron file, one more line; there is
-# no second scheduler.
+# do leaves no log file behind. Its `2-59/5` line is the only line left in
+# juristid-lovable-sync.cron (docs/adr/0229 §7); the nightly run comes from the
+# cycle, and the two never run side by side (the runner's flock).
 #
 # The OneNote lane (brief §7 «Impordi OneNote'i materjalid» / «OneNote'i impordi
 # kontroll») is asked first. If a request waits, it takes a backup set and
@@ -76,7 +80,9 @@
 #
 # Pause: `touch $SYNC_DIR/PAUSED` (host) or `lovable_sync control --mode off`
 # (database; also what Haldus shows). Final cutover: `lovable_sync control
-# --cut-over …`, then remove the cron file. The credentials stay on the host:
+# --cut-over …`, then take the `lovable` step out of the nightly cycle (and, if
+# on-demand Lovable runs end too, its line from juristid-lovable-sync.cron).
+# The credentials stay on the host:
 # Docker reads them as root (--env-file) and the container sees only the values.
 # Never `set -x`: the environment carries the service login. Docker's --env-file
 # takes values literally: write KEY=value with no quotes.
