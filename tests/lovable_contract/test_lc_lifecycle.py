@@ -426,42 +426,59 @@ def test_lovable_itself_refuses_an_unknown_commencement_kind(world):
 
 
 def test_the_nightly_limits_are_the_approved_ones():
-    """LC-B1: «Lovable's own changes: up to 20 Teemad a night; restores of local
-    edits: up to 100 Teemad a night» (approval 11.11 §5)."""
-    assert (lovable_sync.MAX_CHANGED_MATTERS, lovable_sync.MAX_RESTORED_MATTERS) == (20, 100)
+    """LC-B1: «Lovable's own changes: up to 100 Teemad a night (20 until the owner's
+    decision of 25.11.2026, ADR 0213 §14); restores of local edits: up to 100 Teemad
+    a night» (approval 11.11 §5)."""
+    assert (lovable_sync.MAX_CHANGED_MATTERS, lovable_sync.MAX_RESTORED_MATTERS) == (100, 100)
+
+
+def _change_all(world, count: int) -> None:
+    for number in range(1, count + 1):
+        world.lovable.edit(ref(number), teema=f"Kontraktiteema {ref(number)} (Lovable)")
 
 
 def test_a_night_over_the_source_limit_stops_visibly_and_writes_nothing(db, pilot_on):
-    """LC-B1 (source changes, at the real limit): 21 Teemad changed in Lovable
+    """LC-B1 (source changes, at the real limit): 101 Teemad changed in Lovable
     → the night stops as review-only and writes none of them; a supervised run
     with a raised limit (`--max-changed`) writes them all.
 
     Contract: approval 11.11 §5 «a night over either limit stops visibly
-    without writing that part»; §5.3.2 the one-run override."""
-    world = build_world(21)
-    for number in range(1, 22):
-        world.lovable.edit(ref(number), teema=f"Kontraktiteema {ref(number)} (Lovable)")
+    without writing that part»; §5.3.2 the one-run override; ADR 0213 §14."""
+    world = build_world(101)
+    _change_all(world, 101)
     stopped = world.run(trigger="SCHEDULED")
     assert (stopped.status, stopped.error) == (SyncRunStatus.REVIEW_ONLY, lovable_sync.BREAKER)
-    assert stopped.counts["changed_source"] == 21
-    assert len(_parity(world)) == 21
+    assert (stopped.counts["changed_source"], stopped.counts["breaker_limit"]) == (101, 100)
+    assert len(_parity(world)) == 101
     assert not stopped.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
-    supervised = world.run(max_changed=21)
+    supervised = world.run(max_changed=101)
     assert supervised.status == SyncRunStatus.SUCCEEDED, supervised.error
+    assert supervised.counts["breaker_limit"] == 101
     assert _parity(world) == []
 
 
 def test_a_night_at_exactly_the_source_limit_writes_everything(db, pilot_on):
-    """LC-B1 (the boundary): 20 Teemad changed in Lovable is within «up to 20
+    """LC-B1 (the boundary): 100 Teemad changed in Lovable is within «up to 100
     Teemad a night» — the night writes them all.
 
-    Contract: approval 11.11 §5 «Lovable's own changes: up to 20 Teemad a night»."""
-    world = build_world(20)
-    for number in range(1, 21):
-        world.lovable.edit(ref(number), teema=f"Kontraktiteema {ref(number)} (Lovable)")
+    Contract: approval 11.11 §5 as amended by ADR 0213 §14 (25.11.2026)."""
+    world = build_world(100)
+    _change_all(world, 100)
     run = world.run(trigger="SCHEDULED")
     assert run.status == SyncRunStatus.SUCCEEDED, (run.status, run.error)
-    assert run.counts["changed_source"] == 20
+    assert (run.counts["changed_source"], run.counts["breaker_limit"]) == (100, 100)
+    assert _parity(world) == []
+
+
+@pytest.mark.parametrize("count", [20, 21])
+def test_a_night_over_the_old_limit_of_20_now_writes_everything(db, pilot_on, count):
+    """LC-B1: 20 and 21 Teemad, a night the old limit allowed and one it held,
+    are both ordinary nights now (ADR 0213 §14)."""
+    world = build_world(count)
+    _change_all(world, count)
+    run = world.run(trigger="SCHEDULED")
+    assert run.status == SyncRunStatus.SUCCEEDED, (run.status, run.error)
+    assert run.counts["changed_source"] == count
     assert _parity(world) == []
 
 
