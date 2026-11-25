@@ -1,0 +1,25 @@
+# Juristid nightly Lovable -> Juristid synchronisation (docs/adr/0192, PR #559, r34).
+#
+# Lives on the flash drive because Unraid rebuilds / at every boot; update_cron
+# concatenates every /boot/config/plugins/dynamix/*.cron into /etc/cron.d/root,
+# so this file is what makes the schedule survive a restart.
+#
+# The run belongs at 00:15 Europe/Tallinn. The host keeps UTC and has no Tallinn
+# zone, so it fires at 21:15 AND 22:15 UTC; the container (`lovable_sync due`)
+# says which firing is 00:15 in Tallinn, summer or winter, and the other exits.
+# Neighbours: DB dumps 23:00, USB backup 23:30, Juristid/DashKoda backups 00:30,
+# monthly parity check 21:30 on the 1st (the run is short and only reads Lovable).
+#
+# Mode is set in the database (`lovable_sync control --mode compare|apply|off`).
+# Installed 2026-10-27 in COMPARE (owner's word): report only, no Teema written.
+# Pause: touch /mnt/user/appdata/juristid-main/l100/sync/PAUSED. At final
+# cutover: `lovable_sync control --cut-over ...`, then delete this file and run
+# update_cron. Logs: /mnt/user/appdata/juristid-main/l100/sync/logs (30 days).
+15 21,22 * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-lovable-sync.sh &> /dev/null
+#
+# 2026-11-10 (owner approval, r52 activation): mode APPLY after the supervised first run.
+# On-demand lane for Haldus → Andmete sünkroonimine (ADR 0213 §5, §9.6): every 5 minutes the
+# host asks `data_sync_requests poll` whether a request waits; with none it does nothing and
+# keeps no log. Minutes 2,7,…,57 (2026-11-11): never the nightly :15 minute. It writes the runner heartbeat Haldus shows; a host problem refuses the
+# waiting request by name. Same run lock as the nightly run.
+2-59/5 * * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-lovable-sync.sh --on-demand &> /dev/null

@@ -7,6 +7,19 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# 25.11: omaniku otsus viia kogu tavapärane sünkroonimine, väliste allikate jälgimine ja AI-hinnangud
+# ühte öisesse tsüklisse kell 00.00 Tallinna aja järgi (#726, ADR 0229). Kuupäev on ettevaatav: kui
+# väljalase jõuab kasutajateni hiljem, parandatakse kuupäev enne väljalaset. PR #725 lisab teisel harul
+# samuti 25.11 kirje — ühendamisel tuleb kaks kirjet üheks päevaks liita.
+[[day]]
+date = 2026-11-25
+basis = "deployment"
+prs = [726]
+changes = [
+  "Lovable'i sünkroonimine, registrite kontroll, «Uued eelnõud» ja «Valitsuse info» käivad nüüd kõik ühe korra öösel, alates kella 00.00-st. Registritest leitud dokumendid ja uued eelnõud on seega ootel juba hommikul, ja ka samal ööl Lovable'ist tulnud teemad on kontrollis kaasas. Päeval allikaid enam automaatselt ei loeta; Halduse «Sünkrooni nüüd» töötab nagu varem.",
+  "«Valitsuse info»: valitsuse istungi päevakord loetakse öösel. Kolmapäeval avaldatud päevakord on Monitooringus neljapäeva hommikul; kui päevakord avaldatakse hiljem, jõuab see sinna reede hommikul. Hoiatus «Selle nädala päevakorda ei leitud» ilmub alles reede hommikul, kui ka viimane öine lugemine päevakorda ei leidnud.",
+]
+
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
 # sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
 # #691, #692, #693, #694, #695.

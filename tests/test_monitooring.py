@@ -179,15 +179,52 @@ def test_an_id_the_model_was_never_offered_names_nothing(site):
 
 
 def test_a_missing_week_is_said_once_the_window_closed():
+    """ADR 0229: read nightly only. An agenda published after the cycle going into
+    Thursday is found by the one going into Friday (accepted), so the week is
+    missing only once that Friday cycle's agenda step should have finished."""
     tallinn = agenda.TALLINN
     wednesday = dt.datetime(2026, 11, 25, 15, 0, tzinfo=tallinn)
     thursday_noon = dt.datetime(2026, 11, 26, 12, 0, tzinfo=tallinn)
+    friday_before = dt.datetime(2026, 11, 27, 2, 29, tzinfo=tallinn)
+    friday_after = dt.datetime(2026, 11, 27, 2, 30, tzinfo=tallinn)
     assert agenda.missing_this_week(wednesday) is False
-    assert agenda.missing_this_week(thursday_noon) is True
+    assert agenda.missing_this_week(thursday_noon) is False
+    assert agenda.missing_this_week(friday_before) is False
+    assert agenda.missing_this_week(friday_after) is True
     GovernmentAgenda.objects.create(
         url="https://valitsus.ee/a", title="x", session_date=dt.date(2026, 11, 26)
     )
-    assert agenda.missing_this_week(thursday_noon) is False
+    assert agenda.missing_this_week(friday_after) is False
+
+
+def test_the_agenda_window_follows_tallinn_time_in_summer():
+    # 2026-07-03 is a Friday in summer time (UTC+3): the window ends 02:30 Tallinn.
+    monday = dt.date(2026, 6, 29)
+    end = agenda.window_end(monday)
+    assert end.astimezone(dt.UTC) == dt.datetime(2026, 7, 2, 23, 30, tzinfo=dt.UTC)
+
+
+@override_settings(REGISTER_WATCH_FETCH=True)
+def test_the_command_ends_with_a_machine_line_when_asked(monkeypatch):
+    from io import StringIO
+
+    from app.register_watch import candidates_ai
+
+    def fake_run(**kwargs):
+        return agenda.Outcome(stored=[], judged=0, usage=candidates_ai.Usage(), errors=["x"])
+
+    monkeypatch.setattr(agenda, "run", fake_run)
+    out = StringIO()
+    call_command("watch_government_agenda", "--outcome-json", stdout=out)
+    last = out.getvalue().strip().splitlines()[-1]
+    assert last.startswith("OUTCOME-JSON ")
+    assert json.loads(last.removeprefix("OUTCOME-JSON ")) == {
+        "ai_calls": 0,
+        "ai_failures": 0,
+        "errors": 1,
+        "judged": 0,
+        "stored": 0,
+    }
 
 
 def test_the_command_refuses_while_reading_is_off():

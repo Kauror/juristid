@@ -2,7 +2,8 @@
 
     manage.py watch_registers [--teema 2026_190 ...] [--no-ai] [--dry-run]
 
-Run nightly by the host's cron. It stores what is new as proposals; nothing on a
+Run every night by the nightly cycle (ADR 0229), after the Lovable synchronisation.
+It stores what is new as proposals; nothing on a
 Teema changes until a lawyer adds a proposal. ``--dry-run`` does the whole run
 and rolls it back.
 

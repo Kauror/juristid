@@ -1,0 +1,2 @@
+# A neighbour that is not Juristid's (synthetic): the transition never touches it.
+30 0 * * * /mnt/user/appdata/other/backup.sh &> /dev/null

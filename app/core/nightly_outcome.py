@@ -1,0 +1,264 @@
+"""What each step of the nightly cycle actually did, from its own records (ADR 0229 §4).
+
+An exit code of 0 is not success: the Lovable script exits 0 when it was paused,
+not due or locked out, and the register commands exit 0 with registers they could
+not read. So the cycle asks this module, once per step, after the step ended
+(`manage.py nightly_outcome`), and records the answer, never a log line.
+
+The sources are the steps' own ledgers:
+
+* ``lovable`` — `LovableSyncRun` (trigger SCHEDULED, started since the cycle began):
+  its status, error and aggregate counts; with no run, the control row (OFF or cut
+  over is deliberate) and the night's run key (already ran tonight is deliberate);
+* ``register-watch`` — `WatchRun` (`finished_at`, the ``katkes`` error, errors,
+  targets checked, new findings, model failures);
+* ``register-sweep`` — `SweepRun` (the same, with sources read and new candidates);
+* ``government-agenda`` — it keeps no run ledger, so `watch_government_agenda
+  --outcome-json` ends with one machine line of counts, handed over here
+  (``reported``);
+* ``riigikogu`` — on main there is no Riigikogu ledger yet (PR #723 brings
+  `StageRun`); its outcome is its exit code alone, and says so.
+
+Outcomes: SUCCEEDED, SUCCEEDED_NO_NEW, PARTIAL (ran, with source errors, model
+failures or held writes), SKIPPED_DELIBERATE (off, paused or already done by
+design), SKIPPED_UNEXPECTED (no record and no reason: a lock, a missing run),
+FAILED, INTERRUPTED (a record that never finished). Counts only, never a title.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
+SUCCEEDED = "SUCCEEDED"
+SUCCEEDED_NO_NEW = "SUCCEEDED_NO_NEW"
+PARTIAL = "PARTIAL"
+SKIPPED_DELIBERATE = "SKIPPED_DELIBERATE"
+SKIPPED_UNEXPECTED = "SKIPPED_UNEXPECTED"
+FAILED = "FAILED"
+INTERRUPTED = "INTERRUPTED"
+OUTCOMES = (
+    SUCCEEDED,
+    SUCCEEDED_NO_NEW,
+    PARTIAL,
+    SKIPPED_DELIBERATE,
+    SKIPPED_UNEXPECTED,
+    FAILED,
+    INTERRUPTED,
+)
+#: The outcomes the host's daily monitor reports (the others are a good night).
+PROBLEMS = frozenset({PARTIAL, SKIPPED_UNEXPECTED, FAILED, INTERRUPTED})
+STEPS = ("lovable", "register-watch", "riigikogu", "register-sweep", "government-agenda")
+#: An unfinished run older than this was stopped from outside (as `WatchRun.aborted`).
+ABANDONED_AFTER = dt.timedelta(hours=3)
+#: The machine line's prefix, for the host script.
+PREFIX = "NIGHTLY-OUTCOME "
+
+
+@dataclass(frozen=True)
+class StepOutcome:
+    step: str
+    outcome: str
+    reason: str = ""
+    counts: dict[str, int] = field(default_factory=dict)
+
+    def line(self) -> str:
+        return PREFIX + json.dumps(
+            {
+                "step": self.step,
+                "outcome": self.outcome,
+                "reason": self.reason,
+                "counts": self.counts,
+            },
+            sort_keys=True,
+        )
+
+
+def classify(
+    step: str, *, since: dt.datetime, rc: int, reported: dict[str, Any] | None = None
+) -> StepOutcome:
+    if step == "lovable":
+        return _lovable(since, rc)
+    if step == "register-watch":
+        return _watch(since, rc)
+    if step == "register-sweep":
+        return _sweep(since, rc)
+    if step == "government-agenda":
+        return _agenda(rc, reported)
+    if step == "riigikogu":
+        if rc == 0:
+            return StepOutcome(step, SUCCEEDED, "exit code only: no Riigikogu run ledger on main")
+        return StepOutcome(step, FAILED, f"exit {rc}")
+    raise ValueError(f"unknown step: {step}")
+
+
+def _lovable(since: dt.datetime, rc: int) -> StepOutcome:
+    from django.utils import timezone
+
+    from app.legacy_import import lovable_sync
+    from app.legacy_import.lovable_sync_models import (
+        LovableSyncRun,
+        SyncMode,
+        SyncRunStatus,
+        SyncTrigger,
+    )
+
+    step = "lovable"
+    run = (
+        LovableSyncRun.objects.filter(trigger=SyncTrigger.SCHEDULED, started_at__gte=since)
+        .order_by("-started_at")
+        .first()
+    )
+    if run is None:
+        ctl = lovable_sync.control()
+        if ctl.cut_over:
+            return StepOutcome(step, SKIPPED_DELIBERATE, "cut over: the nightly sync has ended")
+        if ctl.mode == SyncMode.OFF:
+            return StepOutcome(step, SKIPPED_DELIBERATE, "the sync is off (control mode OFF)")
+        key = lovable_sync.run_key_for(SyncTrigger.SCHEDULED, timezone.now())
+        if LovableSyncRun.objects.filter(run_key=key).exists():
+            return StepOutcome(step, SKIPPED_DELIBERATE, f"already ran for {key}")
+        if rc != 0:
+            return StepOutcome(step, FAILED, f"exit {rc} with no run record")
+        return StepOutcome(
+            step, SKIPPED_UNEXPECTED, "no run record: the script skipped (a lock or not due)"
+        )
+    counts = run.counts or {}
+    kept = {
+        k: int(counts.get(k) or 0)
+        for k in (
+            "checked",
+            "updated",
+            "failed",
+            "verify_failed",
+            "new_topics_created",
+            "new_topics_failed",
+            "retired",
+            "search_refresh_pending",
+        )
+    }
+    if run.status == SyncRunStatus.RUNNING:
+        return StepOutcome(step, INTERRUPTED, "the run never finished", kept)
+    if run.status == SyncRunStatus.FAILED or rc != 0:
+        return StepOutcome(step, FAILED, run.error or f"exit {rc}", kept)
+    if run.status == SyncRunStatus.REVIEW_ONLY:
+        return StepOutcome(step, PARTIAL, run.error or "held for review: nothing written", kept)
+    if kept["failed"] or kept["verify_failed"] or kept["new_topics_failed"]:
+        return StepOutcome(step, PARTIAL, "some Teemad failed or did not verify", kept)
+    if kept["search_refresh_pending"]:
+        return StepOutcome(step, PARTIAL, "search rows left to refresh", kept)
+    if not (kept["updated"] or kept["new_topics_created"] or kept["retired"]):
+        return StepOutcome(step, SUCCEEDED_NO_NEW, "", kept)
+    return StepOutcome(step, SUCCEEDED, "", kept)
+
+
+def _ledger(
+    step: str,
+    run: Any,
+    rc: int,
+    *,
+    read: int,
+    new: int,
+    other_running: bool,
+) -> StepOutcome:
+    if run is None:
+        if other_running:
+            return StepOutcome(step, SKIPPED_UNEXPECTED, "another run held the lock")
+        if rc != 0:
+            return StepOutcome(step, FAILED, f"exit {rc} with no run record")
+        return StepOutcome(step, SKIPPED_UNEXPECTED, "no run record")
+    errors = list(run.errors or [])
+    counts = {
+        "read": read,
+        "new": new,
+        "errors": len(errors),
+        "ai_failures": int(run.ai_failures or 0),
+    }
+    if any(isinstance(e, dict) and e.get("katkes") for e in errors):
+        return StepOutcome(step, FAILED, "the run stopped before its end (katkes)", counts)
+    if run.finished_at is None:
+        return StepOutcome(step, INTERRUPTED, "the run never finished", counts)
+    if rc != 0:
+        return StepOutcome(step, FAILED, f"exit {rc}", counts)
+    if errors and read == 0:
+        return StepOutcome(step, FAILED, "read no source", counts)
+    if errors or counts["ai_failures"]:
+        return StepOutcome(step, PARTIAL, "source errors or model failures", counts)
+    if new == 0:
+        return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
+    return StepOutcome(step, SUCCEEDED, "", counts)
+
+
+def _watch(since: dt.datetime, rc: int) -> StepOutcome:
+    from django.conf import settings
+
+    from app.register_watch.models import WatchRun
+
+    if not getattr(settings, "REGISTER_WATCH_FETCH", False):
+        return StepOutcome("register-watch", SKIPPED_DELIBERATE, "reading is off")
+    run = WatchRun.objects.filter(started_at__gte=since).order_by("-started_at").first()
+    other = (
+        run is None
+        and WatchRun.objects.filter(
+            started_at__lt=since, started_at__gte=since - ABANDONED_AFTER, finished_at__isnull=True
+        )
+        .exclude(errors__contains=[{"katkes": True}])
+        .exists()
+    )
+    return _ledger(
+        "register-watch",
+        run,
+        rc,
+        read=int(run.targets_checked) if run else 0,
+        new=int(run.findings_new) if run else 0,
+        other_running=other,
+    )
+
+
+def _sweep(since: dt.datetime, rc: int) -> StepOutcome:
+    from django.conf import settings
+
+    from app.register_watch import candidates
+    from app.register_watch.models import SweepRun
+
+    if not candidates.enabled() or not getattr(settings, "REGISTER_WATCH_FETCH", False):
+        return StepOutcome("register-sweep", SKIPPED_DELIBERATE, "the sweep is off")
+    run = SweepRun.objects.filter(started_at__gte=since).order_by("-started_at").first()
+    other = (
+        run is None
+        and SweepRun.objects.filter(
+            started_at__lt=since, started_at__gte=since - ABANDONED_AFTER, finished_at__isnull=True
+        )
+        .exclude(errors__contains=[{"katkes": True}])
+        .exists()
+    )
+    return _ledger(
+        "register-sweep",
+        run,
+        rc,
+        read=int(run.sources_read) if run else 0,
+        new=int(run.candidates_new) if run else 0,
+        other_running=other,
+    )
+
+
+def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
+    from app.register_watch import agenda
+
+    step = "government-agenda"
+    if not agenda.enabled():
+        return StepOutcome(step, SKIPPED_DELIBERATE, "reading is off")
+    if reported is None:
+        if rc != 0:
+            return StepOutcome(step, FAILED, f"exit {rc} with no outcome line")
+        return StepOutcome(step, SKIPPED_UNEXPECTED, "no outcome line")
+    counts = {k: int(reported.get(k) or 0) for k in ("stored", "judged", "errors", "ai_failures")}
+    if rc != 0:
+        return StepOutcome(step, FAILED, f"exit {rc}", counts)
+    if counts["errors"] or counts["ai_failures"]:
+        return StepOutcome(step, PARTIAL, "valitsus.ee errors or model failures", counts)
+    if not (counts["stored"] or counts["judged"]):
+        return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
+    return StepOutcome(step, SUCCEEDED, "", counts)

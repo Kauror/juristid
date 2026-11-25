@@ -228,7 +228,7 @@ consequences and reversibility.
 | [0218](0218-new-drafts-in-the-registers-are-proposed-to-the-department-head-as-new-teemad.md) | New drafts in the registers are proposed to the department head as new Teemad (nightly sweep, the model judges, «Uued eelnõud», the bell's sixth source) | Proposed, amended 2026-11-24 (the verdict is written only on a candidate still waiting and unjudged, re-read under lock) |
 | [0219](0219-monitooring-gathers-new-drafts-the-government-agenda-and-the-registers-list.md) | «Monitooring» gathers the new drafts, the Government's agenda and the registers' list (top-bar tab, the head's until opened; valitsus.ee agenda read and judged weekly; the bell, no e-mail) | Proposed |
 | [0220](0220-a-lawyer-leaving-and-arriving-is-prepared-in-juristid-and-handed-over-in-lovable.md) | A lawyer leaving and arriving is prepared in Juristid and handed over in Lovable (a recorded Lovable hand-over has its own nightly limit of 150; «Lovable'i nimed» and pinned names; held work shown and confirmed before switching a person off; «Töö ilma aktiivse vastutajata») | Accepted |
-| [0227](0227-the-nightly-jobs-run-in-one-coordinated-cycle-at-midnight-in-tallinn.md) | The nightly jobs run in one coordinated cycle at midnight in Tallinn (one cron line fires 21:00 and 22:00 UTC, the script runs the 00:00 Tallinn one; Lovable first, then the registers lane and the agenda side by side; per-step outcome, one hard need; prepared, not deployed) | Proposed |
+| [0229](0229-the-nightly-jobs-run-in-one-coordinated-cycle-at-midnight-in-tallinn.md) | The nightly jobs run in one coordinated cycle at midnight in Tallinn (one cron line fires 21:00 and 22:00 UTC, the script runs the 00:00 Tallinn one; Lovable first, then the registers lane and the agenda side by side; outcomes from run records; one cycle lock a release must take; prepared, not deployed) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -258,6 +258,9 @@ requires every gap in the numbering to be named here:
   analysis is built, controlled and left off».
 - 0226 — reserved for the Riigikogu programme (PR #723): «Protocols, stenograms and
   answers are evidence, never verdicts».
+- 0227 — not used on main. Held for the proposed settlement of the 0222/0223 clash:
+  the UI programme keeps 0221–0223 and the Riigikogu programme moves to 0224–0228.
+- 0228 — not used on main; held as 0227.
 
 Naming: `NNNN-short-decision-title.md`.
 

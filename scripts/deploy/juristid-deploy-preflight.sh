@@ -339,6 +339,22 @@ for pair in "data root:$DATA_ROOT" "backup root:$BACKUP_ROOT"; do
   fi
 done
 
+# -- the nightly cycle -----------------------------------------------------
+
+# A release never runs beside the nightly cycle (docs/adr/0229 §5). This
+# preflight is read-only, so it only asks — taking and dropping the cycle lock
+# at once; the release itself must take it (lib.sh `take_cycle_lock release`,
+# fd 7) before the host lock and hold it to its end, which is what makes the
+# exclusion real, overrunning cycle or not.
+step "The nightly cycle"
+cycle_rc=0
+cycle_lock_is_free || cycle_rc=$?
+case "$cycle_rc" in
+  0) pass "the nightly cycle is not running ($JURISTID_CYCLE_LOCK is free)" ;;
+  1) fail "the nightly cycle is running ($(cycle_lock_owner)). Wait for it to end (nightly/last-cycle.txt); a release must not start under it." ;;
+  *) fail "could not ask $JURISTID_CYCLE_LOCK (is flock installed?). A release must hold the cycle lock." ;;
+esac
+
 # -- verdict ---------------------------------------------------------------
 
 step "Verdict"

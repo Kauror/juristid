@@ -13,7 +13,7 @@
 #
 # Times are UTC (the host has no Tallinn zoneinfo). The nightly backup runs
 # before the host's own 23:00 database dump and the nightly cycle's 21:00/22:00
-# firings (docs/adr/0227); the backup takes the host lock, so if a sync is running the backup
+# firings (docs/adr/0229); the backup takes the host lock, so if a sync is running the backup
 # refuses and says so in its log, and the daily monitor reports the age.
 #
 # Paths follow deploy/unraid-main/README.md; the monitor's environment file is
@@ -29,14 +29,14 @@
 0 5 * * 1 bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier weekly --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
 
 # The nightly monitoring and the Lovable synchronisation run in ONE coordinated
-# cycle at 00:00 Europe/Tallinn (docs/adr/0227): deploy/unraid-main/cron/
-# juristid-nightly.cron, installed as its own file. It runs the Lovable sync, then
-# side by side the register watch (docs/adr/0217) → the new-drafts sweep
-# (docs/adr/0218) and the Government's agenda (docs/adr/0219), each command exactly
-# as its own cron line ran it before, with the same env file
-# (config/register-watch.env, root, 0600: the model step's switches and key) and
-# the same logs. Before that cycle the three had their own lines here — watch
-# 03:30 UTC, sweep 04:20 UTC, agenda every half hour Wednesday 12:00 to Thursday
-# 12:00 Tallinn — which the deployment of 0227 removes; restoring them is its
-# rollback (docs/adr/0227 §8).
-0 21,22 * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-nightly-cycle.sh &> /dev/null
+# cycle at 00:00 Europe/Tallinn (docs/adr/0229). It is scheduled by its OWN file,
+# deploy/unraid-main/cron/juristid-nightly.cron, installed (with the removal of
+# the lines it replaces) by deploy/unraid-main/cron/juristid-nightly-transition.sh
+# --apply — never by a line copied into this file, so the cycle cannot be
+# installed twice. It runs the Lovable sync, then side by side the register watch
+# (docs/adr/0217) → the new-drafts sweep (docs/adr/0218) and the Government's
+# agenda (docs/adr/0219), each command as its own cron line ran it before, with
+# config/register-watch.env (root, 0600: the model step's switches and key) and
+# the same logs. Before the cycle they had their own lines (watch 03:30 UTC,
+# sweep 04:20 UTC, agenda every half hour Wednesday 12:00 to Thursday 12:00
+# Tallinn); --rollback restores them (docs/adr/0229 §8).

@@ -567,10 +567,10 @@ def at_riigikogu(candidate: TopicCandidate) -> bool:
 
 # -- is it working ------------------------------------------------------------------
 
-#: The host's cron line: every day at 04:20 UTC (deploy/unraid-main/cron).
-SWEEP_AT_UTC = dt.time(4, 20)
+#: The sweep is a step of the nightly cycle (ADR 0229), after the register watch;
+#: its first run is due by `nightly_schedule.step_due`. A finished run older than
+#: this is missed (a night is 23-25 hours across a change of offset).
 STALE_AFTER = dt.timedelta(hours=30)
-FIRST_RUN_GRACE = dt.timedelta(hours=6)
 #: A run unfinished after this long was stopped from outside.
 ABANDONED_AFTER = dt.timedelta(hours=3)
 
@@ -589,11 +589,10 @@ def _installed_at() -> dt.datetime | None:
 
 
 def _first_run_due(since: dt.datetime) -> dt.datetime:
-    moment = since.astimezone(dt.UTC)
-    slot = dt.datetime.combine(moment.date(), SWEEP_AT_UTC, tzinfo=dt.UTC)
-    if slot < moment:
-        slot += dt.timedelta(days=1)
-    return slot + FIRST_RUN_GRACE
+    """The sweep's finish-by in the first nightly cycle at or after ``since``."""
+    from app.core import nightly_schedule
+
+    return nightly_schedule.step_due("register-sweep", since)
 
 
 def sweep_health(now: dt.datetime | None = None) -> Any:

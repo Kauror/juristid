@@ -2,7 +2,8 @@
 
     manage.py sweep_registers [--no-ai] [--dry-run]
 
-Run nightly by the host's cron, after `watch_registers`. It stores what is new
+Run every night by the nightly cycle (ADR 0229), after `watch_registers` (which
+runs after the Lovable synchronisation). It stores what is new
 as candidates on the «Uued eelnõud» page; nothing becomes a Teema until a person
 adds one. ``--dry-run`` does the whole run and rolls it back.
 

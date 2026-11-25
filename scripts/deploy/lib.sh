@@ -80,6 +80,75 @@ release_host_lock() {
   rm -rf -- "$JURISTID_HOST_LOCK"
 }
 
+# The nightly cycle's lock (docs/adr/0229 §5): one file, `flock`, held on file
+# descriptor 7 for the whole life of whoever takes it. The nightly cycle holds
+# it from its start to its end; a release (the kit's d1/d2) and a restore take
+# it before the host lock and hold it to their end, so neither can start while
+# the cycle runs — overrunning or not — and the cycle refuses to start under
+# them. `flock -n` is the atomic test-and-take: there is no check-then-act.
+# Lock order, everywhere: this lock, then the Lovable runner's flock, then the
+# host lock, then the backup's own lock, then PostgreSQL advisory locks. The
+# nightly backup and the Lovable on-demand processor never take this lock.
+# Overridable for a test harness, never for a deployment.
+JURISTID_CYCLE_LOCK="${JURISTID_CYCLE_LOCK:-/tmp/juristid-nightly-cycle.lock}"
+
+# take_cycle_lock OWNER → 0 taken (held on fd 7 until exit), 1 held by someone
+# else (`cycle_lock_owner` names them), 2 flock or the file is unavailable.
+take_cycle_lock() {
+  local owner="$1"
+  command -v flock >/dev/null 2>&1 || return 2
+  # `<>` opens without truncating, so a refused taker never wipes the holder's name.
+  exec 7<>"$JURISTID_CYCLE_LOCK" || return 2
+  if ! flock -n 7; then
+    exec 7>&-
+    return 1
+  fi
+  printf 'owner=%s pid=%s %s\n' "$owner" "$$" "$(date -u +%FT%TZ)" >"$JURISTID_CYCLE_LOCK"
+}
+
+cycle_lock_owner() {
+  head -n 1 "$JURISTID_CYCLE_LOCK" 2>/dev/null || printf 'unknown'
+}
+
+# Free right now? Takes and drops the lock at once (fd 6): for a read-only
+# preflight, which must not hold it. 0 free, 1 held, 2 cannot tell.
+cycle_lock_is_free() {
+  command -v flock >/dev/null 2>&1 || return 2
+  exec 6<>"$JURISTID_CYCLE_LOCK" || return 2
+  if flock -n 6; then
+    flock -u 6
+    exec 6>&-
+    return 0
+  fi
+  exec 6>&-
+  return 1
+}
+
+# The Tallinn clock without a Tallinn zone (the host has none): Estonia keeps
+# the EU rule — UTC+3 from 01:00 UTC on the last Sunday of March to 01:00 UTC on
+# the last Sunday of October, UTC+2 otherwise. `tallinn_clock EPOCH` prints
+# «YYYY-MM-DD HH:MM +N». tests/test_nightly_cycle_script.py holds it against the
+# zone database.
+_DST_YEAR=""
+_DST_START=0
+_DST_END=0
+_dst_bounds() {
+  local year=$1 dow
+  if [ "$year" = "$_DST_YEAR" ]; then return 0; fi
+  dow=$(date -u -d "$year-03-31" +%u)
+  _DST_START=$(date -u -d "$year-03-$((31 - dow % 7)) 01:00:00" +%s)
+  dow=$(date -u -d "$year-10-31" +%u)
+  _DST_END=$(date -u -d "$year-10-$((31 - dow % 7)) 01:00:00" +%s)
+  _DST_YEAR=$year
+}
+
+tallinn_clock() {
+  local t=$1 offset=2
+  _dst_bounds "$(date -u -d "@$t" +%Y)"
+  if [ "$t" -ge "$_DST_START" ] && [ "$t" -lt "$_DST_END" ]; then offset=3; fi
+  echo "$(date -u -d "@$((t + offset * 3600))" '+%F %H:%M') +$offset"
+}
+
 note() {
   printf '%s\n' "$*"
 }
