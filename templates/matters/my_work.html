@@ -543,8 +543,7 @@ The rail holds only what has no honest place on a timeline.
               {% endfor %}
             </div>
             {# Minu statistika's own page (docs/adr/0223): one's own desk only. #}
-            {% if is_self %}<a class="quietlink pw-stats__more" href="{% url 'matters:my_statistics' %}">Kõik minu statistika →</a>
-            <span class="pw-stats__rule">Siinsed arvud: teema praegune vastutaja. «Kõik minu statistika» loeb sinu tehtut ja vastutust tol ajal.</span>{% endif %}
+            {% if is_self %}<a class="quietlink pw-stats__more" href="{% url 'matters:my_statistics' %}">Kõik minu statistika →</a>{% endif %}
           </div>
         </details>
       </section>

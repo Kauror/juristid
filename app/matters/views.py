@@ -477,13 +477,27 @@ def my_statistics(request: HttpRequest) -> HttpResponse:
     Self only: there is no address for anybody else's, so the route takes no
     person, and a department head opening it reads their own figures.
     """
+    from app.matters import stat_periods
     from app.matters.my_statistics import my_statistics as build
 
+    today = timezone.localdate()
+    # The period, the figure and «Näita kõiki» are the whole state, all in the
+    # URL (docs/adr/0223 §11); no parameter names a person.
+    period = stat_periods.parse(request.GET, today)
+    stats = build(
+        request.user,
+        today,
+        period,
+        request.GET.get("naitaja", ""),
+        show_all=request.GET.get("kaik") == "1",
+        path=request.path,
+    )
     return render(
         request,
         "matters/my_statistics.html",
         {
-            "stats": build(request.user, timezone.localdate()),
+            "stats": stats,
+            "first_day": stat_periods.FIRST_DAY,
             "nav_active": "minu_asjad",
         },
     )

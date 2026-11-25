@@ -30,8 +30,8 @@ from app.accounts.models import User
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.matters import my_statistics as ms
+from app.matters import stat_periods as sp
 from app.matters.models import Matter
-from app.matters.my_work import opinion_work
 from app.matters.services import LOVABLE_SYNC_PROVENANCE, assign_matter
 from app.reporting.opinions import SOURCE_IMPORTED, SOURCE_SUBMISSION, MatterFacts, OpinionFact
 from app.submissions.models import Submission
@@ -98,8 +98,10 @@ def build(rows, events=(), names=None, *, since=SINCE, reliable: object = "since
     )
 
 
-def month(year: int, number: int) -> ms.Month:
-    return next(m for m in ms.months(TODAY, 24) if (m.start.year, m.start.month) == (year, number))
+def month(year: int, number: int) -> sp.Span:
+    """A calendar month, ending today if it is the current one (as the page counts it)."""
+    period = sp.parse({"periood": "kuu", "algus": f"{year}-{number:02d}-01"}, TODAY)
+    return period.counted
 
 
 def owned(built, person, year, number) -> tuple[ms.Coverage, int | None]:
@@ -137,9 +139,9 @@ def test_a_new_lawyer_who_receives_a_colleagues_teemad_is_not_credited_with_thei
     assert owned(built, A, 2026, 10) == (V, 2)
     assert owned(built, C, 2026, 11) == (V, 2)
     # Ann's September opinion stays Ann's; Carl's own November one is his.
-    assert ms.sent_in_month(facts, built, C, month(2026, 9), SINCE).value == 0
-    assert ms.sent_in_month(facts, built, A, month(2026, 9), SINCE).value == 1
-    assert ms.sent_in_month(facts, built, C, month(2026, 11), SINCE).value == 1
+    assert ms.sent_in(facts, built, C, month(2026, 9), SINCE).value == 0
+    assert ms.sent_in(facts, built, A, month(2026, 9), SINCE).value == 1
+    assert ms.sent_in(facts, built, C, month(2026, 11), SINCE).value == 1
 
 
 def test_a_lovable_provenance_hand_over_counts_like_any_other():
@@ -172,7 +174,7 @@ def test_a_known_teema_beside_an_unknown_one_is_a_lower_bound_not_hidden():
 
     # Teema 1 is certainly mine on 31.10; Teema 2's October is unknown.
     assert owned(built, A, 2026, 10) == (AL, 1)
-    assert ms.owned_at(built, A, month(2026, 10).end).text == "vähemalt 1"
+    assert ms.owned_at(built, A, month(2026, 10).end).spoken == "vähemalt 1"
 
 
 def test_a_teema_closed_before_it_reached_juristid_counts_nowhere_after_it_closed():
@@ -422,42 +424,113 @@ def test_a_cut_over_closing_leaves_the_stretch_before_it_unknown():
 
 # ---------------------------------------------------------------------------
 # Coverage states
+
+
+# ---------------------------------------------------------------------------
+# Coverage of a span: a real 0 only inside reliable coverage (ADR 0223 §11)
 # ---------------------------------------------------------------------------
 
 
-def test_a_fully_recorded_month_with_nothing_in_it_is_a_verified_zero():
+def test_a_fully_recorded_span_with_nothing_in_it_is_a_verified_zero():
     found = ms.cell(month(2026, 9), dt.date(2026, 1, 1), 0)
 
-    assert (found.coverage, found.value, found.text, found.note) == (V, 0, "0", "")
+    assert (found.coverage, found.value, found.text, found.exact) == (V, 0, "0", True)
 
 
-def test_a_month_recording_began_inside_shows_what_was_recorded_marked_partial():
+def test_a_span_recording_began_inside_is_a_lower_bound_marked_partial():
     found = ms.cell(month(2026, 9), dt.date(2026, 9, 14), 3)
 
-    assert (found.coverage, found.value) == (P, 3)
+    assert (found.coverage, found.value, found.text) == (P, 3, "≥ 3")
     assert found.covered_from == dt.date(2026, 9, 14)
-    assert found.note == "osaline: alates 14.09.2026"
+    assert not found.exact
+    # Nothing found in a partly covered span is not a zero either.
+    assert ms.cell(month(2026, 9), dt.date(2026, 9, 14), 0).text == "—"
 
 
-def test_the_running_month_is_partial_up_to_today():
+def test_the_running_period_counts_so_far_and_is_exact():
     found = ms.cell(month(2026, 11), dt.date(2026, 1, 1), 2)
 
-    assert (found.coverage, found.value) == (P, 2)
-    assert found.note == "osaline: kuni 20.11.2026"
+    assert (found.coverage, found.text) == (V, "2")
+    assert month(2026, 11).end == TODAY
 
 
-def test_a_running_month_recording_began_in_names_both_ends():
-    assert ms.cell(month(2026, 11), dt.date(2026, 11, 5), 0).note == (
-        "osaline: 05.11.2026–20.11.2026"
-    )
-
-
-def test_a_month_before_recording_is_unknown_and_records_found_there_a_lower_bound():
+def test_a_span_before_recording_is_unknown_and_records_found_there_a_lower_bound():
     empty = ms.cell(month(2026, 3), dt.date(2026, 9, 14), 0)
     found = ms.cell(month(2026, 3), dt.date(2026, 9, 14), 2)
 
-    assert (empty.coverage, empty.text) == (U, "andmed puuduvad")
-    assert (found.coverage, found.text, found.note) == (AL, "vähemalt 2", "ajalugu poolik")
+    assert (empty.coverage, empty.text, empty.spoken) == (U, "—", "andmed puuduvad")
+    assert (found.coverage, found.text, found.spoken) == (AL, "≥ 2", "vähemalt 2")
+
+
+def test_coverage_that_cannot_be_established_is_never_complete():
+    assert ms.cell(month(2026, 9), None, 0).coverage == U
+    assert ms.cell(month(2026, 9), None, 4).text == "≥ 4"
+
+
+def test_an_uncreditable_record_makes_a_covered_span_a_lower_bound():
+    found = ms.cell(month(2026, 9), SINCE, 1, uncertain=True)
+
+    assert (found.coverage, found.text) == (AL, "≥ 1")
+
+
+def test_an_incoming_series_without_a_reading_is_unknown_not_zero():
+    read = ms.Series(readings={dt.date(2026, 9, 3)}, since=dt.date(2026, 1, 1))
+    span = month(2026, 9)
+
+    assert read.cell(span) == ms.Cell(V, 0)
+    assert read.cell(month(2026, 10)).coverage == U
+    assert read.cell(month(2026, 10)).text == "—"
+
+
+def test_an_incoming_source_first_read_inside_a_span_is_a_lower_bound_there():
+    found = ms.Series(
+        records=[ms.Record(dt.date(2026, 9, 20), 1)],
+        readings={dt.date(2026, 9, 14), dt.date(2026, 9, 20)},
+        since=dt.date(2026, 9, 14),
+    )
+
+    assert (found.cell(month(2026, 9)).coverage, found.cell(month(2026, 9)).text) == (P, "≥ 1")
+
+
+# ---------------------------------------------------------------------------
+# «Uued teemad»: hand-overs to me and Teemad created here with me as owner
+# ---------------------------------------------------------------------------
+
+
+def test_a_hand_over_to_me_is_an_arrival_and_a_back_fill_is_not():
+    built = build(
+        [row(1, A, dt.date(2026, 1, 1)), row(2, A, dt.date(2026, 1, 1))],
+        [
+            handed(1, dt.date(2026, 3, 15), "Bert", "Ann"),
+            handed(2, dt.date(2026, 3, 16), "Bert", "Ann", operation="backfill_legacy_owners"),
+        ],
+    )
+
+    found = ms.arrivals_series(built, [], A, SINCE)
+
+    assert [(r.matter_id, r.day) for r in found.records] == [(1, dt.date(2026, 3, 15))]
+    assert found.cell(month(2026, 3)).value == 1
+    assert ms.arrivals_series(built, [], B, SINCE).cell(month(2026, 3)).value == 0
+
+
+def test_a_teema_created_here_with_me_as_owner_is_mine_once_per_day():
+    built = build(
+        [row(1, A, dt.date(2026, 4, 2)), row(2, B, dt.date(2026, 4, 2))],
+        [handed(1, dt.date(2026, 4, 2), "", "Ann", hour=13)],
+    )
+    created = [(1, dt.date(2026, 4, 2)), (2, dt.date(2026, 4, 2))]
+
+    found = ms.arrivals_series(built, created, A, SINCE)
+
+    assert [(r.matter_id, r.day) for r in found.records] == [(1, dt.date(2026, 4, 2))]
+
+
+def test_a_hand_over_to_somebody_nobody_can_tell_apart_is_a_lower_bound():
+    built = build([row(1, A, dt.date(2026, 1, 1))], [handed(1, dt.date(2026, 5, 4), "Ann", "Kaks")])
+
+    found = ms.arrivals_series(built, [], A, SINCE).cell(month(2026, 5))
+
+    assert (found.coverage, found.text) == (U, "—")
 
 
 def test_recording_starts_are_read_from_the_migrations_that_created_the_records(db):
@@ -470,8 +543,6 @@ def test_recording_starts_are_read_from_the_migrations_that_created_the_records(
 
 EVENT_OF = {
     "closed": "MATTER_CLOSED",
-    "overviews": "WEBSITE_OVERVIEW_PUBLISHED",
-    "engagements": "ENGAGEMENT_ADDED",
     "trail": "MATTER_ASSIGNED",
 }
 
@@ -499,17 +570,17 @@ def test_an_opinion_is_credited_to_who_sent_it_not_to_the_owner():
     built = build([row(1, B, dt.date(2026, 1, 1))])
     facts = [_fact(1, dt.date(2026, 4, 2), actor=A, source=SOURCE_SUBMISSION)]
 
-    assert ms.sent_in_month(facts, built, A, month(2026, 4), SINCE).value == 1
-    assert ms.sent_in_month(facts, built, B, month(2026, 4), SINCE).value == 0
+    assert ms.sent_in(facts, built, A, month(2026, 4), SINCE).value == 1
+    assert ms.sent_in(facts, built, B, month(2026, 4), SINCE).value == 0
 
 
 def test_an_imported_opinion_goes_to_the_owner_on_its_day():
     built = build([row(1, B, dt.date(2026, 1, 1))], [handed(1, dt.date(2026, 5, 1), "Ann", "Bert")])
     facts = [_fact(1, dt.date(2026, 4, 2)), _fact(1, dt.date(2026, 6, 2))]
 
-    assert ms.sent_in_month(facts, built, A, month(2026, 4), SINCE).value == 1
-    assert ms.sent_in_month(facts, built, B, month(2026, 4), SINCE).value == 0
-    assert ms.sent_in_month(facts, built, B, month(2026, 6), SINCE).value == 1
+    assert ms.sent_in(facts, built, A, month(2026, 4), SINCE).value == 1
+    assert ms.sent_in(facts, built, B, month(2026, 4), SINCE).value == 0
+    assert ms.sent_in(facts, built, B, month(2026, 6), SINCE).value == 1
 
 
 def test_an_opinion_nobody_can_credit_makes_the_month_a_lower_bound_never_complete():
@@ -522,29 +593,145 @@ def test_an_opinion_nobody_can_credit_makes_the_month_a_lower_bound_never_comple
     nobody = [_fact(1, dt.date(2026, 3, 2))]
     mine_too = [*nobody, _fact(2, dt.date(2026, 3, 9), actor=A, source=SOURCE_SUBMISSION)]
 
-    assert ms.sent_in_month(nobody, built, A, month(2026, 3), SINCE).coverage == U
-    found = ms.sent_in_month(mine_too, built, A, month(2026, 3), SINCE)
+    assert ms.sent_in(nobody, built, A, month(2026, 3), SINCE).coverage == U
+    found = ms.sent_in(mine_too, built, A, month(2026, 3), SINCE)
     assert (found.coverage, found.value) == (AL, 1)
     # An empty month that was recorded in full is a real zero.
-    assert ms.sent_in_month(nobody, built, A, month(2026, 4), SINCE).coverage == V
+    assert ms.sent_in(nobody, built, A, month(2026, 4), SINCE).coverage == V
 
 
 def test_an_empty_month_before_opinions_were_recorded_is_not_a_zero():
     built = build([row(1, A, dt.date(2026, 1, 1))])
 
-    found = ms.sent_in_month([], built, A, month(2026, 2), dt.date(2026, 9, 14))
+    found = ms.sent_in([], built, A, month(2026, 2), dt.date(2026, 9, 14))
 
-    assert (found.coverage, found.text) == (U, "andmed puuduvad")
+    assert (found.coverage, found.spoken) == (U, "andmed puuduvad")
 
 
-def test_months_are_the_last_twelve_newest_first_the_current_one_ending_today():
-    shown = ms.months(TODAY)
+# ---------------------------------------------------------------------------
+# The period bar: parsing, labels, navigation and the chart's columns
+# ---------------------------------------------------------------------------
 
-    assert len(shown) == 12
-    assert (shown[0].start, shown[0].end) == (dt.date(2026, 11, 1), TODAY)
-    assert not shown[0].complete and shown[1].complete
-    assert (shown[-1].start, shown[-1].end) == (dt.date(2025, 12, 1), dt.date(2025, 12, 31))
-    assert shown[0].label == "november 2026"
+WEDNESDAY = dt.date(2026, 11, 25)
+
+
+def test_the_default_is_the_current_week_monday_to_sunday():
+    period = sp.parse({}, WEDNESDAY)
+
+    assert (period.kind, period.start, period.end) == (
+        "nadal",
+        dt.date(2026, 11, 23),
+        dt.date(2026, 11, 29),
+    )
+    assert period.label == "See nädal"
+    assert period.range_text == "23.11.2026–29.11.2026"
+    assert period.until == WEDNESDAY and period.running and period.is_current
+    # › is disabled past the current period; ‹ is not.
+    assert not period.has_next and period.has_previous
+
+
+def test_the_previous_week_is_named_and_can_step_forward():
+    period = sp.parse({"periood": "nadal", "algus": "2026-11-18"}, WEDNESDAY)
+
+    assert period.start == dt.date(2026, 11, 16)
+    assert period.label == "Eelmine nädal"
+    assert period.has_next and not period.running
+    assert period.shifted(1) == sp.parse({}, WEDNESDAY)
+    assert sp.parse({"algus": "2026-11-02"}, WEDNESDAY).label == "45. nädal 2026"
+
+
+@pytest.mark.parametrize(
+    ("kind", "start", "label", "first", "last"),
+    [
+        ("kuu", "2026-11-25", "November 2026", dt.date(2026, 11, 1), dt.date(2026, 11, 30)),
+        ("kvartal", "2026-11-25", "IV kvartal 2026", dt.date(2026, 10, 1), dt.date(2026, 12, 31)),
+        ("kvartal", "2026-05-02", "II kvartal 2026", dt.date(2026, 4, 1), dt.date(2026, 6, 30)),
+        ("aasta", "2025-03-03", "2025", dt.date(2025, 1, 1), dt.date(2025, 12, 31)),
+    ],
+)
+def test_calendar_periods_snap_to_their_calendar(kind, start, label, first, last):
+    period = sp.parse({"periood": kind, "algus": start}, WEDNESDAY)
+
+    assert (period.kind, period.label, period.start, period.end) == (kind, label, first, last)
+
+
+def test_stepping_crosses_years_and_stops_at_the_current_period():
+    january = sp.parse({"periood": "kuu", "algus": "2026-01-01"}, WEDNESDAY)
+    first_quarter = sp.parse({"periood": "kvartal", "algus": "2026-01-01"}, WEDNESDAY)
+
+    assert january.previous.label == "Detsember 2025"
+    assert first_quarter.previous.label == "IV kvartal 2025"
+    assert sp.parse({"periood": "kuu"}, WEDNESDAY).has_next is False
+    assert sp.parse({"periood": "aasta", "algus": "2025-01-01"}, WEDNESDAY).has_next is True
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"periood": "nädal-x"},
+        {"periood": "nadal", "algus": "eile"},
+        {"periood": "nadal", "algus": "2027-01-04"},
+        {"periood": "nadal", "algus": "1999-01-04"},
+    ],
+)
+def test_anything_the_bar_does_not_understand_is_the_current_week(params):
+    assert sp.parse(params, WEDNESDAY) == sp.current(WEDNESDAY)
+
+
+def test_a_custom_period_is_ordered_and_cut_at_today():
+    period = sp.parse({"periood": "muu", "algus": "2026-12-31", "kuni": "2026-10-01"}, WEDNESDAY)
+
+    assert (period.start, period.end) == (dt.date(2026, 10, 1), WEDNESDAY)
+    assert period.label == "Valitud periood"
+    assert not period.has_next
+    assert period.previous.end == dt.date(2026, 9, 30)
+
+
+def test_the_comparison_is_the_previous_period_to_the_same_point():
+    week = sp.parse({}, WEDNESDAY)
+    february = sp.parse({"periood": "kuu", "algus": "2026-03-01"}, WEDNESDAY).previous
+
+    # Monday to Wednesday against last Monday to Wednesday.
+    assert week.comparison == sp.Span(dt.date(2026, 11, 16), dt.date(2026, 11, 18))
+    assert week.comparison_word == "eelmise nädalaga"
+    # A whole past month against the whole one before it, however long.
+    assert february.comparison == sp.Span(dt.date(2026, 1, 1), dt.date(2026, 1, 28))
+    march = sp.parse({"periood": "kuu", "algus": "2026-03-01"}, WEDNESDAY)
+    assert march.comparison == sp.Span(dt.date(2026, 2, 1), dt.date(2026, 2, 28))
+
+
+def test_the_chart_columns_follow_the_period():
+    week = sp.parse({}, WEDNESDAY).buckets()
+    quarter = sp.parse({"periood": "kvartal"}, WEDNESDAY).buckets()
+    year = sp.parse({"periood": "aasta"}, WEDNESDAY).buckets()
+    long_custom = sp.parse(
+        {"periood": "muu", "algus": "2026-01-01", "kuni": "2026-11-25"}, WEDNESDAY
+    )
+    short_custom = sp.parse(
+        {"periood": "muu", "algus": "2026-11-01", "kuni": "2026-11-20"}, WEDNESDAY
+    )
+
+    assert [b.label for b in week] == ["E", "T", "K", "N", "R", "L", "P"]
+    assert week[0].sublabel == "23.11"
+    assert [b.future for b in week] == [False, False, False, True, True, True, True]
+    assert quarter[0].span == sp.Span(dt.date(2026, 10, 1), dt.date(2026, 10, 4))
+    assert quarter[0].label == "40. n"
+    assert [b.label for b in year][:2] == ["jaan", "veebr"] and len(year) == 12
+    assert long_custom.grain == "month" and short_custom.grain == "day"
+    assert (
+        sp.parse({"periood": "muu", "algus": "2026-09-01", "kuni": "2026-11-01"}, WEDNESDAY).grain
+        == "week"
+    )
+
+
+def test_the_period_is_kept_in_the_url():
+    period = sp.parse({"periood": "muu", "algus": "2026-10-01", "kuni": "2026-10-31"}, WEDNESDAY)
+
+    url = period.url("/minu-asjad/statistika/", naitaja="sissekanded")
+
+    assert url == (
+        "/minu-asjad/statistika/?periood=muu&algus=2026-10-01&kuni=2026-10-31&naitaja=sissekanded"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -572,17 +759,33 @@ def _recorded_since(monkeypatch, day, *, reliable: bool = True):
         )
 
 
-def _cells(response, column: str) -> dict[dt.date, ms.Cell]:
-    stats = response.context["stats"]
-    index = [c.key for c in stats.columns].index(column)
-    return {r.month.start: r.cells[index] for r in stats.rows}
-
-
 def _month_start(today: dt.date, back: int) -> dt.date:
     day = today.replace(day=1)
     for _ in range(back):
         day = (day - dt.timedelta(days=1)).replace(day=1)
     return day
+
+
+URL = "/minu-asjad/statistika/"
+
+
+def _page(client, **params):
+    response = client.get(reverse("matters:my_statistics"), params)
+    assert response.status_code == 200
+    return response
+
+
+def _month(client, start: dt.date, **params):
+    return _page(client, periood="kuu", algus=start.isoformat(), **params)
+
+
+def _card(response, key: str) -> ms.Card:
+    stats = response.context["stats"]
+    return next(card for group in stats.groups for card in group.cards if card.key == key)
+
+
+def _cell(response, key: str) -> ms.Cell:
+    return _card(response, key).cell
 
 
 @pytest.fixture
@@ -610,26 +813,49 @@ def test_the_page_is_ones_own_and_reached_from_the_foldout(client, me, colleague
     desk = client.get(reverse("matters:my_work")).content.decode()
 
     assert page.status_code == 200
-    assert reverse("matters:my_statistics") == "/minu-asjad/statistika/"
-    assert f'href="{reverse("matters:my_statistics")}"' in desk
+    assert reverse("matters:my_statistics") == URL
+    assert f'href="{URL}"' in desk
     assert "Kolleeg" not in page.content.decode()
 
 
 @pytest.mark.django_db
-def test_the_foldout_and_the_page_each_state_their_own_attribution_rule(client, me):
+def test_the_long_explanations_the_owner_removed_are_gone(client, me):
     client.force_login(me)
 
     desk = client.get(reverse("matters:my_work")).content.decode()
-    page = client.get(reverse("matters:my_statistics")).content.decode()
+    page = _page(client).content.decode()
 
-    assert "Siinsed arvud: teema praegune vastutaja." in desk
-    assert "loeb sinu tehtut ja vastutust tol ajal" in desk
-    assert "Statistika ja Minu asjade kokkuvõte loevad iga teema selle" in page
-    assert "<b>praegusele vastutajale</b>" in page
-    assert "ilma et kumbki oleks vale" in page
-    # No ranking words, no comparison with anybody.
-    for word in ("edetabel", "koht ", "keskmine", "parim", "võrreldes"):
+    assert "Siinsed arvud" not in desk
+    assert "loeb sinu tehtut ja vastutust tol ajal" not in desk
+    for gone in (
+        "ainult sinu enda andmed",
+        "Siin on ainult sinu enda arvud",
+        "Kuidas arvestatakse",
+        "Vastutaja tol ajal",
+        "Kui palju on teada",
+        "Salvestatud alates",
+        "praegune vastutaja",
+    ):
+        assert gone not in page, gone
+    # No ranking, no comparison with anybody: only with one's own previous period.
+    for word in ("edetabel", "keskmine", "parim"):
         assert word not in page.lower(), word
+
+
+@pytest.mark.django_db
+def test_the_page_shows_eight_own_figures_and_five_incoming_ones(client, me):
+    client.force_login(me)
+
+    stats = _page(client).context["stats"]
+
+    assert [group.title for group in stats.groups] == ["Minu töö", "Sissetulev seire"]
+    assert [card.key for card in stats.groups[0].cards] == [f.key for f in ms.OWN]
+    assert len(stats.groups[0].cards) == 8 and len(stats.groups[1].cards) == 5
+    # Each card's ⓘ is one short definition.
+    for figure in (*ms.OWN, *ms.INCOMING_FIGURES):
+        assert 20 < len(figure.help) < 260, figure.key
+    assert stats.selected.key == ms.DEFAULT_FIGURE
+    assert stats.period.label == "See nädal"
 
 
 @pytest.mark.django_db
@@ -641,13 +867,11 @@ def test_there_is_no_address_for_anybody_elses(client, me, colleague):
         reverse("matters:my_statistics", args=[colleague.pk])
     assert client.get(f"/inimesed/{colleague.pk}/statistika/").status_code == 404
     assert client.get(f"/minu-asjad/statistika/{colleague.pk}/").status_code == 404
-    # A colleague's desk does not offer it either.
     desk = client.get(reverse("matters:person_work", args=[colleague.pk])).content.decode()
-    assert reverse("matters:my_statistics") not in desk
-    # And a parameter naming somebody changes nothing: it is the head's own page.
-    mine = client.get(reverse("matters:my_statistics")).context["stats"]
-    theirs = client.get(reverse("matters:my_statistics") + f"?kasutaja={colleague.pk}")
-    assert theirs.context["stats"] == mine
+    assert URL not in desk
+    mine = _page(client).context["stats"]
+    theirs = _page(client, kasutaja=str(colleague.pk)).context["stats"]
+    assert theirs.groups == mine.groups
 
 
 @pytest.mark.django_db
@@ -657,26 +881,15 @@ def test_no_url_parameter_shows_another_personas_figures(client, me, colleague, 
     for number in range(3):
         matter = factories.MatterFactory(owner=colleague, title=f"Näidisseadus teise {number}")
         factories.EntryFactory(matter=matter, author=colleague)
-        ChangeEvent.objects.create(
-            matter=matter,
-            event_type=ChangeEventType.MATTER_CLOSED,
-            occurred_at=_at(today),
-            actor=colleague,
-            object_type="matters.matter",
-            object_id=matter.pk,
-            payload={},
-        )
+        _event(matter, ChangeEventType.MATTER_CLOSED, today, actor=colleague)
     client.force_login(me)
 
-    plain = client.get(reverse("matters:my_statistics")).context["stats"]
+    plain = _page(client).context["stats"]
     for value in (colleague.pk, colleague.display_name):
-        response = client.get(reverse("matters:my_statistics"), {parameter: str(value)})
-        assert response.context["stats"] == plain
+        response = _page(client, **{parameter: str(value)})
+        assert response.context["stats"].groups == plain.groups
         assert "Kolleeg Näidis" not in response.content.decode()
-    figures = {figure.label: figure.value for figure in plain.current}
-    assert figures["Avatud teemad"] == 0
-    newest = plain.rows[0].cells
-    assert all((c.value or 0) == 0 for c in newest), newest
+    assert all((card.cell.value or 0) == 0 for card in plain.groups[0].cards)
 
 
 @pytest.mark.django_db
@@ -684,21 +897,7 @@ def test_a_signed_out_reader_is_sent_to_sign_in(client):
     assert client.get(reverse("matters:my_statistics")).status_code == 302
 
 
-@pytest.mark.django_db
-def test_current_figures_equal_the_existing_services(client, me, colleague):
-    factories.MatterFactory(owner=me, title="Näidisseadus 1")
-    factories.MatterFactory(owner=me, title="Näidisseadus 2")
-    factories.MatterFactory(owner=colleague, title="Näidisseadus 3")
-    client.force_login(me)
-
-    stats = client.get(reverse("matters:my_statistics")).context["stats"]
-
-    work = opinion_work(me, me, timezone.localdate())
-    figures = {figure.label: figure for figure in stats.current}
-    assert figures["Avatud teemad"].value == 2
-    assert figures["Arvamus koostamisel"].value == work.in_preparation
-    assert figures["Arvamuse tähtaeg sel nädalal"].value == work.due_this_week
-    assert {figure.basis for figure in stats.current} == {ms.CURRENT}
+# -- each figure ---------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -709,78 +908,93 @@ def test_an_opinion_i_sent_on_a_teema_a_colleague_owns_now_is_mine(
     matter = factories.MatterFactory(owner=colleague, title="Näidisseadus üle antud")
     submission = sent(matter, capture_evidence, day=today)
     Submission.objects.filter(pk=submission.pk).update(sent_by=me)
-    # Sending is recorded in Juristid from today on, so a month with none is a 0.
+    # Sending is recorded in Juristid from today on, so a span with none is a 0.
     _event(matter, ChangeEventType.SUBMISSION_SENT, today, actor=me)
 
     client.force_login(me)
-    mine = client.get(reverse("matters:my_statistics")).context["stats"].rows[0].cells[0]
+    mine = _cell(_page(client), "saadetud")
     client.force_login(colleague)
-    theirs = client.get(reverse("matters:my_statistics")).context["stats"].rows[0].cells[0]
+    theirs = _cell(_page(client), "saadetud")
 
     assert (mine.value, theirs.value) == (1, 0)
 
 
 @pytest.mark.django_db
-def test_a_genuine_zero_reads_0_and_months_before_recording_read_andmed_puuduvad(
-    client, me, monkeypatch
+def test_entries_and_closings_are_what_i_recorded(client, me, colleague, recorded_long_ago):
+    today = timezone.localdate()
+    mine = factories.MatterFactory(owner=me, title="Näidisseadus sissekanne")
+    factories.EntryFactory(matter=mine, author=me, occurred_at=_at(today))
+    factories.EntryFactory(matter=mine, author=colleague, occurred_at=_at(today))
+    _event(mine, ChangeEventType.MATTER_CLOSED, today, actor=me, payload={"disposition": "OTHER"})
+    client.force_login(me)
+
+    response = _page(client)
+
+    assert _cell(response, "sissekanded") == ms.Cell(V, 1)
+    assert _cell(response, "lopetatud") == ms.Cell(V, 1)
+
+
+@pytest.mark.django_db
+def test_a_teema_closed_without_any_opinion_is_counted_and_one_with_an_opinion_is_not(
+    client, me, capture_evidence, recorded_long_ago
 ):
     today = timezone.localdate()
-    began = _month_start(today, 3)
-    _recorded_since(monkeypatch, began)
+    silent = factories.MatterFactory(owner=me, title="Näidisseadus vaikne")
+    answered = factories.MatterFactory(owner=me, title="Näidisseadus vastatud")
+    submission = sent(answered, capture_evidence, day=today)
+    Submission.objects.filter(pk=submission.pk).update(sent_by=me)
+    for matter in (silent, answered):
+        _event(
+            matter,
+            ChangeEventType.MATTER_CLOSED,
+            today,
+            actor=me,
+            payload={"disposition": "NO_POSITION_FORMED"},
+        )
     client.force_login(me)
 
-    response = client.get(reverse("matters:my_statistics"))
-    entries = _cells(response, "entries")
+    response = _page(client, naitaja="arvamuseta")
 
-    assert entries[_month_start(today, 1)].coverage == V
-    assert entries[_month_start(today, 1)].text == "0"
-    assert entries[began].coverage == V
-    assert entries[_month_start(today, 4)].coverage == U
-    body = response.content.decode()
-    assert 'data-coverage="verified">0<' in body
-    assert "andmed puuduvad" in body
+    assert _cell(response, "lopetatud").value == 2
+    assert _cell(response, "arvamuseta").value == 1
+    rows = response.context["stats"].drill.rows
+    assert [row.title for row in rows] == ["Näidisseadus vaikne"]
+    assert rows[0].detail == "Seisukohta ei kujundatud"
 
 
 @pytest.mark.django_db
-def test_the_running_month_and_a_month_recording_began_in_are_marked_partial(
-    client, me, monkeypatch
+def test_new_teemad_are_hand_overs_to_me_and_teemad_created_with_me(
+    client, me, colleague, recorded_long_ago
 ):
     today = timezone.localdate()
-    began = _month_start(today, 2).replace(day=14)
-    _recorded_since(monkeypatch, began)
-    matter = factories.MatterFactory(owner=me, title="Näidisseadus osaline")
-    factories.EntryFactory(matter=matter, author=me, occurred_at=_at(began + dt.timedelta(days=3)))
+    handed_over = factories.MatterFactory(owner=me, title="Näidisseadus antud")
+    Matter.all_objects.filter(pk=handed_over.pk).update(created_at=_at(_month_start(today, 2)))
+    _assigned(
+        handed_over,
+        today,
+        "Kolleeg Näidis",
+        "Mina Näidis",
+        previous_owner_id=str(colleague.pk),
+        new_owner_id=str(me.pk),
+    )
+    created = factories.MatterFactory(owner=me, title="Näidisseadus loodud")
+    _event(created, ChangeEventType.MATTER_CREATED, today, actor=me)
+    theirs = factories.MatterFactory(owner=colleague, title="Näidisseadus kolleegi")
+    _event(theirs, ChangeEventType.MATTER_CREATED, today, actor=colleague)
     client.force_login(me)
 
-    response = client.get(reverse("matters:my_statistics"))
-    entries = _cells(response, "entries")
+    response = _page(client, naitaja="uued")
 
-    current = entries[today.replace(day=1)]
-    assert current.coverage == P and current.note.startswith("osaline: ")
-    partial = entries[began.replace(day=1)]
-    assert (partial.coverage, partial.value) == (P, 1)
-    assert partial.note == f"osaline: alates {began:%d.%m.%Y}"
-    assert f"osaline: alates {began:%d.%m.%Y}" in response.content.decode()
+    assert _cell(response, "uued") == ms.Cell(V, 2)
+    whats = {row.title: row.what for row in response.context["stats"].drill.rows}
+    assert whats == {
+        "Näidisseadus antud": "Sulle üle antud",
+        "Näidisseadus loodud": "Loodud sinuga vastutajana",
+    }
 
 
 @pytest.mark.django_db
-def test_entries_found_before_recording_began_are_shown_as_at_least(client, me, monkeypatch):
-    today = timezone.localdate()
-    _recorded_since(monkeypatch, today.replace(day=1))
-    old = _month_start(today, 5)
-    matter = factories.MatterFactory(owner=me, title="Näidisseadus vana")
-    factories.EntryFactory(matter=matter, author=me, occurred_at=_at(old.replace(day=8)))
-    client.force_login(me)
-
-    response = client.get(reverse("matters:my_statistics"))
-
-    found = _cells(response, "entries")[old]
-    assert (found.coverage, found.text) == (AL, "vähemalt 1")
-    assert "vähemalt 1" in response.content.decode()
-
-
-@pytest.mark.django_db
-def test_a_reassignment_in_the_trail_credits_the_earlier_owner(
+def test_open_teemad_at_a_past_periods_end_are_rebuilt_from_the_trail(
     client, me, colleague, recorded_long_ago
 ):
     today = timezone.localdate()
@@ -790,28 +1004,307 @@ def test_a_reassignment_in_the_trail_credits_the_earlier_owner(
     )
     ChangeEvent.objects.filter(matter=matter).update(occurred_at=_at(start))
     Matter.all_objects.filter(pk=matter.pk).update(created_at=_at(start))
-    # The accounts existed before the hand-over a name-only event records.
     User.objects.filter(pk__in=[me.pk, colleague.pk]).update(created_at=_at(start))
     _assigned(matter, today.replace(day=1), "Mina Näidis", "Kolleeg Näidis")
     client.force_login(me)
 
-    owned_cells = _cells(client.get(reverse("matters:my_statistics")), "owned")
+    last_month = _month(client, _month_start(today, 1), naitaja="menetluses")
+    this_month = _month(client, today.replace(day=1))
 
-    last = owned_cells[_month_start(today, 1)]
-    assert (last.coverage, last.value) == (V, 1)  # mine at the end of last month
-    assert owned_cells[today.replace(day=1)].value == 0  # handed over this month
+    assert _cell(last_month, "menetluses") == ms.Cell(V, 1)
+    assert [row.title for row in last_month.context["stats"].drill.rows] == ["Näidisseadus antud"]
+    assert _cell(this_month, "menetluses") == ms.Cell(V, 0)
+    # One fewer than at the end of the comparison span.
+    assert _card(this_month, "menetluses").delta == -1
 
 
 @pytest.mark.django_db
-def test_a_renamed_lawyer_keeps_the_history_written_with_ids(
-    client, me, colleague, recorded_long_ago
+def test_present_state_figures_equal_minu_asjad_today(client, me):
+    from app.matters.my_work import build_my_work
+
+    today = timezone.localdate()
+    matter = factories.MatterFactory(owner=me, title="Näidisseadus hiljaks")
+    factories.NextActionFactory(
+        matter=matter, responsible=me, target_date=today - dt.timedelta(days=3)
+    )
+    client.force_login(me)
+
+    response = _page(client, naitaja="ule-tahtaja")
+    work = build_my_work(me, today)
+
+    overdue = _card(response, "ule-tahtaja")
+    assert overdue.cell == ms.Cell(V, work.overdue) and work.overdue >= 1
+    assert overdue.tone == "danger"
+    attention = next(chip for chip in work.portfolio.chips if chip.key == "sekkumist")
+    assert _cell(response, "sekkumist").value == attention.count
+    assert [row.title for row in response.context["stats"].drill.rows] == ["Näidisseadus hiljaks"]
+    assert response.context["stats"].columns == []
+
+
+@pytest.mark.django_db
+def test_present_state_figures_in_a_past_period_are_unknown_never_invented(client, me):
+    today = timezone.localdate()
+    matter = factories.MatterFactory(owner=me, title="Näidisseadus hiljaks")
+    factories.NextActionFactory(
+        matter=matter, responsible=me, target_date=today - dt.timedelta(days=3)
+    )
+    client.force_login(me)
+
+    response = _month(client, _month_start(today, 1), naitaja="ule-tahtaja")
+
+    for key in ("ule-tahtaja", "sekkumist"):
+        card = _card(response, key)
+        assert (card.cell.coverage, card.cell.text, card.hint) == (U, "—", "ainult täna")
+        assert card.hint_help == ms.ONLY_TODAY
+    assert response.context["stats"].drill.rows == []
+    assert ms.ONLY_TODAY in response.content.decode()
+
+
+# -- deltas and coverage -------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_a_figure_is_compared_with_the_previous_equal_period(client, me, recorded_long_ago):
+    today = timezone.localdate()
+    last, before = _month_start(today, 1), _month_start(today, 2)
+    matter = factories.MatterFactory(owner=me, title="Näidisseadus võrdlus")
+    for day in (last.replace(day=2), last.replace(day=3), last.replace(day=4)):
+        factories.EntryFactory(matter=matter, author=me, occurred_at=_at(day))
+    factories.EntryFactory(matter=matter, author=me, occurred_at=_at(before.replace(day=2)))
+    client.force_login(me)
+
+    response = _month(client, last)
+    card = _card(response, "sissekanded")
+
+    assert (card.cell.value, card.delta, card.arrow, card.change) == (3, 2, "↑", 2)
+    assert "↑ 2 võrreldes eelmise kuuga" in response.content.decode()
+    flat = _card(response, "lopetatud")
+    assert (flat.delta, flat.arrow) == (0, "→")
+
+
+@pytest.mark.django_db
+def test_no_comparison_is_made_against_a_lower_bound(client, me, monkeypatch):
+    today = timezone.localdate()
+    began = _month_start(today, 1).replace(day=10)
+    _recorded_since(monkeypatch, began)
+    matter = factories.MatterFactory(owner=me, title="Näidisseadus algus")
+    factories.EntryFactory(matter=matter, author=me, occurred_at=_at(began))
+    client.force_login(me)
+
+    response = _month(client, today.replace(day=1))
+
+    assert _card(response, "sissekanded").delta is None
+
+
+@pytest.mark.django_db
+def test_a_period_recording_began_inside_reads_at_least_with_an_osaline_hint(
+    client, me, monkeypatch
 ):
     today = timezone.localdate()
-    start = _month_start(today, 3)
-    matter = factories.MatterFactory(
-        owner=colleague, title="Näidisseadus nimi", received_date=start
+    month_start = _month_start(today, 2)
+    began = month_start.replace(day=14)
+    _recorded_since(monkeypatch, began)
+    matter = factories.MatterFactory(owner=me, title="Näidisseadus osaline")
+    factories.EntryFactory(matter=matter, author=me, occurred_at=_at(began + dt.timedelta(days=3)))
+    client.force_login(me)
+
+    response = _month(client, month_start)
+    card = _card(response, "sissekanded")
+    body = response.content.decode()
+
+    assert (card.cell.coverage, card.cell.text, card.hint) == (P, "≥ 1", "osaline")
+    assert f"alates {began:%d.%m.%Y}" in card.hint_help
+    assert "≥ 1" in body and "osaline" in body
+    # Inside coverage the same figure is a plain count, and a 0 is a 0.
+    assert _cell(_month(client, _month_start(today, 1)), "sissekanded") == ms.Cell(V, 0)
+
+
+@pytest.mark.django_db
+def test_a_period_before_recording_reads_a_dash_or_at_least_never_zero(client, me, monkeypatch):
+    today = timezone.localdate()
+    _recorded_since(monkeypatch, today.replace(day=1))
+    old = _month_start(today, 5)
+    matter = factories.MatterFactory(owner=me, title="Näidisseadus vana")
+    factories.EntryFactory(matter=matter, author=me, occurred_at=_at(old.replace(day=8)))
+    client.force_login(me)
+
+    found = _cell(_month(client, old), "sissekanded")
+    empty = _cell(_month(client, _month_start(today, 4)), "sissekanded")
+
+    assert (found.coverage, found.text) == (AL, "≥ 1")
+    assert (empty.coverage, empty.text) == (U, "—")
+
+
+@pytest.mark.django_db
+def test_months_after_the_migration_but_before_reliable_coverage_are_never_a_zero(
+    client, me, colleague, monkeypatch
+):
+    today = timezone.localdate()
+    possible = _month_start(today, 6)
+    reliable = _month_start(today, 2)
+    _recorded_since(monkeypatch, possible, reliable=False)
+    theirs = factories.MatterFactory(owner=colleague, title="Näidisseadus kolleegi")
+    _event(theirs, ChangeEventType.ENTRY_ADDED, reliable, actor=colleague)
+    mine = factories.MatterFactory(owner=me, title="Näidisseadus minu vana")
+    factories.EntryFactory(matter=mine, author=me, occurred_at=_at(_month_start(today, 4)))
+    client.force_login(me)
+
+    def entries(back: int) -> ms.Cell:
+        return _cell(_month(client, _month_start(today, back)), "sissekanded")
+
+    assert (entries(4).coverage, entries(4).text) == (AL, "≥ 1")
+    assert (entries(3).coverage, entries(3).text) == (U, "—")
+    assert entries(1) == ms.Cell(V, 0)
+    assert entries(2).coverage == V
+    # A figure nobody has ever recorded in Juristid has no reliable start at all.
+    closed = _card(_month(client, _month_start(today, 1)), "lopetatud")
+    assert (closed.cell.coverage, closed.hint) == (U, "osaline")
+    assert "ei saa veel kindlaks teha" in closed.hint_help
+
+
+# -- the chart and the records behind it -----------------------------------------
+
+
+@pytest.mark.django_db
+def test_the_chart_is_the_selected_figure_by_day_with_the_future_left_empty(
+    client, me, recorded_long_ago
+):
+    today = timezone.localdate()
+    monday = today - dt.timedelta(days=today.weekday())
+    matter = factories.MatterFactory(owner=me, title="Näidisseadus joonis")
+    factories.EntryFactory(matter=matter, author=me, occurred_at=_at(monday))
+    factories.EntryFactory(matter=matter, author=me, occurred_at=_at(monday))
+    client.force_login(me)
+
+    stats = _page(client, naitaja="sissekanded").context["stats"]
+
+    assert stats.selected.key == "sissekanded"
+    assert [column.label for column in stats.columns] == ["E", "T", "K", "N", "R", "L", "P"]
+    assert stats.columns[0].text == "2" and stats.columns[0].height == 100.0
+    future = [column for column in stats.columns if column.future]
+    assert len(future) == 6 - today.weekday()
+    assert all(column.text == "" and column.height == 0 for column in future)
+
+
+@pytest.mark.django_db
+def test_the_records_behind_a_figure_link_to_their_teemad_and_are_capped(
+    client, me, recorded_long_ago
+):
+    today = timezone.localdate()
+    matter = factories.MatterFactory(owner=me, title="Näidisseadus palju")
+    for _ in range(ms.DRILL_LIMIT + 3):
+        factories.EntryFactory(matter=matter, author=me, occurred_at=_at(today))
+    client.force_login(me)
+
+    capped = _page(client, naitaja="sissekanded")
+    drill = capped.context["stats"].drill
+    everything = client.get(drill.more_url).context["stats"].drill
+
+    assert (len(drill.rows), drill.total) == (ms.DRILL_LIMIT, ms.DRILL_LIMIT + 3)
+    assert "kaik=1" in drill.more_url and "naitaja=sissekanded" in drill.more_url
+    assert f"Näita kõiki ({ms.DRILL_LIMIT + 3})" in capped.content.decode()
+    assert len(everything.rows) == ms.DRILL_LIMIT + 3 and everything.more_url == ""
+    assert drill.rows[0].url == reverse("matters:matter_detail", args=[matter.pk])
+    assert f'href="{drill.rows[0].url}"' in capped.content.decode()
+
+
+@pytest.mark.django_db
+def test_an_unknown_figure_key_falls_back_to_the_default(client, me):
+    client.force_login(me)
+
+    assert _page(client, naitaja="kellegi-teise").context["stats"].selected.key == "saadetud"
+
+
+# -- incoming monitoring -----------------------------------------------------------
+
+
+def _finding(matter, day, title="Näidisdokument", **extra):
+    from app.register_watch.models import TargetOrigin, WatchFinding, WatchSource, WatchTarget
+
+    target, _ = WatchTarget.objects.get_or_create(
+        matter=matter,
+        source=WatchSource.ADR_MKM,
+        identifier=f"näidis-{matter.pk}",
+        defaults={"origin": TargetOrigin.PHRASE},
     )
-    Matter.all_objects.filter(pk=matter.pk).update(created_at=_at(start))
+    finding = WatchFinding.objects.create(
+        target=target,
+        matter=matter,
+        external_id=f"{title}-{day}",
+        title=title,
+        url="https://example.invalid/dokument",
+        **extra,
+    )
+    WatchFinding.objects.filter(pk=finding.pk).update(created_at=_at(day))
+    return finding
+
+
+def _watch_run(day):
+    """A nightly run on ``day``, after a first one long ago (the source's coverage start)."""
+    from app.register_watch.models import WatchRun
+
+    if not WatchRun.objects.filter(started_at__lt=_at(dt.date(2021, 1, 1))).exists():
+        WatchRun.objects.create(
+            started_at=_at(dt.date(2020, 1, 1), 1), finished_at=_at(dt.date(2020, 1, 1), 2)
+        )
+    return WatchRun.objects.create(started_at=_at(day, 1), finished_at=_at(day, 2))
+
+
+@pytest.mark.django_db
+def test_register_documents_on_my_teemad_are_counted_and_link_to_their_source(
+    client, me, colleague
+):
+    today = timezone.localdate()
+    mine = factories.MatterFactory(owner=me, title="Näidisseadus minu")
+    theirs = factories.MatterFactory(owner=colleague, title="Näidisseadus kolleegi")
+    _finding(mine, today, "Minu dokument")
+    _finding(mine, today, "Varasem dokument", status="BASELINE")
+    _finding(theirs, today, "Teise dokument")
+    _watch_run(today)
+    client.force_login(me)
+
+    response = _page(client, naitaja="registrid")
+
+    assert _cell(response, "registrid") == ms.Cell(V, 1)
+    rows = response.context["stats"].drill.rows
+    assert [(row.title, row.what) for row in rows] == [("Näidisseadus minu", "Minu dokument")]
+    assert rows[0].source_url == "https://example.invalid/dokument"
+    assert "Allikas ↗" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_an_incoming_source_that_was_not_read_in_the_period_reads_a_dash(client, me):
+    factories.MatterFactory(owner=me, title="Näidisseadus minu")
+    client.force_login(me)
+
+    card = _card(_page(client), "registrid")
+
+    assert (card.cell.text, card.hint, card.hint_help) == ("—", "lugemata", ms.NOT_READ)
+    assert card.delta is None
+
+
+@pytest.mark.django_db
+def test_a_source_first_read_inside_the_period_is_marked_partial(client, me):
+    from app.register_watch.models import WatchRun
+
+    today = timezone.localdate()
+    mine = factories.MatterFactory(owner=me, title="Näidisseadus minu")
+    _finding(mine, today)
+    WatchRun.objects.create(started_at=_at(today, 1), finished_at=_at(today, 2))
+    client.force_login(me)
+
+    card = _card(_page(client, periood="aasta"), "registrid")
+
+    assert (card.cell.text, card.hint) == ("≥ 1", "osaline")
+    assert f"alates {today:%d.%m.%Y}" in card.hint_help
+
+
+@pytest.mark.django_db
+def test_an_incoming_item_goes_to_the_owner_on_its_day(client, me, colleague, recorded_long_ago):
+    today = timezone.localdate()
+    earlier = _month_start(today, 1).replace(day=5)
+    matter = factories.MatterFactory(owner=colleague, title="Näidisseadus üle antud")
+    Matter.all_objects.filter(pk=matter.pk).update(created_at=_at(_month_start(today, 3)))
     _assigned(
         matter,
         today.replace(day=1),
@@ -820,67 +1313,134 @@ def test_a_renamed_lawyer_keeps_the_history_written_with_ids(
         previous_owner_id=str(me.pk),
         new_owner_id=str(colleague.pk),
     )
-    me.display_name = "Mina Uusnimi"
-    me.save(update_fields=["display_name"])
+    _finding(matter, earlier)
+    _watch_run(earlier)
     client.force_login(me)
 
-    owned_cells = _cells(client.get(reverse("matters:my_statistics")), "owned")
-
-    assert owned_cells[_month_start(today, 1)].value == 1
+    assert _cell(_month(client, _month_start(today, 1)), "registrid") == ms.Cell(V, 1)
+    client.force_login(colleague)
+    assert _cell(_month(client, _month_start(today, 1)), "registrid") == ms.Cell(V, 0)
 
 
 @pytest.mark.django_db
-def test_a_renamed_lawyers_old_name_only_event_reads_unknown_not_someone_elses(
-    client, me, colleague, recorded_long_ago
-):
-    today = timezone.localdate()
-    start = _month_start(today, 3)
-    matter = factories.MatterFactory(
-        owner=colleague, title="Näidisseadus vana nimi", received_date=start
+def test_the_riigikogu_figures_say_when_monitoring_is_switched_off(client, me, settings):
+    settings.RIIGIKOGU_MONITORING = False
+    client.force_login(me)
+
+    response = _page(client, naitaja="kutsed")
+
+    for key in ("kutsed", "arutelud", "mainimised"):
+        card = _card(response, key)
+        assert card.off == "Riigikogu jälgimine ei ole sisse lülitatud"
+        assert card.cell.value is None
+    assert "Riigikogu jälgimine ei ole sisse lülitatud" in response.content.decode()
+    assert response.context["stats"].columns == []
+
+
+@pytest.mark.django_db
+def test_riigikogu_invitations_sittings_and_mentions_on_my_bills(client, me, colleague, settings):
+    import uuid as uuid_module
+
+    from app.register_watch.models import TargetOrigin, WatchSource, WatchTarget
+    from app.riigikogu.enums import RunStatus, Stage
+    from app.riigikogu.models import (
+        Bill,
+        CommitteeAgendaItem,
+        Invitation,
+        ParliamentDocument,
+        StageRun,
+        StenogramMention,
     )
-    Matter.all_objects.filter(pk=matter.pk).update(created_at=_at(start))
-    User.objects.filter(pk__in=[me.pk, colleague.pk]).update(created_at=_at(start))
-    _assigned(matter, today.replace(day=1), "Mina Näidis", "Kolleeg Näidis")
-    me.display_name = "Mina Uusnimi"
-    me.save(update_fields=["display_name"])
-    # A newcomer now carries the old name; the old event is not theirs.
-    newcomer = factories.UserFactory(display_name="Mina Näidis")
-    client.force_login(newcomer)
-    theirs = _cells(client.get(reverse("matters:my_statistics")), "owned")
-    client.force_login(me)
-    mine = _cells(client.get(reverse("matters:my_statistics")), "owned")
 
-    assert theirs[_month_start(today, 1)].coverage == U
-    assert mine[_month_start(today, 1)].coverage == U
-
-
-@pytest.mark.django_db
-def test_a_closed_and_reopened_teema_on_the_page(client, me, recorded_long_ago):
+    settings.RIIGIKOGU_MONITORING = True
     today = timezone.localdate()
-    start = _month_start(today, 4)
-    matter = factories.MatterFactory(owner=me, title="Näidisseadus taasavatud", received_date=start)
-    Matter.all_objects.filter(pk=matter.pk).update(created_at=_at(start))
-    for back, kind in ((3, ChangeEventType.MATTER_CLOSED), (1, ChangeEventType.MATTER_REOPENED)):
-        ChangeEvent.objects.create(
+    now = _at(today)
+    bill = Bill.objects.create(
+        uuid=uuid_module.uuid4(), mark=987, type_code="SE", url="https://example.invalid/eelnou"
+    )
+    other = Bill.objects.create(uuid=uuid_module.uuid4(), mark=988, type_code="SE")
+    mine = factories.MatterFactory(owner=me, title="Näidisseadus eelnõu")
+    theirs = factories.MatterFactory(owner=colleague, title="Näidisseadus teise eelnõu")
+    for matter, tied in ((mine, bill), (theirs, other)):
+        WatchTarget.objects.create(
             matter=matter,
-            event_type=kind,
-            occurred_at=_at(_month_start(today, back).replace(day=5)),
-            actor=me,
-            object_type="matters.matter",
-            object_id=matter.pk,
-            payload={},
+            source=WatchSource.RIIGIKOGU,
+            identifier=str(tied.uuid),
+            origin=TargetOrigin.LINKED,
+        )
+    for tied in (bill, other):
+        document = ParliamentDocument.objects.create(
+            uuid=uuid_module.uuid4(),
+            kind="INVITATION",
+            title="Kutse",
+            bill=tied,
+            url="https://example.invalid/kiri",
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+        Invitation.objects.create(document=document, committee="Majanduskomisjon")
+        CommitteeAgendaItem.objects.create(
+            uuid=uuid_module.uuid4(),
+            committee="Majanduskomisjon",
+            sitting_at=now,
+            title="Eelnõu arutelu",
+            bill=tied,
+            first_seen_at=now,
+            last_seen_at=now,
+        )
+        StenogramMention.objects.create(
+            key=f"näidis-{tied.mark}",
+            sitting_on=today,
+            quote="Kaubanduskoda on öelnud …",
+            category="LEGISLATIVE",
+            bill=tied,
+        )
+    for stage in (Stage.INVITATIONS, Stage.AGENDAS, Stage.STENOGRAMS):
+        StageRun.objects.create(
+            cycle=uuid_module.uuid4(),
+            stage=stage,
+            status=RunStatus.SUCCEEDED,
+            started_at=now,
+            finished_at=now,
+            window_start=dt.date(2020, 1, 1),
+            window_end=today,
         )
     client.force_login(me)
 
-    owned_cells = _cells(client.get(reverse("matters:my_statistics")), "owned")
+    response = _page(client, naitaja="kutsed")
 
-    assert [owned_cells[_month_start(today, back)].value for back in (4, 3, 2, 1, 0)] == [
-        1,
-        0,
-        0,
-        1,
-        1,
-    ]
+    for key in ("kutsed", "arutelud", "mainimised"):
+        assert _cell(response, key) == ms.Cell(V, 1), key
+    rows = response.context["stats"].drill.rows
+    assert [row.title for row in rows] == ["Näidisseadus eelnõu"]
+    assert rows[0].source_url == "https://example.invalid/kiri"
+    assert rows[0].what.startswith("987 SE")
+
+
+@pytest.mark.django_db
+def test_government_agenda_items_tied_to_my_teemad(client, me, colleague):
+    from app.register_watch.models import AgendaItem, GovernmentAgenda
+
+    today = timezone.localdate()
+    agenda = GovernmentAgenda.objects.create(
+        url="https://example.invalid/paevakord", title="Päevakord", session_date=today
+    )
+    mine = factories.MatterFactory(owner=me, title="Näidisseadus valitsus")
+    theirs = factories.MatterFactory(owner=colleague, title="Näidisseadus teise valitsus")
+    AgendaItem.objects.create(agenda=agenda, number=1, title="Eelnõu", related_matter=mine)
+    AgendaItem.objects.create(agenda=agenda, number=2, title="Teine", related_matter=theirs)
+    client.force_login(me)
+
+    response = _page(client, naitaja="valitsus")
+
+    assert _cell(response, "valitsus") == ms.Cell(V, 1)
+    assert response.context["stats"].drill.rows[0].source_url == "https://example.invalid/paevakord"
+    # A week with no stored agenda was not read: «—», not 0.
+    before = _month(client, _month_start(today, 6))
+    assert _cell(before, "valitsus").text == "—"
+
+
+# -- bounds and privacy ------------------------------------------------------------
 
 
 @pytest.mark.django_db
@@ -898,6 +1458,7 @@ def test_the_page_reads_a_bounded_number_of_queries(client, me, colleague):
         matter = factories.MatterFactory(owner=me, title=f"Näidisseadus {number}")
         _assigned(matter, timezone.localdate(), "Kolleeg Näidis", "Mina Näidis")
         factories.EntryFactory(matter=matter, author=me)
+        _finding(matter, timezone.localdate())
     large = count()
 
     assert large == small, (small, large)
@@ -910,13 +1471,12 @@ def test_no_other_persons_name_is_rendered(client, me, colleague):
     _assigned(matter, timezone.localdate(), "Mina Näidis", "Kolleeg Näidis")
     client.force_login(me)
 
-    body = client.get(reverse("matters:my_statistics")).content.decode()
+    body = _page(client, naitaja="uued").content.decode()
 
     assert "Kolleeg Näidis" not in body
     assert str(uuid.UUID(str(colleague.pk))) not in body
 
 
-# ---------------------------------------------------------------------------
 # assign_matter: every hand-over stores both owners' ids beside their names
 # ---------------------------------------------------------------------------
 
@@ -1051,72 +1611,3 @@ def test_reliable_coverage_starts_at_the_first_activity_a_person_recorded(me, co
     # Never earlier than the day recording became possible.
     later = ms.reliable_since(me, dict.fromkeys(ms.RECORDED_BY, dt.date(2026, 5, 20)))
     assert later["entries"] == dt.date(2026, 5, 20)
-
-
-@pytest.mark.django_db
-def test_months_after_the_migration_but_before_reliable_coverage_are_never_a_zero(
-    client, me, colleague, monkeypatch
-):
-    today = timezone.localdate()
-    possible = _month_start(today, 6)
-    reliable = _month_start(today, 2)
-    # The migration made entries recordable six months ago ...
-    _recorded_since(monkeypatch, possible, reliable=False)
-    # ... but nobody recorded an entry in Juristid until two months ago.
-    theirs = factories.MatterFactory(owner=colleague, title="Näidisseadus kolleegi")
-    _event(theirs, ChangeEventType.ENTRY_ADDED, reliable, actor=colleague)
-    # My entry dated four months ago (written up later, or imported).
-    mine = factories.MatterFactory(owner=me, title="Näidisseadus minu vana")
-    factories.EntryFactory(matter=mine, author=me, occurred_at=_at(_month_start(today, 4)))
-    client.force_login(me)
-
-    response = client.get(reverse("matters:my_statistics"))
-    entries = _cells(response, "entries")
-    body = response.content.decode()
-
-    # After the migration, before reliable coverage, with a record: a lower bound.
-    assert (entries[_month_start(today, 4)].coverage, entries[_month_start(today, 4)].text) == (
-        AL,
-        "vähemalt 1",
-    )
-    # The same stretch without records: missing data, not 0.
-    assert (entries[_month_start(today, 3)].coverage, entries[_month_start(today, 3)].text) == (
-        U,
-        "andmed puuduvad",
-    )
-    assert entries[_month_start(today, 5)].coverage == U
-    # Inside established coverage, no records: a real zero.
-    assert (entries[_month_start(today, 1)].coverage, entries[_month_start(today, 1)].text) == (
-        V,
-        "0",
-    )
-    assert entries[reliable].coverage == V
-    # A figure nobody has ever recorded in Juristid has no reliable start at all.
-    closed = _cells(response, "closed")
-    assert {c.coverage for c in closed.values()} == {U}
-    assert "vähemalt 1" in body
-    assert f"kasutusel alates {reliable:%d.%m.%Y}" in body
-    assert "kasutuselevõttu ei saa kindlaks teha" in body
-    assert "usaldusv" not in body
-    assert (
-        "Arvud loevad Juristidesse salvestatud tegevusi, mitte kogu tööd, "
-        "mida sa tegelikult tegid." in body
-    )
-
-
-@pytest.mark.django_db
-def test_the_coverage_boundaries_do_not_open_anybody_elses_page(client, me, colleague):
-    """Self only, still: the boundary is a day, read as the reader; no parameter
-    selects another person's figures or boundaries."""
-    matter = factories.MatterFactory(owner=colleague, title="Näidisseadus kolleegi oma")
-    _event(matter, ChangeEventType.ENTRY_ADDED, timezone.localdate(), actor=colleague)
-    factories.EntryFactory(matter=matter, author=colleague)
-    client.force_login(me)
-
-    plain = client.get(reverse("matters:my_statistics")).context["stats"]
-    asked = client.get(reverse("matters:my_statistics"), {"kasutaja": str(colleague.pk)})
-
-    assert asked.context["stats"] == plain
-    assert all((c.value or 0) == 0 for r in plain.rows for c in r.cells)
-    assert "Kolleeg Näidis" not in asked.content.decode()
-    assert client.get(f"/minu-asjad/statistika/{colleague.pk}/").status_code == 404

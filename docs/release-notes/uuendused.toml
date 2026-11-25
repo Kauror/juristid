@@ -23,6 +23,7 @@ changes = [
   "Menetluse kulus sulgeb Esc nüüd ka selle etapi hüpiku, mis avanes hiirega etapile peatudes, ning suletud hüpik ei avane enam iseenesest uuesti.",
   "Halduse vasakpoolne menüü on nüüd nähtaval kõigil Halduse lehtedel, ka Isiklikud seaded → Teavitused, Kiirklahvid, Arendusseis, Arvamuste arhiiv, Andmekvaliteet, Ajaloolised materjalid, Statistika definitsioonid, uue kasutaja lisamine ja halduri sisselogimine.",
   "Kutsete loendis ei ole enam ridu «Tähtaeg tuvastatud» ja «Koja arvamus registris» ega selgitusi öise lugemise ja registri kohta; alles on see, mis vajab tähelepanu, näiteks «Tähtaeg vajab kontrollimist».",
+  "«Minu statistika» on uues kujus: vali nädal, kuu, kvartal, aasta või oma periood ning liigu noolega eelmisele. Kaartidel on sinu saadetud arvamused, uued, lõpetatud ja ilma arvamuseta lõpetatud teemad, sissekanded, menetluses olevad, tähtaja ületanud ja sekkumist vajavad teemad koos muutusega eelmise perioodi suhtes; «Sissetulev seire» näitab, mida registrite, Riigikogu ja valitsuse päevakorra jälgimine sinu teemadele tõi. Kaardil klõpsates näed joonist päevade kaupa ja kirjeid, millest arv koosneb. Kui Juristid ei ole tegevust kogu perioodi jooksul salvestanud, on arvu ees «≥» või kriips, mitte 0.",
 ]
 
 # r93 — ühendatud väljalase (25.11.2026 koordinaatori otsus): parendusprogramm (#721: A1 #711, A2 #712,

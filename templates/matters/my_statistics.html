@@ -2,14 +2,23 @@
 {% block title %}Minu statistika · {{ application_name }}{% endblock %}
 
 {% comment %}
-Minu statistika (FUNC-003, docs/adr/0223): the signed-in person's own figures,
-reached from Minu asjad. Nobody else's figure is read or shown, and nothing is
-ranked or compared. Every figure names how it is credited — the owner now, the
-person who did it, or the owner at the time — and a month that cannot be
-credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
+Minu statistika (FUNC-003, docs/adr/0223 §11): the signed-in person's own
+figures for one period. Top to bottom: the period bar, «Minu töö» and
+«Sissetulev seire» as figure cards, the selected card by day, week or month,
+and the records behind it. Nobody else's figure is read or shown.
+
+Every piece of state is in the URL (`?periood=…&algus=…&naitaja=…`): a card,
+a period chip and ‹ › are links, so the page works without scripting and Back
+and refresh keep it. Each ⓘ is the Seis strip's explanation (`data-seishelp`,
+static/js/app.js `bindSeisHelp`), beside the card's link, never inside it.
+
+A value that is not the period's whole count reads «≥ N» or «—» with an
+«osaline» hint; a 0 is printed only inside reliable coverage
+(app/matters/my_statistics.py, `Cell`).
 {% endcomment %}
 
 {% block content %}
+{% with period=stats.period %}
 <div class="page mystats">
   <nav class="crumbs" aria-label="Asukoht">
     <a href="{% url 'matters:my_work' %}">← Minu asjad</a>
@@ -17,82 +26,140 @@ credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
 
   <div class="pagehead">
     <h1 class="pagehead__title">Minu statistika</h1>
-    <span class="pagehead__context">ainult sinu enda andmed</span>
   </div>
 
-  <p class="mystats__lead">
-    Siin on ainult sinu enda arvud; kellegi teise omi ei näidata ega võrrelda.
-    Statistika ja Minu asjade kokkuvõte loevad iga teema selle <b>praegusele vastutajale</b>.
-    Siin loetakse kuude kaupa <b>sinu tehtut</b> ja <b>vastutust tol ajal</b> —
-    seepärast võivad arvud neist erineda, ilma et kumbki oleks vale.
-    Arvud loevad Juristidesse salvestatud tegevusi, mitte kogu tööd, mida sa tegelikult tegid.
-  </p>
-
-  <section class="stattiles" aria-label="Praegu sinu vastutusel">
-    {% for figure in stats.current %}
-      <a class="stattile stattile--link" href="{{ figure.url }}">
-        <span class="stattile__label">{{ figure.label }}</span>
-        <span class="stattile__value">{{ figure.value }}</span>
-        <span class="stattile__delta">{{ figure.basis }}</span>
-      </a>
-    {% endfor %}
+  <section class="mystats__bar" aria-label="Periood">
+    <div class="mystats__kinds">
+      {% for key, label, url, active in stats.kinds %}
+        {% if key == "muu" %}
+          <details class="rangepicker">
+            <summary class="statchip{% if active %} is-active{% endif %}">{{ label }} ▾</summary>
+            <form class="rangepicker__menu statdash__custom" method="get" action="{{ request.path }}">
+              <input type="hidden" name="periood" value="muu">
+              <input type="hidden" name="naitaja" value="{{ stats.selected.key }}">
+              <label class="field__label" for="mystats-algus">Alates</label>
+              <input class="field__input" id="mystats-algus" type="date" name="algus" required
+                     min="{{ first_day|date:'Y-m-d' }}" max="{{ stats.today|date:'Y-m-d' }}"
+                     value="{{ period.start|date:'Y-m-d' }}">
+              <label class="field__label" for="mystats-kuni">Kuni</label>
+              <input class="field__input" id="mystats-kuni" type="date" name="kuni" required
+                     min="{{ first_day|date:'Y-m-d' }}" max="{{ stats.today|date:'Y-m-d' }}"
+                     value="{{ period.until|date:'Y-m-d' }}">
+              <button type="submit" class="button button--primary button--tiny">Rakenda</button>
+            </form>
+          </details>
+        {% else %}
+          <a class="statchip{% if active %} is-active{% endif %}"{% if active %} aria-current="true"{% endif %} href="{{ url }}">{{ label }}</a>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="mystats__step">
+      {% if stats.previous_url %}<a class="mystats__arrow" href="{{ stats.previous_url }}" aria-label="Eelmine periood" title="Eelmine periood">‹</a>{% else %}<span class="mystats__arrow is-disabled" aria-hidden="true">‹</span>{% endif %}
+      <span class="mystats__period">
+        <b class="mystats__periodlabel">{{ period.label }}</b>
+        <span class="mystats__range">{{ period.range_text }}</span>
+      </span>
+      {% if stats.next_url %}<a class="mystats__arrow" href="{{ stats.next_url }}" aria-label="Järgmine periood" title="Järgmine periood">›</a>{% else %}<span class="mystats__arrow is-disabled" aria-disabled="true" title="Järgmine periood pole veel alanud">›</span>{% endif %}
+    </div>
   </section>
 
-  <section class="statpanel" aria-labelledby="mystats-kuud">
+  {% for group in stats.groups %}
+    <section class="mystats__group" aria-labelledby="mystats-{{ group.key }}">
+      <h2 class="mystats__grouptitle" id="mystats-{{ group.key }}">{{ group.title }}</h2>
+      <div class="mystats__cards mystats__cards--{{ group.cards|length }}">
+        {% for card in group.cards %}
+          <div class="mystats__card{% if card.selected %} is-selected{% endif %}" data-figure="{{ card.key }}" data-coverage="{{ card.cell.coverage }}">
+            <a class="mystats__cardlink" href="{{ card.url }}#mystats-joonis"{% if card.selected %} aria-current="true"{% endif %}>
+              <span class="mystats__label">{{ card.figure.label }}</span>
+              {% if card.off %}
+                <span class="mystats__off">{{ card.off }}</span>
+              {% else %}
+                <span class="mystats__value{% if card.tone %} mystats__value--{{ card.tone }}{% endif %}" title="{{ card.cell.spoken }}">{{ card.cell.text }}</span>
+                <span class="mystats__delta" title="Võrdlus: {{ period.comparison.text }}">{% if card.delta is not None %}{{ card.arrow }} {{ card.change }} võrreldes {{ period.comparison_word }}{% endif %}</span>
+              {% endif %}
+            </a>
+            <span class="seis__item mystats__info" data-seishelp>
+              <button type="button" class="seis__info"
+                      aria-label="Selgitus: {{ card.figure.label }}"
+                      aria-describedby="mystats-selgitus-{{ card.key }}"
+                      aria-controls="mystats-selgitus-{{ card.key }}"
+                      aria-expanded="false">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="5" r="0.9" fill="currentColor"/><path d="M8 7.2v4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              </button>
+              <span class="seis__tip" role="tooltip" id="mystats-selgitus-{{ card.key }}">
+                <strong class="seis__tiptitle">{{ card.figure.label }}</strong>
+                <span class="seis__tippara">{{ card.figure.help }}</span>
+              </span>
+            </span>
+            {% if card.hint %}
+              <span class="seis__item mystats__hint" data-seishelp>
+                <button type="button" class="seis__info mystats__hintbutton"
+                        aria-describedby="mystats-osaline-{{ card.key }}"
+                        aria-controls="mystats-osaline-{{ card.key }}"
+                        aria-expanded="false">{{ card.hint }}</button>
+                <span class="seis__tip" role="tooltip" id="mystats-osaline-{{ card.key }}">
+                  <span class="seis__tippara">{{ card.hint_help }}</span>
+                </span>
+              </span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+  <section class="statpanel mystats__chart" aria-labelledby="mystats-joonis">
     <div class="statpanel__head">
-      <h2 class="statpanel__title" id="mystats-kuud">Kuude kaupa</h2>
-      <span class="statpanel__note">viimased {{ stats.rows|length }} kuud · jooksev kuu kuni {{ stats.today|date:"d.m.Y" }}; vastutus jooksval kuul: täna</span>
+      <h2 class="statpanel__title" id="mystats-joonis">{{ stats.selected.figure.label }}</h2>
+      <span class="statpanel__note">{{ period.label }} · {{ period.range_text }}{% if period.running %} · kuni täna{% endif %}</span>
     </div>
-    <div class="stattable__wrap">
-      <table class="stattable mystats__table">
-        <thead>
-          <tr>
-            <th scope="col">Kuu</th>
-            {% for column in stats.columns %}
-              <th scope="col" class="stattable__num">{{ column.label }}<span class="mystats__basis">{{ column.basis }}</span></th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in stats.rows %}
-            <tr>
-              <th scope="row">{{ row.month.label }}</th>
-              {% for cell in row.cells %}
-                <td class="stattable__num mystats__cell" data-coverage="{{ cell.coverage }}">{% if cell.coverage == "unknown" %}<span class="mystats__unknown">andmed puuduvad</span>{% else %}{{ cell.text }}{% endif %}{% if cell.note %}<span class="mystats__note">{{ cell.note }}</span>{% endif %}</td>
-              {% endfor %}
-            </tr>
+    {% if stats.columns %}
+      <div class="statcols mystats__cols" role="list">
+        {% for column in stats.columns %}
+          <span class="statcol{% if column.partial %} statcol--partial{% endif %}{% if column.future %} mystats__col--future{% endif %}" role="listitem" title="{{ column.title }}">
+            <span class="statcol__value">{{ column.text }}</span>
+            <span class="statcol__track">
+              {% if column.height %}
+                <span class="statcol__stack" style="height: {{ column.height|stringformat:'.2f' }}%">
+                  <span class="statcol__segment statcol__segment--whole statseries--0"></span>
+                </span>
+              {% endif %}
+            </span>
+            <span class="statcol__label mystats__collabel">{{ column.label }}{% if column.sublabel %}<span class="mystats__colsub">{{ column.sublabel }}</span>{% endif %}</span>
+            <span class="visually-hidden">{{ column.title }}</span>
+          </span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="statpanel__empty">{{ stats.chart_note }}</p>
+    {% endif %}
+
+    <div class="mystats__drill">
+      <h3 class="mystats__drilltitle">Kirjed{% if stats.drill.total %} <span class="statpanel__note">{{ stats.drill.total }}</span>{% endif %}</h3>
+      {% if stats.drill.rows %}
+        <ul class="mystats__list">
+          {% for row in stats.drill.rows %}
+            <li class="mystats__row">
+              {% if row.day %}<span class="mystats__rowdate">{{ row.day|date:"d.m.Y" }}</span>{% endif %}
+              <span class="mystats__rowmain">
+                <a href="{{ row.url }}">{% if row.reference %}<span class="mystats__ref">{{ row.reference }}</span> {% endif %}{{ row.title }}</a>
+                {% if row.what or row.detail or row.source_url %}
+                  <span class="mystats__rowmeta">{{ row.what }}{% if row.what and row.detail %} · {% endif %}{{ row.detail }}{% if row.source_url %} · <a class="quietlink" href="{{ row.source_url }}" rel="noopener noreferrer" target="_blank">Allikas ↗</a>{% endif %}</span>
+                {% endif %}
+              </span>
+            </li>
           {% endfor %}
-        </tbody>
-      </table>
+        </ul>
+        {% if stats.drill.more_url %}<a class="quietlink mystats__more" href="{{ stats.drill.more_url }}#mystats-joonis">Näita kõiki ({{ stats.drill.total }})</a>{% endif %}
+      {% elif stats.selected.off %}
+        <p class="statpanel__empty">{{ stats.selected.off }}.</p>
+      {% elif stats.selected.cell.coverage == "unknown" %}
+        <p class="statpanel__empty">Selle perioodi kohta andmeid ei ole.</p>
+      {% else %}
+        <p class="statpanel__empty">Sel perioodil kirjeid ei ole.</p>
+      {% endif %}
     </div>
-  </section>
-
-  <section class="statpanel" aria-labelledby="mystats-kuidas">
-    <div class="statpanel__head">
-      <h2 class="statpanel__title" id="mystats-kuidas">Kuidas arvestatakse</h2>
-    </div>
-    <dl class="mystats__rules">
-      <dt>Praegune vastutaja</dt>
-      <dd>Teema, mille vastutaja sa praegu oled. Samad arvud nagu Minu asjades, Statistikas ja Osakonnas.</dd>
-      <dt>Sinu tehtud</dt>
-      <dd>Kirje, mille tegijaks Juristid on salvestanud sinu: sissekande autor, teema lõpetaja, ülevaate avaldaja, kaasamise lisaja, arvamuse saatjaks märgitud inimene.</dd>
-      <dt>Vastutaja tol ajal</dt>
-      <dd>Teema vastutaja selle päeva lõpus, Juristide vastutaja muutmise ajaloo järgi. Hilisem vastutaja ei saa varasema töö eest arvet. Imporditud «välja saadetud» arvamus, millel saatjat pole, läheb saatmise päeva vastutajale.
-        «Vastutusel avatud teemasid kuu lõpus» on <b>taastatud vastutus</b>, mitte kinnitatud tollane töökoormus: teema loetakse siis, kui ajalugu näitab nii sinu vastutust kui ka seda, et teema oli avatud. Kuu viimasel päeval lõpetatud teema seda kuud enam ei koorma; taasavatud teema loetakse taasavamise päevast.</dd>
-      <dt>Kui palju on teada</dt>
-      <dd>
-        <span class="mystats__legend">arv</span> — salvestatud tegevuste arv kuul, mil selle tegevuse salvestamine oli Juristides juba kasutusel; 0 tähendab, et salvestatud tegevusi polnud, mitte et tööd ei tehtud.
-        <span class="mystats__legend">osaline</span> — salvestamine oli kasutusel ainult osa kuust (see algas kuu sees või kuu kestab); arv ei ole terve kuu arv.
-        <span class="mystats__legend">vähemalt</span> — leitud kirjed on päris, aga kuu jääb enne salvestamise kasutuselevõttu või mõnda kirjet ei saa kellelegi omistada.
-        <span class="mystats__legend">andmed puuduvad</span> — salvestatud andmeid pole; tühi tulemus ei tõenda nulli.
-      </dd>
-      <dt>Salvestatud alates</dt>
-      <dd>
-        {% for label, since, reliable in stats.recorded_since %}{{ label }}: {% if since %}võimalik alates {{ since|date:"d.m.Y" }}, {% if reliable %}kasutusel alates {{ reliable|date:"d.m.Y" }}{% else %}kasutuselevõttu ei saa kindlaks teha{% endif %}{% else %}ei ole salvestatud{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}.
-        «Võimalik alates» on päev, mil Juristid sai selliseid kirjeid esimest korda salvestada; see ei tõenda, et kõik tehtu ka salvestati.
-        «Kasutusel alates» on päev, mil keegi sellise tegevuse esimest korda Juristidesse salvestas. See näitab, et salvestamine oli kasutusel, mitte et kõik hilisem tehtu ka salvestati. Varasemad kuud näitavad «vähemalt N» või «andmed puuduvad», mitte 0.
-      </dd>
-    </dl>
   </section>
 </div>
+{% endwith %}
 {% endblock %}
