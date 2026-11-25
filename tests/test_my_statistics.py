@@ -942,10 +942,16 @@ def test_an_unassignment_stores_no_new_owner_id(me):
 
 @pytest.mark.django_db
 def test_a_hand_over_to_an_inactive_person_keeps_their_id(me):
+    """An inactive owner arrives only through an operation — a synchronised or
+    backfilled historical owner, which carries ``provenance``. A colleague cannot
+    hand current work to a switched-off account (`assign_matter`,
+    ASSIGNMENT_RECIPIENT_NOT_ASSIGNABLE on the assignment-integrity branch)."""
     gone = factories.UserFactory(display_name="Lahkunud Näidis", is_active=False)
     matter = factories.MatterFactory(owner=me, title="Näidisseadus lahkunu")
 
-    assign_matter(matter=matter, owner=gone, actor=me)
+    assign_matter(
+        matter=matter, owner=gone, actor=None, provenance={"source": "synthetic-operation"}
+    )
     built = ms.load_ownership(me, timezone.localdate(), dt.date(2020, 1, 1))
 
     assert _last_assignment(matter)["new_owner_id"] == str(gone.pk)
