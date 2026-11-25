@@ -367,3 +367,29 @@ unchanged; no migration.
 
 This supersedes the 2026-11-23 note that the rail names an estimate's source
 and offers its ✕ under the date: both are kept, in the popover and in `Muuda`.
+
+## Amendment 2026-11-25 (coordinator review): `Lõpetatud` reads inside the phase it ended in
+
+A point that has happened, with nothing in its window to date it, reads just
+before the current phase, because the file may have reached that phase after
+the act. On a closed Teema that put `Lõpetatud` *before* the phase the file was
+closed in — Koda's work ending before the stage it ended on.
+
+A closure is the one act for which «reached the phase afterwards» cannot hold:
+a closed Matter stays in the period it was closed in, and its stage moves only
+through `Ava uuesti` (docs/adr/0131 §12; `change_stage` refuses a move on a
+closed row). So `matter_rail` places the closure milestone just **after** the
+current phase's node — after the dated points already read inside that phase,
+by date — rather than before it. No new rule is introduced; the order follows
+from the existing one.
+
+What does not change:
+
+* `Lõpetatud` is not the end of the rail. The end of Koda's work is not the end
+  of the proceedings: the procedure's later phases, a commencement folded onto
+  `Jõustumine`, and a deadline still ahead go on reading after it (as
+  docs/adr/0074 §12.4 already says of a deadline).
+* An explicit roadmap date on the current phase is still believed (rule 1 of
+  the 2026-09-27 amendment): a date later than the closure puts `Lõpetatud`
+  before that node.
+* An ARCHIVE row with no `closed_at` still draws no closure (no invented day).

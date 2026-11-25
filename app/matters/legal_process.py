@@ -105,6 +105,7 @@ from app.matters.process_phases import (
     phase_label,
 )
 from app.matters.process_timeline import (
+    PHASE_CLOSED,
     PHASE_EFFECTIVE,
     PHASE_TRANSPOSITION,
     STATE_AHEAD,
@@ -1208,6 +1209,25 @@ def matter_rail(
             beginning = _beginning_slot(steps, rail)
             default = current if beginning is None else max(current, beginning + 1)
             window = (0, high)
+            if milestone.phase == PHASE_CLOSED:
+                # **`Lõpetatud` reads inside the phase the file was closed in,
+                # after its node** (coordinator review 2026-11-25). The rule
+                # above puts a past point *before* the current phase because the
+                # file may have reached that phase after the act. A closure is
+                # the one act for which that cannot be so: a closed Matter stays
+                # in the period it was closed in and its stage moves only
+                # through `Ava uuesti` (docs/adr/0131 §12, `change_stage`). So
+                # the current phase had begun when Koda's work ended, and the
+                # closure follows its node — and the dated points already read
+                # inside it, by date. It is still not the end of the rail: the
+                # procedure's later phases and a deadline still ahead go on
+                # reading after it, because the end of Koda's work is not the
+                # end of the proceedings (docs/adr/0074 §12.4). An explicit
+                # roadmap date on the current phase later than the closure is
+                # still believed (docs/adr/0100, amendment of 2026-09-27,
+                # rule 1): the scan below then places it before that node.
+                window = (min(current, len(steps)), high)
+                default = min(current + 1, len(steps))
         else:
             # **A future point with no phase of its own belongs beside the
             # current one, not at the end of the road.**

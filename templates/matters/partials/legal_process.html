@@ -69,8 +69,16 @@ nothing at all.
         read against no pattern had no phases to hide — but the panel now also
         adds steps, and that is exactly what a file with no pattern, or with no
         phase ahead of it, cannot get any other way (docs/adr/0119 §1).
+
+        **Never on a closed file** (docs/adr/0119 §1: «a reader, and a closed
+        file, still get nothing»). The condition used to read `can_write and
+        legal_process or can_write and matter.is_open`, which offered `Muuda` on
+        a closed file that had a procedure — a panel whose every save the
+        service then refused. The refusal itself is not this line: it is
+        `lock_open_matter_for_business_write` inside `set_timeline_steps` and
+        `set_rail_step_date`, and the panel's GET answers a closed file 404.
       {% endcomment %}
-      {% if can_write and legal_process or can_write and matter.is_open %}
+      {% if can_write and matter.is_open %}
         <button type="button" class="button button--quiet button--tiny lprail__edit"
                 hx-get="{% url 'matters:timeline_steps' pk=matter.pk %}"
                 hx-target="#menetluse-kulg-muuda"
