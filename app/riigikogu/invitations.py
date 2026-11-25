@@ -507,6 +507,7 @@ def discover(
 
 
 ALREADY_DECIDED = "Selle kutse kohta on juba otsustatud."
+NOT_CONFIRMED = "Tähtaeg pole kinnitatud: vaata kutse lause üle ja kinnita tähtaeg enne lisamist."
 
 
 def _lock(invitation: Invitation) -> Invitation:
@@ -554,9 +555,7 @@ def add_as_date(invitation: Invitation, matter: Any, *, actor: Any) -> Any:
     locked = _lock(invitation)
     due = current_opinion_date(locked)
     if due is None or due.due_on is None or not due.verified:
-        raise DomainError(
-            "Tähtaeg pole kinnitatud: vaata kutse lause üle ja kinnita tähtaeg enne lisamist."
-        )
+        raise DomainError(NOT_CONFIRMED)
     bill = locked.document.bill
     tied = set(bills.teemad_of(bill).values_list("pk", flat=True)) if bill is not None else set()
     if matter.pk not in tied:

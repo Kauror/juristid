@@ -15,7 +15,6 @@ from django.test import override_settings
 from django.utils import timezone
 
 from app.core.enums import Visibility
-from app.core.errors import DomainError
 from app.register_watch.models import (
     CandidateNotice,
     RegisterNotice,
@@ -61,6 +60,7 @@ from app.riigikogu.models import (
     StenogramMention,
 )
 from tests import factories
+from tests.refusals import refused
 
 pytestmark = pytest.mark.django_db
 
@@ -377,7 +377,7 @@ def test_a_date_that_needs_checking_is_refused_until_a_person_confirms_it(api, s
     )
     discover()
     invitation = Invitation.objects.get()
-    with pytest.raises(DomainError):
+    with refused(invitations.NOT_CONFIRMED):
         invitations.add_as_date(invitation, matter, actor=specialist)
     invitations.confirm_date(invitation, actor=specialist, day=dt.date(2026, 11, 27))
     record = invitations.add_as_date(invitation, matter, actor=specialist)
@@ -391,7 +391,7 @@ def test_an_invitation_is_decided_once(api, specialist):
     discover()
     invitation = Invitation.objects.get()
     invitations.no_action(invitation, actor=specialist)
-    with pytest.raises(DomainError):
+    with refused(invitations.ALREADY_DECIDED):
         invitations.add_as_date(invitation, matter, actor=specialist)
 
 
@@ -433,7 +433,7 @@ def test_one_teema_may_follow_several_bills_and_a_second_link_is_refused(api, sp
     bills.link(matter, first, actor=specialist)
     bills.link(matter, second, actor=specialist)
     assert bills.linked_targets(matter).count() == 2
-    with pytest.raises(DomainError):
+    with refused(bills.ALREADY_LINKED):
         bills.link(matter, first, actor=specialist)
 
 
