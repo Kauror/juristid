@@ -12,7 +12,7 @@
 [[day]]
 date = 2026-11-26
 basis = "deployment"
-prs = [728]
+prs = [728, 729]
 changes = [
   "Halduse «Registrite jälgimine» Riigikogu tabelis on nüüd kirjas, kui Riigikogu keeldus mõne komisjoni protokolli näitamast (juurdepääs keelatud). Selline protokoll ei märgi enam kogu öist kontrolli osaliseks; teda küsitakse järgmisel ööl uuesti ja loetakse siis, kui see on avalik.",
   "Monitooring → Riigikogu: «Lisa tähtajana» kõrval on kuupäev, mis teemale lisatakse — vaikimisi kirjast loetud tähtaeg, kalendrist saab valida ka teise päeva. Kui tähtaeg vajab kontrollimist, vali kuupäev ise.",
