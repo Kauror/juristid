@@ -17,8 +17,13 @@ from django.utils import timezone
 from app.core import authorization
 from app.core.authorization import Scope
 from app.core.enums import Visibility
-from app.matters.services import add_entry
+from app.matters import legal_process, preview
+from app.matters.services import add_entry, change_stage
+from app.submissions.enums import SubmissionStatus
+from app.workflow.enums import Track
+from app.workflow.models import StageVocabulary
 from app.workflow.services import set_next_action_for_new_work
+from app.workflow.stage_flow import MONITORING_STOPPED
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -160,7 +165,7 @@ def narrowed(monkeypatch):
 
 
 def test_restricted_children_of_a_visible_teema_stay_out_of_the_preview(
-    client, specialist, other_specialist, narrowed
+    client, specialist, other_specialist, narrowed, capture_evidence
 ):
     """A step, a milestone and a note restricted below their Matter are not named."""
     matter = factories.MatterFactory(owner=specialist, title="Avalik näidisteema")
@@ -183,16 +188,46 @@ def test_restricted_children_of_a_visible_teema_stay_out_of_the_preview(
         visibility_override=Visibility.RESTRICTED,
     )
 
+    # A sent opinion is a «Viimased tegevused» source and prints its title; a
+    # document is not a source at all — neither may surface below the line.
+    restricted_file = capture_evidence(
+        matter,
+        b"%PDF-1.4 synthetic",
+        "piiratud.pdf",
+        "application/pdf",
+        title="Piiratud dokument",
+        visibility_override=Visibility.RESTRICTED,
+    )
+    public_file = capture_evidence(matter, b"%PDF-1.4 avalik", "avalik.pdf", "application/pdf")
+    factories.SubmissionFactory(
+        matter=matter,
+        title="Piiratud arvamus",
+        status=SubmissionStatus.SENT,
+        sent_at=timezone.now(),
+        final_version=restricted_file,
+        visibility_override=Visibility.RESTRICTED,
+    )
+    factories.SubmissionFactory(
+        matter=matter,
+        title="Avalik arvamus",
+        status=SubmissionStatus.SENT,
+        sent_at=timezone.now() - timedelta(hours=1),
+        final_version=public_file,
+    )
+
     client.force_login(specialist)
     owner_view = client.get(_url(matter)).content.decode()
-    assert "Piiratud samm" in owner_view and "Piiratud märge" in owner_view
+    assert "Piiratud samm" in owner_view and "Piiratud arvamus" in owner_view
 
     client.force_login(narrowed(other_specialist))
     response = client.get(_url(matter))
     assert response.status_code == 200
     body = response.content.decode()
     assert "Avalik märge" in body
+    assert "Avalik arvamus" in body
     assert "Piiratud märge" not in body
+    assert "Piiratud arvamus" not in body
+    assert "Piiratud dokument" not in body
     assert "Piiratud samm" not in body
     assert "Piiratud tähtaeg" not in body
 
@@ -215,6 +250,53 @@ def test_the_preview_costs_at_most_fifteen_queries(
     with django_assert_max_num_queries(15):
         response = client.get(_url(matter))
     assert response.status_code == 200
+
+
+def _stopped(owner):
+    """A Teema whose `Hetkeseis` became «Rohkem ei tegele» while the bill was in
+    the Riigikogu — the stage, not only the disposition."""
+    matter = _filed(owner, track=Track.DOMESTIC.value)
+    change_stage(matter=matter, stage=StageVocabulary.objects.get(key="parliament"), actor=owner)
+    change_stage(
+        matter=matter,
+        stage=StageVocabulary.objects.get(key=MONITORING_STOPPED),
+        actor=owner,
+        follow_ups_confirmed=True,
+    )
+    matter.refresh_from_db()
+    assert matter.stage.key == MONITORING_STOPPED
+    return matter
+
+
+def test_a_teema_koda_stopped_following_costs_no_more_than_any_other(
+    client, specialist, django_assert_max_num_queries
+):
+    """«Rohkem ei tegele» used to cost a 16th query: `phase_context` read the
+    period before it on its own. The preview reads it in the Matter's statement."""
+    matter = _stopped(specialist)
+    client.force_login(specialist)
+    client.get(_url(matter))
+
+    with django_assert_max_num_queries(15):
+        response = client.get(_url(matter))
+    assert response.status_code == 200
+
+
+def test_a_stopped_teema_stands_where_the_teema_page_rail_puts_it(specialist):
+    """The folded read gives the answer `phase_context`'s own read gives."""
+    matter = _stopped(specialist)
+    read = preview.preview_matter(specialist, matter.pk)
+    assert read is not None
+
+    label, phases = preview.procedure_strip(read)
+
+    reference = legal_process.phase_context(matter=matter)
+    assert reference.stage_key == "parliament"
+    assert label == reference.pattern.label
+    current = [phase.label for phase in phases if phase.state == "current"]
+    assert current == [
+        reference.pattern.nodes[reference.pattern.index_of_phase(reference.current_phase)].label
+    ]
 
 
 def test_every_register_row_offers_the_preview_without_prefetching_it(client, specialist):
