@@ -119,10 +119,20 @@ def _riigikogu_stages() -> list[dict[str, Any]]:
             {
                 "health": health,
                 "last": last,
-                "counts": ", ".join(f"{k} {v}" for k, v in (last.counts or {}).items())
+                # Numbers only; the refused protocols are named on their own line.
+                "counts": ", ".join(
+                    f"{k} {v}" for k, v in (last.counts or {}).items() if isinstance(v, int)
+                )
                 if last
                 else "",
                 "errors": len(last.errors or []) if last else 0,
+                "refused": [
+                    str(item.get("protokoll", ""))
+                    for item in (last.counts or {}).get("refused", [])
+                    if isinstance(item, dict)
+                ]
+                if last
+                else [],
             }
         )
     return rows

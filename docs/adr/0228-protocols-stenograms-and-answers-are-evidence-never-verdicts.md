@@ -40,6 +40,25 @@ attendance, a mention is not support, a missing public opinion is not a missed d
    descriptors; voting dashboards; EU monitoring (a separate programme); integration with
    the Riigikogu Chancellery's own assistant (no API verified; no outreach made).
 
+## Amendment 2026-11-25 (r94 candidate): a protocol the source refuses
+
+Production's first activation met a committee protocol whose metadata the Riigikogu API
+answers 403, and the PROTOCOLS stage read PARTIAL — as it would every night while the
+sitting stayed in the 21-day window. A refusal is now one document's state, told apart by
+the structured `FetchError.status` on the metadata or the file download, never by the
+message's text. It is counted (`protocols_refused`, apart from `protocols_unreadable`, a
+file the parsers could not read) and named in the stage's run record (`refused`: the id,
+where it was refused, the status and when); nothing is stored for it and no mention or
+participation is made from it; the other protocols are read; the stage stays SUCCEEDED
+and its checkpoint moves. Nothing infers that the refusal is permanent: the protocol is
+asked again the next night while its sitting is inside the window, and read the night it
+is public. Only a protocol actually read is skipped later — a stored protocol that is
+unread (no file, or an unreadable file) is checked again in the same window. Many
+refusals in one night (at least three, and at least half of the protocols asked) are the
+source's problem and keep the stage PARTIAL; a refusal of the events list itself still
+fails it. 429, time-outs, server errors, request budgets and the 90-minute cycle limit are
+unchanged. Haldus → Registrite jälgimine names the refused protocols under the stage.
+
 ## Consequences
 
 - The evidence a work-victory candidate needs (ADR 0227 §6) and the evidence that koda
