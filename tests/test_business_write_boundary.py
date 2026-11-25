@@ -1870,6 +1870,14 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # «Lisa teemale» / «Märgi loetuks» on a Government agenda item tied to a Teema
     # (ADR 0219, amendment 2026-11-22): `Menetluse areng` through `+ Märge`'s use case.
     "register_watch:agenda_decide": "A: gated; sibling of register_watch:decide",
+    # Monitooring → Riigikogu and the Teema's Riigikogu section (ADR 0222, 0223, 0226):
+    # gated by `business_write_required`; a Teema is written only through
+    # `add_important_date` (informational kinds) or a `WatchTarget` link on a Teema the
+    # person may see, and a reminder is the person's own (tests/test_riigikogu_views.py).
+    "register_watch:riigikogu_decide": "A: gated; sibling of register_watch:decide",
+    "register_watch:riigikogu_link": "A: gated; links a bill to a visible Teema",
+    "register_watch:riigikogu_unlink": "A: gated; ends a bill link on a visible Teema",
+    "register_watch:riigikogu_victory": "A: gated; proposes a work-victory candidate",
     # E — migration and reconciliation tooling, governed by their own explicit
     # administrator/reviewer checks rather than by business authorship.
     "legacy_import:opinion_archive_link": "E: archive reconciliation, reviewer-gated",

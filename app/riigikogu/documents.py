@@ -70,11 +70,15 @@ def read(raw: bytes, file_name: str) -> Text:
                 return Text(TextStatus.UNREADABLE, digest=digest(raw), why="tundmatu failitüüp")
             from app.documents.extraction import parsers  # noqa: F401  (registers the parsers)
             from app.documents.extraction.base import SourceFile, registry
+            from app.documents.extraction.limits import current_limits, guard_parse_result
 
             parser = registry.for_mime_type(mime)
             if parser is None:
                 return Text(TextStatus.UNREADABLE, digest=digest(raw), why="failitüüpi ei loeta")
             result = parser.parse(SourceFile(content=raw, filename=file_name, mime_type=mime))
+            # The postcondition `parse_source` applies to every parser's output;
+            # this path calls the parser directly, so it states it (ADR 0176).
+            guard_parse_result(result, current_limits())
             text = "\n".join(
                 fragment.text for payload in result.derivatives for fragment in payload.fragments
             )
