@@ -103,6 +103,75 @@ def test_trend_records_name_their_trend():
 
 
 # ---------------------------------------------------------------------------
+# A measured zero is a value; an unknown year is not (ADR 0214 §7, «Zero and unknown»)
+# ---------------------------------------------------------------------------
+
+
+def test_a_zero_day_median_holds_the_shortest_deadline_record_and_an_unknown_year_does_not():
+    # 2023: deadline on the day the topic arrived (0 days); 2024: 10 days;
+    # 2025: topics without a deadline — unknown, not zero.
+    a = topic(1, year=2023, received=dt.date(2023, 2, 1))
+    b = topic(2, year=2024, received=dt.date(2024, 2, 1))
+    c = topic(3, year=2025, received=dt.date(2025, 2, 1))
+    deadlines = {1: dt.date(2023, 2, 1), 2: dt.date(2024, 2, 11)}
+
+    found = _records([], [a, b, c], deadlines)
+
+    assert found["days"].value == "0 päeva"
+    assert [p.year for p in found["days"].periods] == [2023]
+
+
+def test_a_year_without_deadline_data_never_beats_a_measured_year_for_the_lowest_record():
+    b = topic(2, year=2024, received=dt.date(2024, 2, 1))
+    c = topic(3, year=2025, received=dt.date(2025, 2, 1))
+
+    found = _records([], [b, c], {2: dt.date(2024, 2, 11)})
+
+    assert [p.year for p in found["days"].periods] == [2024]
+
+
+def test_a_highest_record_is_not_named_when_every_measured_year_is_zero():
+    # Topics exist in 2024 and 2025, none of them EU or Koda's initiative:
+    # each year measures 0, which is printed as 0 but names no record year.
+    a = topic(1, year=2024)
+    b = topic(2, year=2025)
+
+    found = _records([], [a, b])
+
+    assert "koda" not in found and "eu" not in found
+    trends = {t.key: t for t in stats.trends([], [a, b], {}, first=2023, last=2026, today=TODAY)}
+    koda = {bar.year: (bar.value, bar.text) for bar in trends["koda"].bars}
+    assert koda[2024] == (0, "0") and koda[2025] == (0, "0")
+    # 2023 had no topics at all: unknown, not zero.
+    assert koda[2023] == (None, "—")
+
+
+def test_a_zero_share_year_is_compared_but_a_positive_year_holds_the_highest_record():
+    a = topic(1, year=2024)
+    b = topic(2, year=2025)
+    facts = [
+        sent(a, dt.date(2024, 3, 9), deadline=dt.date(2024, 3, 1)),  # late: 0% in 2024
+        sent(b, dt.date(2025, 3, 1), deadline=dt.date(2025, 3, 9)),  # on time: 100% in 2025
+    ]
+
+    found = _records(facts, [a, b])
+
+    assert found["ontime"].value == "100,0%"
+    assert [p.year for p in found["ontime"].periods] == [2025]
+
+
+def test_a_trend_spec_holds_a_measured_zero_as_zero_and_an_unknown_year_as_none():
+    a = topic(1, year=2024)
+    trends = {t.key: t for t in stats.trends([], [a], {}, first=2023, last=2025, today=TODAY)}
+
+    spec = chart_spec.trend(trends["koda"], "2023–2025", "")
+
+    assert spec.series[0].values == (None, 0, None)
+    assert spec.series[0].texts == ("—", "0", "—")
+    assert "Andmed puuduvad: 2023, 2025." in spec.notes
+
+
+# ---------------------------------------------------------------------------
 # The spec names the results' own numbers
 # ---------------------------------------------------------------------------
 

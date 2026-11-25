@@ -111,6 +111,28 @@ The owner's conditions:
    the reader. No definition, count or rounding changed; `Record.when` reads
    as before.
 
+   **Zero and unknown** (*Proposed — corrections round 25.11.2026, subject to
+   owner review*). `opinion_stats.records` used to drop every falsy year
+   (`if bar.value`), so a measured 0 was treated like «andmed puuduvad». It
+   now drops only unknown years (`None`); each metric was checked against its
+   definition, and no definition changed:
+   * *Lühima tähtajaga aasta* (`days`, lowest median of deadline − arrival,
+     complete years) — a median of **0 days** is a measured value (the
+     deadline fell on the day the topic arrived; `_days_given` keeps `>= 0`),
+     so a 0-day year now holds the record. This is the only record whose
+     result changes, and only when such a year exists.
+   * *Rekordaasta* (`sent`), *Koja omaalgatuste rekordaasta* (`koda`),
+     *tähtaegsete osakaal* (`ontime`), *ELiga seotud osakaal* (`eu`) — highest
+     values. A 0 is a measured value and is printed as 0 in the trend, in the
+     SVG/PNG and in Excel, but a highest value of 0 means no year achieved
+     anything, so no record is named (as before). A year without data
+     (`None`) is never compared.
+   * *Rekordkuu* (`month`) counts sent opinions per month; a month without
+     one never outranks a month with one, so it is unchanged.
+   Monthly column charts print no label over an empty (0) column, on the page
+   and in the SVG alike; the column's title, the hidden text and the Excel
+   cell hold the 0. Monthly counts are never unknown.
+
 8. **Each chart panel can be downloaded, from its spec** (*Proposed — overnight
    development 25.11.2026, subject to owner review*; UX-005). A small «↓» menu
    in each panel head offers PNG, PNG (läbipaistev), SVG and Excel; the three
