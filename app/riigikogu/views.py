@@ -135,7 +135,10 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
         if action == "kuupaev":
             if matter is None:
                 raise DomainError(NO_TEEMA)
-            invitations.add_as_date(invitation, matter, actor=request.user)
+            day = _day(str(request.POST.get("paev", "")))
+            if request.POST.get("paev") and day is None:
+                raise DomainError("Kuupäev ei ole loetav.")
+            invitations.add_as_date(invitation, matter, actor=request.user, day=day)
             messages.success(request, f"Tähtaeg lisatud teemale „{matter.title}”.")
         elif action == "seo":
             from app.intelligence.models import MatterImportantDate

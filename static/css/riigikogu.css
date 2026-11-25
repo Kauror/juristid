@@ -211,3 +211,9 @@
 .regwatch__meta .rkinv__changed {
   display: inline;
 }
+
+/* «Lisa tähtajana»: the date beside the button, not a full-width field. */
+.rkinv__date {
+  width: auto;
+  max-width: 11rem;
+}
