@@ -279,7 +279,7 @@ This record states the rule. The list of excluded topics is operational data and
   - **COMPARE** plans, records every decision and advances converged baselines. It writes no business record.
   - **CHECK** («Kontrolli muudatusi») compares the stored reading and writes nothing.
   - **APPLY** also needs a named backup set (`NO_VERIFIED_BACKUP`).
-- **The source-change breaker** (`MAX_CHANGED_MATTERS` = 20). More than 20 Teemad with any source or derived change (a non-restore write) holds the whole night REVIEW_ONLY (`CIRCUIT_BREAKER`).
+- **The source-change breaker** (`MAX_CHANGED_MATTERS` = 100 since 25.11.2026, §14; 20 before). More than 100 Teemad with any source or derived change (a non-restore write) holds the whole night REVIEW_ONLY (`CIRCUIT_BREAKER`). A Teema whose only source change is a recorded hand-over counts against its own `MAX_HANDOVER_MATTERS` = 150 instead (§13, ADR 0220 §2); that limit is unchanged.
 - **The restore breaker** (`MAX_RESTORED_MATTERS` = 100). More than 100 restore-only Teemad holds the restores (`RESTORE_BREAKER`), and the source changes are still written. A Teema with a source change applies its restores with it, because the change can depend on them.
 - **Per-run limits.** `run_sync(max_changed=…, max_restored=…)` (`lovable_sync run --max-changed --max-restored`) raises a limit for one supervised run. It is recorded in the run's counts; no stored setting changes.
 - **Unchanged breakers:** `MAX_MISSING` (5) fails the run; `MAX_NEW_TOPICS` (10); a failed read-back stops every later Teema (0192 §7). `MAX_NEW_CONFLICTS` is inert under source authority, because nothing is a CONFLICT any more (finding LS-07).
@@ -377,7 +377,7 @@ A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01).
 - **The operator's `parity_check.py`** (outside the repository) does not know the hold yet. It must be extended in the same way before the first APPLY night that can hold a closure; the rehearsal round does that.
 
 **Resolution.**
-1. **The lawyer finishes, cancels or moves the work.** The next night closes the Teema with Lovable's reason, as a source change (it counts once toward the 20).
+1. **The lawyer finishes, cancels or moves the work.** The next night closes the Teema with Lovable's reason, as a source change (it counts once toward `MAX_CHANGED_MATTERS`).
 2. **The lawyer closes the Teema themselves.** While the hold stands, the lock frees the closure (`source_ownership.Ownership.held`, open-decisions E11), so «Lõpeta teema» with the 0152 confirmation is allowed. The next night sets Lovable's reason with `change_closure_from_source` and ends nothing again. While Lovable shows the Teema open, E3 still refuses it. Ending Lovable's current step is part of that closure: inside a hold-sanctioned closure the step lock (TL-01) does not refuse the step's cancellation, also when Lovable left `jargmiseks` unchanged and the step holds nothing of its own (rehearsal 2, D1). A closure is hold-sanctioned when it is a release (`LOCAL_WORK_AT_CLOSURE` only, through `release_closure_hold`), or a person's closure while the newest reading holds **any stage hold in which Lovable itself closes the Teema** (`CLOSING_STAGE_HOLDS`: `LOCAL_WORK_AT_CLOSURE`, `CLOSURE_REASON_UNKNOWN`, `SUCCESSOR_NOT_IN_JURISTID`, `SUCCESSOR_AMBIGUOUS`, `SUCCESSOR_DEFERRED_BY_BREAKER`, `CONTINUATION_CYCLE`) — the same holds that free «Lõpeta teema» under E11. An unmapped stage frees the closure too, but it is not Lovable closing, so its closure still meets the step lock. The exemption is internal to the closure; a person's own edit or cancel of the step stays refused.
 3. **Lovable reopens it.** The next reading holds nothing, and the hold simply clears.
 4. **Release** (`lovable_closure_hold.release_closure_hold`).
@@ -411,7 +411,7 @@ A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01).
 
 | Safeguard | Value |
 |---|---|
-| Changed-Teemad breaker `MAX_CHANGED_MATTERS` | 20 per night |
+| Changed-Teemad breaker `MAX_CHANGED_MATTERS` | 20 per night (raised to 100 on 25.11.2026, §14) |
 | Restore breaker `MAX_RESTORED_MATTERS` | 100 per night |
 | New-holds breaker `MAX_NEW_HOLDS` | 25 more held fields than the previous finished run |
 | New closure holds `MAX_NEW_CLOSURE_HOLDS` (§10.13) | 20 beginning in one night; that night only |
@@ -479,7 +479,44 @@ Teemad went missing»), which reads as mass deletion. Now:
 
 A Teema whose only source change tonight is an owner Lovable recorded as handed over
 (its latest `topic_responsible_change` names the same, resolved lawyer) counts against
-`MAX_HANDOVER_MATTERS` (150), not `MAX_CHANGED_MATTERS` (20). Every other limit of §10.8
+`MAX_HANDOVER_MATTERS` (150), not `MAX_CHANGED_MATTERS` (then 20; 100 since §14). Every other limit of §10.8
 and §10.14 is unchanged, and so is `MAX_CHANGED_MATTERS` for every other change. The
 owner chose this on 23.11.2026 ahead of a change of lawyers; Lovable's «Teemade
 üleandmine» moves 58–84 Teemad per lawyer at once.
+
+## 14. Amendment 2026-11-25: the ordinary changed-Teemad limit is 100 a night
+
+The owner raised `MAX_CHANGED_MATTERS` from 20 to **100** Teemad a night on 25.11.2026.
+The first scheduled night on r92 (run 2026-11-25) wrote 19 ordinary changed Teemad
+against the limit of 20, and the owner judged 20 too tight for a department's ordinary
+workload and the coming changes in lawyers' responsibilities.
+
+What changes:
+- More than 100 Teemad with an ordinary source or derived change holds the whole night
+  REVIEW_ONLY (`CIRCUIT_BREAKER`), as more than 20 did before. 100 itself is allowed.
+- The comparison is one function, `lovable_sync.over_teemad_limits`, so the boundary is
+  tested at the real limits.
+
+What does not change:
+- **The hand-over limit.** `MAX_HANDOVER_MATTERS` stays **150** (§13, ADR 0220 §2), separate from the 100. A Teema
+  whose only source change is a recorded hand-over to a resolved lawyer counts there. A hand-over mixed with any other
+  change on the same Teema, a hand-over to «Vastutaja puudub», an owner cell edited with no responsible-change row, or
+  a name that does not resolve is an ordinary change or a hold, as before.
+- **Every other safeguard of §10.8, §10.14 and §11 keeps its value and works on its own:**
+  - `MAX_RESTORED_MATTERS` 100;
+  - `MAX_NEW_HOLDS` 25;
+  - `MAX_NEW_CLOSURE_HOLDS` 20;
+  - `MAX_MISSING` 5;
+  - `MAX_NEW_TOPICS` 10;
+  - the population guard;
+  - the verified level-2 backup before APPLY;
+  - read-back verification, and the stop of every later write after a failed read-back;
+  - source authority;
+  - provenance and audit.
+- **Schedule.** The schedule and its frequency are unchanged.
+- **Supervised overrides.** A supervised `--trigger manual` run may still set its own limit (`--max-changed`). It is
+  recorded in the run's counts as `breaker_limit`, and is refused on the scheduled trigger or when negative.
+
+**History keeps its limit.** Every run records the limit it used (`breaker_limit`, since 11.11.2026). Its summary shows
+that recorded value, never today's default. A run older than the recording shows 20
+(`CHANGED_LIMIT_BEFORE_RECORDING`), the limit of its time.

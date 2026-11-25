@@ -152,7 +152,7 @@ def test_no_override_means_the_approved_limits():
 
     options = Command().create_parser("manage.py", "lovable_sync").parse_args(["run"])
     assert (options.max_changed, options.max_restored) == (None, None)
-    assert (lovable_sync.MAX_CHANGED_MATTERS, lovable_sync.MAX_RESTORED_MATTERS) == (20, 100)
+    assert (lovable_sync.MAX_CHANGED_MATTERS, lovable_sync.MAX_RESTORED_MATTERS) == (100, 100)
 
 
 # ---------------------------------------------------------------------------
