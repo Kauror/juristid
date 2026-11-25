@@ -10338,9 +10338,17 @@ def timeline_steps_view(request: HttpRequest, pk: Any) -> HttpResponse:
     this page. A GET opens it; a POST saves and re-renders the whole Teema view,
     because hiding a phase changes the rail, and on a file whose phases carry
     dates it changes what the rail says about every one of them.
+
+    **A closed file has no panel**: the GET answers 404, the shape
+    `rail_step_date_view` gives (docs/adr/0119 §1). A POST is not stopped
+    here — a panel opened before the closure, or a crafted request, reaches
+    `set_timeline_steps`, which re-reads the closure under the Matter's row
+    lock and refuses with `CLOSED_MATTER_REFUSAL`; nothing is written.
     """
     matter = get_visible_matter(request, pk)
     if request.method == "GET":
+        if not matter.is_open:
+            raise Http404
         return render(
             request,
             "matters/partials/timeline_steps_form.html",
