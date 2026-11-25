@@ -204,10 +204,12 @@ def test_an_agenda_switched_off_is_deliberate(since):
     assert no.classify("government-agenda", since=since, rc=1).outcome == no.SKIPPED_DELIBERATE
 
 
-def test_riigikogu_is_its_exit_code_and_says_so(since):
-    ok = no.classify("riigikogu", since=since, rc=0)
-    assert ok.outcome == no.SUCCEEDED and "exit code only" in ok.reason
-    assert no.classify("riigikogu", since=since, rc=2).outcome == no.FAILED
+@override_settings(RIIGIKOGU_MONITORING=False)
+def test_riigikogu_switched_off_is_a_deliberate_skip(since):
+    # With PR #723 integrated the step reads its own `StageRun` records instead of
+    # its exit code; every case is in tests/test_r93_integration.py.
+    off = no.classify("riigikogu", since=since, rc=0)
+    assert off.outcome == no.SKIPPED_DELIBERATE
 
 
 # -- the command -----------------------------------------------------------------------

@@ -16,8 +16,9 @@ The sources are the steps' own ledgers:
 * ``government-agenda`` — it keeps no run ledger, so `watch_government_agenda
   --outcome-json` ends with one machine line of counts, handed over here
   (``reported``);
-* ``riigikogu`` — on main there is no Riigikogu ledger yet (PR #723 brings
-  `StageRun`); its outcome is its exit code alone, and says so.
+* ``riigikogu`` — `StageRun` (docs/adr/0224 §5), one row per stage of the cycle
+  that began since the step started; the ANALYSIS stage is off under its own
+  authorisation (docs/adr/0227) and never decides the outcome.
 
 Outcomes: SUCCEEDED, SUCCEEDED_NO_NEW, PARTIAL (ran, with source errors, model
 failures or held writes), SKIPPED_DELIBERATE (off, paused or already done by
@@ -88,9 +89,7 @@ def classify(
     if step == "government-agenda":
         return _agenda(rc, reported)
     if step == "riigikogu":
-        if rc == 0:
-            return StepOutcome(step, SUCCEEDED, "exit code only: no Riigikogu run ledger on main")
-        return StepOutcome(step, FAILED, f"exit {rc}")
+        return _riigikogu(since, rc)
     raise ValueError(f"unknown step: {step}")
 
 
@@ -242,6 +241,57 @@ def _sweep(since: dt.datetime, rc: int) -> StepOutcome:
         new=int(run.candidates_new) if run else 0,
         other_running=other,
     )
+
+
+#: A Riigikogu stage's counts that mean something new was recorded (app/riigikogu/*.Counts).
+_RIIGIKOGU_NEW = ("new", "changed", "moved", "cancelled")
+
+
+def _riigikogu(since: dt.datetime, rc: int) -> StepOutcome:
+    """The Riigikogu cycle from its own stage records (integration of #723 and #726).
+
+    `watch_riigikogu` exits 0 when the cycle ran even if a stage failed (the failure
+    is in that stage's record), and 1 when another cycle holds its lock.
+    """
+    from app.riigikogu import cycle
+    from app.riigikogu.enums import RunStatus, Stage
+    from app.riigikogu.models import StageRun
+
+    step = "riigikogu"
+    if not cycle.enabled():
+        return StepOutcome(step, SKIPPED_DELIBERATE, "the Riigikogu cycle is off")
+    runs = list(StageRun.objects.filter(started_at__gte=since).exclude(stage=Stage.ANALYSIS))
+    if not runs:
+        if rc == 1:
+            return StepOutcome(step, SKIPPED_UNEXPECTED, "another Riigikogu cycle held the lock")
+        if rc:
+            return StepOutcome(step, FAILED, f"exit {rc} with no run record")
+        return StepOutcome(step, SKIPPED_UNEXPECTED, "no run record")
+    statuses = [run.status for run in runs]
+    new = sum(
+        int(value)
+        for run in runs
+        for key, value in (run.counts or {}).items()
+        if isinstance(value, int) and any(word in key for word in _RIIGIKOGU_NEW)
+    )
+    counts = {
+        "stages": len(runs),
+        "failed": statuses.count(RunStatus.FAILED),
+        "partial": statuses.count(RunStatus.PARTIAL),
+        "new": new,
+        "requests": sum(int(run.requests or 0) for run in runs),
+    }
+    if RunStatus.RUNNING in statuses:
+        return StepOutcome(step, INTERRUPTED, "a stage never finished", counts)
+    if all(status == RunStatus.FAILED for status in statuses):
+        return StepOutcome(step, FAILED, "every stage failed", counts)
+    if counts["failed"] or counts["partial"]:
+        return StepOutcome(step, PARTIAL, "a stage failed or read its source in part", counts)
+    if rc:
+        return StepOutcome(step, FAILED, f"exit {rc}", counts)
+    if not new:
+        return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
+    return StepOutcome(step, SUCCEEDED, "", counts)
 
 
 def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:

@@ -86,7 +86,28 @@ def _register_watch(request: HttpRequest) -> Signal:
         return Signal(
             "Registrite jälgimine", PROBLEM, health.problem or "Kontroll vajab tähelepanu.", url
         )
+    riigikogu = _riigikogu_problem()
+    if riigikogu:
+        return Signal("Registrite jälgimine", PROBLEM, riigikogu, url + "#regwatchlog-riigikogu")
     return Signal("Registrite jälgimine", OK, "Korras", url)
+
+
+def _riigikogu_problem() -> str | None:
+    """The Riigikogu cycle's first stage that is not ok, once the cycle is switched on.
+
+    Switched off, every stage reads «disabled» by design (docs/adr/0224 §6, §7) and the
+    overview says nothing: a line that is always there would teach people to ignore it.
+    The analysis stage stays off under its own authorisation (docs/adr/0227) and is
+    never a problem here.
+    """
+    from app.riigikogu import cycle
+
+    if not cycle.enabled():
+        return None
+    for stage in cycle.health():
+        if stage.state not in {"ok", "disabled"}:
+            return f"Riigikogu · {stage.label}: {stage.line}."
+    return None
 
 
 def _department(request: HttpRequest) -> Signal | None:
