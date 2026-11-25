@@ -92,23 +92,43 @@ catch-up; an authorised manual run remains possible.
      `take_cycle_lock`, `flock -n` on fd 7 — atomic, no check-then-act) is held by the
      cycle from its start to its end, and inherited by every step it starts, so an
      overrunning cycle still holds it. A release (the kit's d1/d2) and a restore
-     (`juristid-restore.sh`, in this change) take the same lock **before** the host lock
-     and hold it to their end: whichever takes it first wins, the other refuses — the
-     cycle writes `D.refused`, the release stops by name. The read-only preflight asks
-     (`cycle_lock_is_free`) and fails while it is held.
+     (`juristid-restore.sh`) take the same lock **before** the host lock and hold it to
+     their end: whichever takes it first wins, the other refuses — the cycle writes
+     `D.refused`, the release stops by name. The read-only preflight, run on its own, asks
+     (`cycle_lock_is_free`) and fails while anybody holds it; run by a release that holds
+     it, see the next point.
+   - **The inherited-lock contract.** A holder that starts a process which must run under
+     its lock keeps the lock, lets the child inherit the descriptor and names it —
+     `JURISTID_SYNC_LOCK_FD` (the cycle → `juristid-lovable-sync.sh`, fd 5) or
+     `JURISTID_CYCLE_LOCK_FD` (a release kit → `juristid-deploy-preflight.sh`, fd 7). The
+     name is a claim, never proof, and neither is the lock file's owner line: the child
+     relies on the lock only once `lib.sh` `lock_fd_proven` proves that the descriptor is
+     open on the lock file itself (same device and inode), that the lock is held (a fresh
+     descriptor cannot take it), and that `flock -n` on that descriptor succeeds — which
+     only the holder's own open file description can. Unproven, the sync script takes the
+     lock itself as before (and skips if it is busy) and the preflight fails; the
+     on-demand processor never accepts a handed lock.
    - Order, everywhere: cycle lock → Lovable runner flock (`/tmp/juristid-lovable-sync.lock`)
      → host lock directory (`/tmp/juristid-host-lock`) → the backup's own lock → PostgreSQL
-     advisory locks. Every wait is bounded or non-blocking, and nobody takes an earlier lock
-     while holding a later one, so there is no deadlock. The nightly backup (20:45) and the
-     on-demand processor never take the cycle lock.
-   - Before the Lovable step the cycle waits (≤ 20 min) for the runner's flock, so an
-     administrator's on-demand run still going finishes first; while the night's sync
-     runs, an on-demand firing finds the flock held and leaves the request PENDING in the
-     database, served by the next firing (the request's own two-hour expiry is unchanged).
-     The two never run side by side, and no request is dropped by the cycle.
-   - Before every step the cycle still waits (≤ 20 min) for the host lock to be free, for
-     a release kit that does not take the cycle lock yet; a step that finds it held is
-     SKIPPED_UNEXPECTED by the holder's name, and the lock is never touched.
+     advisory locks. Every wait is bounded or non-blocking, and nobody waits for an earlier
+     lock while holding a later one, so there is no deadlock. The nightly backup (20:45)
+     and the on-demand processor never take the cycle lock; no release kit takes the
+     runner flock.
+   - Before the Lovable step the cycle waits (≤ 20 min) for the release lock, then (≤ 20
+     min) for the runner's flock, so an administrator's on-demand run still going finishes
+     first; it then **keeps** the runner's flock and hands it to the sync script (contract
+     above), so no on-demand firing can take it between the two and leave the night
+     SKIPPED_UNEXPECTED. Holding it, it looks at the release lock once more (≤ 20 min); if
+     a release took it meanwhile the step is SKIPPED_UNEXPECTED by the holder's name and
+     the runner's flock is let go. The cycle releases the runner's flock when the sync
+     script exits. While the night's sync runs, an on-demand firing finds the flock held,
+     starts nothing and leaves the request PENDING in the database, served by the next
+     firing; a request nobody claims within the unchanged two-hour expiry is marked
+     EXPIRED (`EXPIRED_UNCLAIMED`, shown in Haldus), never deleted. The two never run side
+     by side, and no request is dropped by the cycle.
+   - Before every other step the cycle still waits (≤ 20 min) for the host lock to be
+     free, for a release kit that does not take the cycle lock yet; a step that finds it
+     held is SKIPPED_UNEXPECTED by the holder's name, and the lock is never touched.
 6. **State and health.** Per Tallinn night D, in `nightly/state/`: `D.started` (once the
    lock is held, before any step), `D.outcomes` (a line per step as it ends), `D.completed`
    (the summary, last), `D.refused`, and `D.recovered` (an authorised `--manual` run's
@@ -154,8 +174,9 @@ catch-up; an authorised manual run remains possible.
    media tier, the 01:40 mover and DashKoda's 02:00–07:00 feeds; the parity check on the
    1st at 21:30 overlaps it as it overlapped the sync. The release kits' refusal window
    widens to **20:30–23:00 UTC**, and — the real guarantee, overruns included — the kit
-   takes the cycle lock (kit change below). Changing `lib.sh` changes a blob that a
-   future kit pins (`juristid-lovable-sync.sh` changes in its comments only, in the r93 integration).
+   takes the cycle lock (kit change below). Changing `lib.sh`, `juristid-lovable-sync.sh` (it now sources `lib.sh` and
+   accepts a proven hand-off of the runner's lock) and `juristid-deploy-preflight.sh`
+   changes blobs that a future kit pins.
 10. **Riigikogu** plugs into the registers lane between the watch and the sweep once PR
     #723 is on main and the owner switches it on: the cron line gains `--with-riigikogu`.
     Until then the step is SKIPPED_DELIBERATE (NOT_INSTALLED). A failing Riigikogu step
@@ -176,6 +197,10 @@ cycle_rc=0; take_cycle_lock "release-$1" || cycle_rc=$?
 [ "$cycle_rc" = 0 ] || stop "the nightly cycle holds $JURISTID_CYCLE_LOCK ($(cycle_lock_owner)); wait for nightly/last-cycle.txt to show it ended"
 ```
 
+A kit that runs the preflight while holding the cycle lock runs it as
+`JURISTID_CYCLE_LOCK_FD=7 scripts/deploy/juristid-deploy-preflight.sh …`, so the
+preflight proves the kit's hold instead of reporting the kit itself as a running cycle.
+
 and the header's window «outside 20:30–22:40 UTC» becomes «outside 20:30–23:00 UTC». The
 lock is held on fd 7 until the kit script exits (every kit script that changes the stack
 takes it).
@@ -190,6 +215,6 @@ takes it).
 - A release and the cycle exclude each other atomically; the register commands wait for
   a release, which they never did.
 - `lib.sh`, `juristid-restore.sh`, `juristid-deploy-preflight.sh`,
-  `juristid-monitor.sh` and `juristid-lovable-sync.sh` (comments only, r93 integration)
+  `juristid-monitor.sh` and `juristid-lovable-sync.sh` (the runner-lock hand-off)
   change, so a kit that pins their blobs must be regenerated.
 - The deployment is a host change the owner approves, with its rollback in §8.

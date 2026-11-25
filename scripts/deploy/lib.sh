@@ -88,7 +88,9 @@ release_host_lock() {
 # them. `flock -n` is the atomic test-and-take: there is no check-then-act.
 # Lock order, everywhere: this lock, then the Lovable runner's flock, then the
 # host lock, then the backup's own lock, then PostgreSQL advisory locks. The
-# nightly backup and the Lovable on-demand processor never take this lock.
+# nightly backup and the Lovable on-demand processor never take this lock. A
+# script started by the holder proves an inherited descriptor with
+# `lock_fd_proven` below; it never trusts the owner line or a variable alone.
 # Overridable for a test harness, never for a deployment.
 JURISTID_CYCLE_LOCK="${JURISTID_CYCLE_LOCK:-/tmp/juristid-nightly-cycle.lock}"
 
@@ -122,6 +124,40 @@ cycle_lock_is_free() {
   fi
   exec 6>&-
   return 1
+}
+
+# The inherited-lock contract (docs/adr/0229 §5). A process that holds a flock
+# and starts another that must run under it — the nightly cycle starting the
+# Lovable sync under the runner's lock, a release kit starting the preflight
+# under the cycle lock — keeps the lock, lets the child inherit the descriptor
+# and names it in a variable (JURISTID_SYNC_LOCK_FD, JURISTID_CYCLE_LOCK_FD).
+# The variable is only a claim; the child accepts the lock as its caller's only
+# once `lock_fd_proven FILE FD` has proved it:
+#   1. FD is a descriptor number of 3 or more that is open in this process;
+#   2. it is open on FILE itself — the same device and inode (`-ef` on
+#      /proc/self/fd/FD), so a descriptor on another file, or on a lock file
+#      deleted and made again, is refused;
+#   3. the lock on FILE is held right now: a fresh descriptor cannot take it
+#      (when it can, nobody held the lock, so the caller did not either);
+#   4. `flock -n FD` succeeds, which it does only for the open file description
+#      that holds the lock — one inherited from the holder, never a second
+#      `open` of the same file by the claimant.
+# 0 proven; 1 anything else. It never waits and never takes a lock that was
+# free (the probe in 3 is dropped at once).
+lock_fd_proven() {
+  local file="$1" fd="$2" probe
+  [[ "$fd" =~ ^[0-9]{1,3}$ ]] || return 1
+  [ "$fd" -ge 3 ] || return 1
+  [ -e "$file" ] && [ "/proc/self/fd/$fd" -ef "$file" ] || return 1
+  command -v flock >/dev/null 2>&1 || return 1
+  exec {probe}<>"$file" || return 1
+  if flock -n "$probe"; then
+    flock -u "$probe"
+    exec {probe}>&-
+    return 1
+  fi
+  exec {probe}>&-
+  flock -n "$fd"
 }
 
 # The Tallinn clock without a Tallinn zone (the host has none): Estonia keeps

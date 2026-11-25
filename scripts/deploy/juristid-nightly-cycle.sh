@@ -44,12 +44,16 @@
 # same lock first and refuses while it is held, and the cycle refuses to start
 # under them), then the Lovable runner's flock (waited for before the lovable
 # step, so an administrator's on-demand run still going is finished first and
-# never runs beside the night's sync), then the release lock directory (waited
+# never runs beside the night's sync; then kept, and handed to the sync script
+# on fd 5 as JURISTID_SYNC_LOCK_FD, which the script proves with lib.sh
+# `lock_fd_proven` before it relies on it — no gap between the two in which an
+# on-demand firing could take it), then the release lock directory (waited
 # for before every step, for a release kit that does not take the cycle lock yet),
 # then the steps' own locks. The 5-minute on-demand processor takes only the
 # runner's flock and the release lock: a request that arrives during the night
 # waits in the database (PENDING) and is served by the next firing that finds the
-# runner free — never beside the night's sync, never dropped.
+# runner free — never beside the night's sync, never dropped (a request nobody
+# claims for two hours is marked EXPIRED, by name, never deleted).
 #
 # State, per Tallinn night D (ADR 0229 §6), in $NIGHTLY_DIR/state:
 #   D.started    written once the cycle holds its lock, before any step
@@ -284,19 +288,37 @@ run_step() {
   case "$name" in
     lovable)
       # An on-demand run still going holds the runner's flock: the night waits
-      # for it (bounded), so the two never run side by side and the night is
-      # not lost to the sync script's «another synchronisation is running».
+      # for it (bounded), so the two never run side by side. The night then
+      # KEEPS the lock and hands it to the sync script on fd 5
+      # (JURISTID_SYNC_LOCK_FD; the script proves it with lib.sh
+      # `lock_fd_proven`), so no on-demand firing can take it between the two
+      # and leave the night «another synchronisation is running». A firing in
+      # that time finds the lock held and leaves its request PENDING for the
+      # next one. Lock order: cycle lock → (release-lock wait) → runner flock →
+      # release lock; the second wait below is for a later lock while holding
+      # an earlier one, never the reverse.
       exec 5<>"$SYNC_LOCK"
       if ! flock -w "$LOCK_WAIT" 5; then
         exec 5>&-
         record "$name" SKIPPED_UNEXPECTED - 0 "SYNC_BUSY the Lovable runner's lock was held for ${LOCK_WAIT}s"
         return 0
       fi
-      flock -u 5
-      exec 5>&-
+      # The runner's lock may have taken up to LOCK_WAIT: look at the release
+      # lock again, so the sync does not meet a release that started meanwhile.
+      holder="$(host_lock_holder)"
+      if [ -n "$holder" ]; then
+        flock -u 5
+        exec 5>&-
+        record "$name" SKIPPED_UNEXPECTED - 0 "HOST_LOCK held after ${LOCK_WAIT}s by: $holder"
+        return 0
+      fi
       sync_args=()
       if [ "$MANUAL" = 1 ]; then sync_args=(--manual); fi
-      bash "$REPO/scripts/deploy/juristid-lovable-sync.sh" "${sync_args[@]}" </dev/null >>"$LOG" 2>&1 || rc=$?
+      JURISTID_SYNC_LOCK_FD=5 bash "$REPO/scripts/deploy/juristid-lovable-sync.sh" "${sync_args[@]}" \
+        </dev/null >>"$LOG" 2>&1 || rc=$?
+      # Released only now: the next on-demand firing serves what waited.
+      flock -u 5 || true
+      exec 5>&-
       ;;
     register-watch) run_manage watch_registers register-watch.log || rc=$? ;;
     riigikogu) run_manage watch_riigikogu riigikogu.log || rc=$? ;;

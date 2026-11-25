@@ -341,19 +341,31 @@ done
 
 # -- the nightly cycle -----------------------------------------------------
 
-# A release never runs beside the nightly cycle (docs/adr/0229 §5). This
-# preflight is read-only, so it only asks — taking and dropping the cycle lock
-# at once; the release itself must take it (lib.sh `take_cycle_lock release`,
-# fd 7) before the host lock and hold it to its end, which is what makes the
-# exclusion real, overrunning cycle or not.
+# A release never runs beside the nightly cycle (docs/adr/0229 §5). The release
+# itself takes the cycle lock (fd 7) before the host lock and holds it to its end,
+# which is what makes the exclusion real, overrunning cycle or not. Standalone,
+# this read-only preflight only asks — taking and dropping the lock at once — and
+# fails while anybody holds it. Called by a release that already holds it, the
+# caller hands the descriptor down and names it (JURISTID_CYCLE_LOCK_FD=7); the
+# preflight passes only when lib.sh `lock_fd_proven` proves that descriptor is
+# the cycle lock file and holds its lock. The owner line and the variable are
+# never proof: a claim that cannot be proved fails, whoever holds the lock.
 step "The nightly cycle"
-cycle_rc=0
-cycle_lock_is_free || cycle_rc=$?
-case "$cycle_rc" in
-  0) pass "the nightly cycle is not running ($JURISTID_CYCLE_LOCK is free)" ;;
-  1) fail "the nightly cycle is running ($(cycle_lock_owner)). Wait for it to end (nightly/last-cycle.txt); a release must not start under it." ;;
-  *) fail "could not ask $JURISTID_CYCLE_LOCK (is flock installed?). A release must hold the cycle lock." ;;
-esac
+if [ -n "${JURISTID_CYCLE_LOCK_FD:-}" ]; then
+  if lock_fd_proven "$JURISTID_CYCLE_LOCK" "$JURISTID_CYCLE_LOCK_FD"; then
+    pass "this release holds the nightly cycle lock (fd $JURISTID_CYCLE_LOCK_FD, inherited and proven): the cycle cannot start under it"
+  else
+    fail "JURISTID_CYCLE_LOCK_FD=$JURISTID_CYCLE_LOCK_FD is not this release's hold of $JURISTID_CYCLE_LOCK (not open on it, not locked, or another process holds it: $(cycle_lock_owner)). A release must take the cycle lock itself (fd 7) before it runs the preflight."
+  fi
+else
+  cycle_rc=0
+  cycle_lock_is_free || cycle_rc=$?
+  case "$cycle_rc" in
+    0) pass "the nightly cycle is not running ($JURISTID_CYCLE_LOCK is free)" ;;
+    1) fail "the nightly cycle lock is held ($(cycle_lock_owner)): the nightly cycle, a restore or a release is running. Wait for it to end (nightly/last-cycle.txt); a release must not start under it." ;;
+    *) fail "could not ask $JURISTID_CYCLE_LOCK (is flock installed?). A release must hold the cycle lock." ;;
+  esac
+fi
 
 # -- verdict ---------------------------------------------------------------
 
