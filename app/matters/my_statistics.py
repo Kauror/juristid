@@ -22,19 +22,17 @@ Every figure says how it is credited, because the three answers differ:
   imported «välja saadetud» names nobody who sent it, so it is credited to the
   owner at the time.
 
-**Coverage is a stated state, never a guess** (ADR 0223 §4, corrections
-25.11.2026). Each monthly value is a :class:`Cell` with one of four states:
+**Coverage is a stated state, never a guess** (ADR 0223 §4, §7, §11). Each
+figure's value for a period is a :class:`Cell` with one of four states:
 
-* ``VERIFIED`` — the whole month lies inside the figure's reliable coverage
-  and every record in it can be credited: the count is the month's, and a 0 is
-  a real zero of *recorded* activities;
-* ``PARTIAL`` — reliable coverage spans only part of the month (it began inside
-  the month, or the month is still running): the count is what was recorded,
-  shown with «osaline» and the covered days, never as a whole month;
-* ``AT_LEAST`` — records were found, but the month is not inside reliable
-  coverage or some record in it cannot be credited: a lower bound, shown as
-  «vähemalt N»;
-* ``UNKNOWN`` — nothing reliable: «andmed puuduvad», never 0.
+* ``VERIFIED`` — the whole period lies inside the figure's reliable coverage
+  and every record in it can be credited: the count is the period's (so far,
+  while it runs), and a 0 is a real zero of *recorded* activities;
+* ``PARTIAL`` — reliable coverage began inside the period: what was found is a
+  lower bound for the period, shown «≥ N» with an «osaline» hint naming the day;
+* ``AT_LEAST`` — the period is not inside reliable coverage, or some record in
+  it cannot be credited: a lower bound, «≥ N»;
+* ``UNKNOWN`` — nothing reliable and nothing found: «—», never 0.
 
 Every figure has two boundaries (ADR 0223 §10):
 
@@ -58,8 +56,6 @@ counts what was recorded in Juristid, not all the work a person actually did.
 
 from __future__ import annotations
 
-import calendar
-from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -71,14 +67,6 @@ from django.utils import timezone
 #: The owner, or the open/closed state, on a day nobody can say.
 UNKNOWN = "?"
 
-#: How many calendar months the page shows, the current one included.
-MONTHS = 12
-
-#: Credit rules, as the page names them.
-CURRENT = "praegune vastutaja"
-ACTOR = "sinu tehtud"
-AT_THE_TIME = "vastutaja tol ajal"
-
 #: The migrations whose application on this database is the first moment
 #: Juristid could write the records each figure reads (ADR 0223 §4). A figure
 #: reading two kinds of record is covered from the later of the two.
@@ -87,8 +75,6 @@ RECORDED_BY: dict[str, tuple[tuple[str, str], ...]] = {
     "sent": (("submissions", "0001_initial"), ("matters", "0045_response_deadline_history")),
     "entries": (("matters", "0003_entry"),),
     "closed": (("audit", "0001_initial"),),
-    "overviews": (("audit", "0018_website_overview_events"),),
-    "engagements": (("audit", "0012_matter_engagement"),),
     # MATTER_ASSIGNED, MATTER_CLOSED and MATTER_REOPENED: the ownership and
     # open/closed trail.
     "trail": (("audit", "0001_initial"),),
@@ -102,8 +88,6 @@ RELIABLE_BY: dict[str, str] = {
     "sent": "SUBMISSION_SENT",
     "entries": "ENTRY_ADDED",
     "closed": "MATTER_CLOSED",
-    "overviews": "WEBSITE_OVERVIEW_PUBLISHED",
-    "engagements": "ENGAGEMENT_ADDED",
     "trail": "MATTER_ASSIGNED",
 }
 
@@ -136,57 +120,53 @@ class Coverage(StrEnum):
 
 @dataclass(frozen=True)
 class Cell:
-    """One monthly value and how much of the month stands behind it."""
+    """One figure's value for a span of days, and how much of the span stands behind it."""
 
     coverage: Coverage
     value: int | None = None
-    #: PARTIAL: the days the count covers.
+    #: PARTIAL: the day reliable coverage began, inside the span.
     covered_from: date | None = None
-    covered_to: date | None = None
 
     @property
     def known(self) -> bool:
         return self.coverage is not Coverage.UNKNOWN
 
     @property
-    def text(self) -> str:
-        if self.coverage is Coverage.UNKNOWN:
-            return "andmed puuduvad"
-        if self.coverage is Coverage.AT_LEAST:
-            return f"vähemalt {self.value}"
-        return str(self.value)
+    def exact(self) -> bool:
+        """The value is the span's whole count (so far): only then is it compared."""
+        return self.coverage is Coverage.VERIFIED
 
     @property
-    def note(self) -> str:
-        """What the page prints under the value: which part of the month it covers."""
-        if self.coverage is Coverage.AT_LEAST:
-            return "ajalugu poolik"
-        if self.coverage is not Coverage.PARTIAL or not self.covered_from or not self.covered_to:
-            return ""
-        began = self.covered_from.day != 1
-        last = calendar.monthrange(self.covered_to.year, self.covered_to.month)[1]
-        running = self.covered_to.day != last
-        start, end = f"{self.covered_from:%d.%m.%Y}", f"{self.covered_to:%d.%m.%Y}"
-        if began and running:
-            return f"osaline: {start}–{end}"
-        if began:
-            return f"osaline: alates {start}"
-        return f"osaline: kuni {end}"
+    def text(self) -> str:
+        """«12», «≥ 3» (vähemalt 3) or «—». A 0 is printed only when it is real."""
+        if self.coverage is Coverage.VERIFIED:
+            return str(self.value)
+        if self.value:
+            return f"≥ {self.value}"
+        return "—"
+
+    @property
+    def spoken(self) -> str:
+        """The value in words, for a screen reader and a tooltip."""
+        if self.coverage is Coverage.VERIFIED:
+            return str(self.value)
+        if self.value:
+            return f"vähemalt {self.value}"
+        return "andmed puuduvad"
 
 
-def cell(month: Month, since: date | None, found: int, *, uncertain: bool = False) -> Cell:
-    """The state of a count of ``found`` records in ``month``.
+def cell(span: Any, since: date | None, found: int, *, uncertain: bool = False) -> Cell:
+    """The state of a count of ``found`` records in ``span`` (``start``..``end``).
 
     ``since`` is the figure's **reliable coverage** boundary (`reliable_since`),
     not the day recording became possible: ``None`` when it cannot be
-    established, and then no month is complete. ``uncertain``: some record in
-    the month could not be credited.
+    established, and then no span is complete. ``uncertain``: some record in
+    the span could not be credited.
     """
-    if since is None or since > month.end or uncertain:
+    if since is None or since > span.end or uncertain:
         return Cell(Coverage.AT_LEAST, found) if found else Cell(Coverage.UNKNOWN)
-    covered_from = max(since, month.start)
-    if covered_from > month.start or not month.complete:
-        return Cell(Coverage.PARTIAL, found, covered_from, month.end)
+    if since > span.start:
+        return Cell(Coverage.PARTIAL, found, since)
     return Cell(Coverage.VERIFIED, found)
 
 
@@ -203,8 +183,16 @@ class Ownership:
     #: The first day the trail could be recorded at all (earliest possible).
     since: date | None = None
     #: The first day the trail is reliably recorded (`reliable_since`); before
-    #: it, or when ``None``, no month-end count is complete.
+    #: it, or when ``None``, no end-of-day count is complete.
     reliable: date | None = None
+    #: Per Teema: its owner now (`Matter.owner`).
+    owner_now: dict[Any, Any] = field(default_factory=dict)
+    #: Every recorded hand-over: (Teema, day, new owner id | None | UNKNOWN).
+    #: Operations that only back-filled an owner the register already had
+    #: (``operation`` in the payload) are not arrivals.
+    arrivals: list[tuple[Any, date, Any]] = field(default_factory=list)
+    #: Per Teema: (reference, title), for the lists behind a figure.
+    names: dict[Any, tuple[str, str]] = field(default_factory=dict)
 
     @staticmethod
     def _at(segments: list[tuple[date, Any]] | None, day: date) -> Any:
@@ -281,6 +269,14 @@ def build_ownership(
     out = Ownership(since=trail_since, reliable=trail_reliable)
     for row in rows:
         pk = row["pk"]
+        out.owner_now[pk] = _id(row["owner_id"])
+        for event in assigned.get(pk, []):
+            payload = event["payload"] or {}
+            if "operation" in payload:
+                continue
+            day = _day(event["occurred_at"])
+            if day is not None:
+                out.arrivals.append((pk, day, resolve(payload, "to", event["occurred_at"])))
         created = _day(row["created_at"]) or today
         received = row["received_date"]
         year = row["reference_year"]
@@ -434,6 +430,8 @@ def load_ownership(
             "reference_year",
             "is_open",
             "closed_at",
+            "reference_number",
+            "title",
         )
     )
     events: list[dict[str, Any]] = [
@@ -451,52 +449,22 @@ def load_ownership(
     for pk, name, joined in User.objects.values_list("pk", "display_name", "created_at"):
         if name:
             names.setdefault(name, []).append(Person(str(pk), joined))
-    return build_ownership(
+    built = build_ownership(
         rows, events, names, today, trail_since=trail_since, trail_reliable=trail_reliable
     )
+    for row in rows:
+        year, number = row["reference_year"], row["reference_number"]
+        reference = f"{year}_{number}" if year is not None and number is not None else ""
+        built.names[row["pk"]] = (reference, row["title"] or "")
+    return built
 
 
-@dataclass(frozen=True)
-class Month:
-    start: date
-    end: date
-    label: str
-
-    @property
-    def complete(self) -> bool:
-        """The month is over: its last day is today or earlier and was its calendar end."""
-        return self.end.day == calendar.monthrange(self.end.year, self.end.month)[1]
-
-
-def months(today: date, count: int = MONTHS) -> list[Month]:
-    """The last ``count`` calendar months, newest first; the current one ends today."""
-    from app.reporting.opinion_stats import MONTHS_LONG
-
-    out = []
-    year, month = today.year, today.month
-    for _ in range(count):
-        last = calendar.monthrange(year, month)[1]
-        out.append(
-            Month(
-                date(year, month, 1),
-                min(date(year, month, last), today),
-                f"{MONTHS_LONG[month - 1]} {year}",
-            )
-        )
-        year, month = (year, month - 1) if month > 1 else (year - 1, 12)
-    return out
-
-
-def owned_at(ownership: Ownership, person_id: Any, day: date) -> Cell:
-    """Open Teemad ``person_id`` was responsible for at the end of ``day`` (reconstructed).
-
-    A Teema counts when the trail says both that the person owned it and that it
-    was open. Where either is unknown for a Teema that might count, or the day
-    is before the trail was recorded, the figure is a lower bound
-    (``AT_LEAST``), or ``UNKNOWN`` if nothing is certain.
-    """
+def owned_matters(ownership: Ownership, person_id: Any, day: date) -> tuple[list[Any], int]:
+    """The Teemad ``person_id`` was known to hold open at the end of ``day``, and how many
+    more might have been theirs (owner or open state unknown that day)."""
     person = _id(person_id)
-    count = uncertain = 0
+    mine: list[Any] = []
+    uncertain = 0
     for matter_id, first in ownership.exists_from.items():
         if day < first:
             continue
@@ -507,9 +475,22 @@ def owned_at(ownership: Ownership, person_id: Any, day: date) -> Cell:
         if owner is None or (owner != UNKNOWN and owner != person):
             continue
         if owner == person and state is True:
-            count += 1
+            mine.append(matter_id)
         else:
             uncertain += 1
+    return mine, uncertain
+
+
+def owned_at(ownership: Ownership, person_id: Any, day: date) -> Cell:
+    """Open Teemad ``person_id`` was responsible for at the end of ``day`` (reconstructed).
+
+    A Teema counts when the trail says both that the person owned it and that it
+    was open. Where either is unknown for a Teema that might count, or the day
+    is before the trail was reliably recorded, the figure is a lower bound
+    (``AT_LEAST``), or ``UNKNOWN`` if nothing is certain.
+    """
+    mine, uncertain = owned_matters(ownership, person_id, day)
+    count = len(mine)
     if uncertain or ownership.reliable is None or day < ownership.reliable:
         # Before the trail is reliably recorded, the Teemad Juristid holds are
         # not all there were (some were never imported) and owner changes may
@@ -525,130 +506,641 @@ def credit_opinion(fact: Any, ownership: Ownership) -> Any:
     return ownership.owner_at(fact.matter.matter_id, fact.sent_on)
 
 
-def sent_in_month(
-    facts: list[Any], ownership: Ownership, person_id: Any, month: Month, since: date | None
+def sent_in(
+    facts: list[Any], ownership: Ownership, person_id: Any, span: Any, since: date | None
 ) -> Cell:
-    person = _id(person_id)
-    count = uncertain = 0
-    for fact in facts:
-        if not month.start <= fact.sent_on <= month.end:
-            continue
-        credited = credit_opinion(fact, ownership)
-        if credited == UNKNOWN:
-            uncertain += 1
-        elif credited == person:
-            count += 1
-    return cell(month, since, count, uncertain=bool(uncertain))
+    """Opinions sent in ``span`` credited to ``person_id`` (`credit_opinion`)."""
+    return sent_series(facts, ownership, person_id, since).cell(span)
+
+
+# ---------------------------------------------------------------------------
+# Figures over a period (ADR 0223 §11)
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
-class Figure:
+class Record:
+    """One record behind a figure: what happened, on which day, on which Teema."""
+
+    day: date
+    matter_id: Any
+    what: str = ""
+    detail: str = ""
+    #: The source's own page or document, for an incoming item.
+    source_url: str = ""
+
+
+@dataclass
+class Series:
+    """The dated records behind a figure, and how far its counts can be trusted.
+
+    A figure of the person's own work is bounded by ``since`` (its reliable
+    coverage). An incoming figure is bounded by ``readings`` instead: the days
+    its source was read; a span without one is unknown, never 0.
+    """
+
+    records: list[Record] = field(default_factory=list)
+    #: Days of records found but not creditable to anybody known.
+    uncertain: list[date] = field(default_factory=list)
+    since: date | None = None
+    readings: set[date] | None = None
+    #: Why the figure is not read at all (a switch is off): shown instead of a value.
+    off: str = ""
+
+    def within(self, span: Any) -> list[Record]:
+        return [record for record in self.records if span.start <= record.day <= span.end]
+
+    def cell(self, span: Any) -> Cell:
+        found = len(self.within(span))
+        if self.readings is not None:
+            # An incoming source: a span it was never read in is unknown, and
+            # one that began before its first reading ever is a lower bound.
+            if not any(span.start <= day <= span.end for day in self.readings):
+                return Cell(Coverage.AT_LEAST, found) if found else Cell(Coverage.UNKNOWN)
+            return cell(span, self.since, found)
+        doubtful = any(span.start <= day <= span.end for day in self.uncertain)
+        return cell(span, self.since, found, uncertain=doubtful)
+
+
+def sent_series(
+    facts: list[Any], ownership: Ownership, person_id: Any, since: date | None
+) -> Series:
+    person = _id(person_id)
+    out = Series(since=since)
+    for fact in facts:
+        credited = credit_opinion(fact, ownership)
+        if credited == UNKNOWN:
+            out.uncertain.append(fact.sent_on)
+        elif credited == person:
+            out.records.append(Record(fact.sent_on, fact.matter.matter_id, "Arvamus saadetud"))
+    return out
+
+
+def arrivals_series(
+    ownership: Ownership,
+    created: list[tuple[Any, date]],
+    person_id: Any,
+    since: date | None,
+) -> Series:
+    """Teemad that became ``person_id``'s: handed to them, or created here with them as owner.
+
+    ``created``: (Teema, day) of every Teema created in Juristid itself. A
+    hand-over whose new owner cannot be told apart is a record nobody can
+    credit. One Teema arriving twice on one day is one arrival.
+    """
+    person = _id(person_id)
+    out = Series(since=since)
+    seen: set[tuple[Any, date]] = set()
+    for matter_id, day, holder in sorted(ownership.arrivals, key=lambda item: item[1]):
+        if holder == UNKNOWN:
+            out.uncertain.append(day)
+        elif holder == person and (matter_id, day) not in seen:
+            seen.add((matter_id, day))
+            out.records.append(Record(day, matter_id, "Sulle üle antud"))
+    for matter_id, day in created:
+        if (matter_id, day) in seen or ownership.owner_at(matter_id, day) != person:
+            continue
+        seen.add((matter_id, day))
+        out.records.append(Record(day, matter_id, "Loodud sinuga vastutajana"))
+    out.records.sort(key=lambda record: record.day)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# The page (ADR 0223 §11): two groups of figure cards, a chart, the records
+# ---------------------------------------------------------------------------
+
+#: How a figure is counted: dated records (``series``), Teemad held open at the
+#: end of a day (``owned``), or a present state only known for today (``present``).
+SERIES, OWNED, PRESENT = "series", "owned", "present"
+#: Rows the list under the chart shows before «Näita kõiki».
+DRILL_LIMIT = 20
+
+
+@dataclass(frozen=True)
+class FigureDef:
+    key: str
     label: str
-    value: int | None
-    basis: str
-    url: str = ""
+    #: The ⓘ: one sentence, what is counted.
+    help: str
+    mode: str = SERIES
+    #: The coverage boundary it reads (`RECORDED_BY` key); "" for incoming figures.
+    coverage: str = ""
+    #: The number's tone when it is above 0 («danger» for overdue work).
+    tone: str = ""
+
+
+OWN: tuple[FigureDef, ...] = (
+    FigureDef(
+        "saadetud",
+        "Saadetud arvamused",
+        "Arvamused, mille saatjaks on Juristides märgitud sina; imporditud arvamus, millel "
+        "saatjat pole, loetakse saatmise päeva vastutajale.",
+        coverage="sent",
+    ),
+    FigureDef(
+        "uued",
+        "Uued teemad",
+        "Teemad, mis said perioodil sinu vastutusele: sulle üle antud või Juristides loodud "
+        "sinuga vastutajana.",
+        coverage="trail",
+    ),
+    FigureDef(
+        "lopetatud",
+        "Lõpetatud teemad",
+        "Teemad, mille sina perioodil lõpetasid.",
+        coverage="closed",
+    ),
+    FigureDef(
+        "arvamuseta",
+        "Ei saatnud arvamust",
+        "Sinu perioodil lõpetatud teemad, millele ei olnud lõpetamise päevaks ühtegi "
+        "välja saadetud arvamust.",
+        coverage="closed",
+    ),
+    FigureDef(
+        "sissekanded",
+        "Sissekanded",
+        "Sissekanded, mille autor oled sina, toimumise päeva järgi.",
+        coverage="entries",
+    ),
+    FigureDef(
+        "menetluses",
+        "Menetluses teemad",
+        "Avatud teemad, mille vastutaja oled perioodi lõpus (jooksval perioodil täna), "
+        "Juristide vastutaja muutmise ajaloo järgi.",
+        mode=OWNED,
+        coverage="trail",
+    ),
+    FigureDef(
+        "ule-tahtaja",
+        "Tähtaja ületanud",
+        "Sinu möödunud tähtajaga tegevused ja olulised tähtajad, nagu Minu asjades.",
+        mode=PRESENT,
+        tone="danger",
+    ),
+    FigureDef(
+        "sekkumist",
+        "Vajab sekkumist",
+        "Sinu teemad, mille järgmine samm on hiljaks jäänud või ülevaatamise aeg on käes, "
+        "nagu Minu asjades.",
+        mode=PRESENT,
+        tone="warning",
+    ),
+)
+
+#: Whose Teema an incoming item is on, said in each ⓘ.
+_ON_YOURS = " Sinu teema: vastutaja tol päeval, kui ajalugu seda näitab, muidu praegune."
+
+INCOMING_FIGURES: tuple[FigureDef, ...] = (
+    FigureDef(
+        "registrid",
+        "Registrite dokumendid",
+        "Dokumendiregistritest sinu teemadele leitud uued dokumendid, leidmise päeva järgi."
+        + _ON_YOURS,
+    ),
+    FigureDef(
+        "kutsed",
+        "Riigikogu kutsed",
+        "Riigikogu komisjonide kirjad kojale eelnõudes, mida sinu teemad jälgivad." + _ON_YOURS,
+    ),
+    FigureDef(
+        "arutelud",
+        "Riigikogu arutelud",
+        "Komisjonide istungid, mille päevakorras on sinu teema eelnõu, istungi päeva järgi."
+        + _ON_YOURS,
+    ),
+    FigureDef(
+        "mainimised",
+        "Koja mainimised Riigikogus",
+        "Kohad täiskogu stenogrammides ja komisjonide protokollides, kus koda nimetatakse "
+        "sinu teema eelnõu juures." + _ON_YOURS,
+    ),
+    FigureDef(
+        "valitsus",
+        "Valitsuse päevakord",
+        "Valitsuse istungi päevakorrapunktid, mille Juristid sinu teemaga seostas." + _ON_YOURS,
+    ),
+)
+
+FIGURES = {figure.key: figure for figure in (*OWN, *INCOMING_FIGURES)}
+DEFAULT_FIGURE = OWN[0].key
+
+ONLY_TODAY = "Teada ainult tänase seisuga; varasemat seisu Juristid ei salvesta."
+NOT_READ = "Sel perioodil seda allikat ei loetud."
+
+
+@dataclass(frozen=True)
+class Card:
+    figure: FigureDef
+    cell: Cell
+    url: str
+    selected: bool
+    #: The difference from the previous equal period, or ``None`` when no exact
+    #: comparison exists (either value is a lower bound or unknown).
+    delta: int | None = None
+    #: The small hint under the value («osaline», «ainult täna», «lugemata»), and its ⓘ.
+    hint: str = ""
+    hint_help: str = ""
+    #: Shown instead of the value when the figure is not read at all.
+    off: str = ""
+
+    @property
+    def key(self) -> str:
+        return self.figure.key
+
+    @property
+    def arrow(self) -> str:
+        if self.delta is None:
+            return ""
+        return "↑" if self.delta > 0 else "↓" if self.delta < 0 else "→"
+
+    @property
+    def change(self) -> int | None:
+        return None if self.delta is None else abs(self.delta)
+
+    @property
+    def tone(self) -> str:
+        return self.figure.tone if self.cell.exact and self.cell.value else ""
 
 
 @dataclass(frozen=True)
 class Column:
-    key: str
+    """One bar of the chart."""
+
     label: str
-    basis: str
-
-
-COLUMNS = (
-    Column("sent", "Välja saadetud arvamused", f"{ACTOR}; imporditud arvamus: {AT_THE_TIME}"),
-    Column("owned", "Vastutusel avatud teemasid kuu lõpus", f"{AT_THE_TIME}; taastatud"),
-    Column("entries", "Sissekanded", ACTOR),
-    Column("closed", "Lõpetatud teemad", ACTOR),
-    Column("overviews", "Avaldatud ülevaated ja uudised", ACTOR),
-    Column("engagements", "Lisatud kaasamised", ACTOR),
-)
+    sublabel: str
+    title: str
+    text: str
+    #: Height in per cent of the plot; 0 draws no bar.
+    height: float
+    future: bool = False
+    #: The value is a lower bound or unknown: drawn faint.
+    partial: bool = False
 
 
 @dataclass(frozen=True)
-class MonthRow:
-    month: Month
-    cells: tuple[Cell, ...]
+class DrillRow:
+    day: date | None
+    reference: str
+    title: str
+    url: str
+    what: str = ""
+    detail: str = ""
+    source_url: str = ""
+
+
+@dataclass(frozen=True)
+class Drill:
+    rows: list[DrillRow]
+    total: int
+    more_url: str = ""
+
+
+@dataclass(frozen=True)
+class Group:
+    key: str
+    title: str
+    cards: list[Card]
 
 
 @dataclass(frozen=True)
 class MyStatistics:
-    current: list[Figure]
-    columns: tuple[Column, ...]
-    rows: list[MonthRow]
-    #: Per column key: the first day this database could record it, or ``None``.
-    recording: dict[str, date | None]
+    period: Any
     today: date
-    #: Per column key: where reliable coverage begins, or ``None`` if not established.
+    groups: list[Group]
+    selected: Card
+    #: The chart of the selected figure, or ``[]`` with ``chart_note`` saying why not.
+    columns: list[Column]
+    chart_note: str
+    drill: Drill
+    #: The bar: (key, label, url, active); a custom period's link is its form.
+    kinds: list[tuple[str, str, str, bool]]
+    previous_url: str
+    next_url: str
+    #: Per coverage key: the first day this database could record it, and where
+    #: reliable coverage begins (``None``: not established).
+    recording: dict[str, date | None] = field(default_factory=dict)
     reliable: dict[str, date | None] = field(default_factory=dict)
 
-    @property
-    def recorded_since(self) -> list[tuple[str, date | None, date | None]]:
-        """Each column's label, its earliest possible day and its reliable-coverage day."""
-        source = {"owned": "trail"}
-        out = []
-        for column in self.columns:
-            key = source.get(column.key, column.key)
-            out.append((column.label, self.recording.get(key), self.reliable.get(key)))
-        return out
+
+@dataclass(frozen=True)
+class Day:
+    """A span of one day, for the helpers that read ``start`` and ``end``."""
+
+    start: date
+    end: date
 
 
-def my_statistics(person: Any, today: date) -> MyStatistics:
-    """The page's figures for ``person``, read as ``person``. About a dozen queries."""
+def _hint(card_cell: Cell, since: date | None, span: Any) -> tuple[str, str]:
+    """The «osaline» hint of a value that is not the span's whole count, and its ⓘ."""
+    if card_cell.coverage is Coverage.VERIFIED:
+        return "", ""
+    if since is None:
+        return "osaline", "Selle tegevuse salvestamise algust Juristides ei saa veel kindlaks teha."
+    if since > span.start:
+        return "osaline", (
+            f"Juristid salvestab seda alates {since:%d.%m.%Y}; varasemad tegevused "
+            "ei pruugi olla kirjas."
+        )
+    return "osaline", "Mõnda kirjet või vastutajat ei saa tol ajal kellelegi omistada."
+
+
+def _delta(now: Cell, before: Cell) -> int | None:
+    if now.exact and before.exact and now.value is not None and before.value is not None:
+        return now.value - before.value
+    return None
+
+
+def _matter_url(pk: Any) -> str:
+    from django.urls import reverse
+
+    return reverse("matters:matter_detail", args=[pk])
+
+
+def my_statistics(
+    person: Any,
+    today: date,
+    period: Any = None,
+    selected: str = "",
+    *,
+    show_all: bool = False,
+    path: str = "",
+) -> MyStatistics:
+    """The page for ``person``, read as ``person``, for ``period`` (default: this week).
+
+    A bounded number of queries whatever the portfolio: the trail, the opinions,
+    the person's own entries and closings, the Teemad created here, the
+    incoming sources, and — for the current period only — Minu asjad's work.
+    """
     from app.audit.enums import ChangeEventType
     from app.audit.models import ChangeEvent
+    from app.matters import stat_periods
+    from app.matters.enums import MatterOrigin
     from app.matters.models import Entry, Matter
-    from app.matters.my_work import _register_url, opinion_work
+    from app.matters.my_statistics_incoming import incoming_series
     from app.reporting import opinions
+    from app.riigikogu.bills import switched_on
+    from app.workflow.enums import closure_reason_label
 
-    shown = months(today)
-    oldest = shown[-1].start
+    period = period or stat_periods.current(today)
+    selected = selected if selected in FIGURES else DEFAULT_FIGURE
+    counted, compared = period.counted, period.comparison
+    first = min(period.start, compared.start)
+    window = timezone.make_aware(datetime(first.year, first.month, first.day))
+
     recording = recording_since()
     reliable = reliable_since(person, recording)
     ownership = load_ownership(person, today, recording["trail"], reliable["trail"])
-    work = opinion_work(person, person, today)
-    current = [
-        Figure(
-            "Avatud teemad",
-            Matter.objects.visible_to(person).filter(owner=person, is_open=True).count(),
-            CURRENT,
-            _register_url(person),
-        ),
-        Figure("Arvamus koostamisel", work.in_preparation, CURRENT, work.preparation_url),
-        Figure("Arvamuse tähtaeg sel nädalal", work.due_this_week, CURRENT, work.due_url),
-    ]
-
-    facts = [fact for fact in opinions.opinion_facts(person) if fact.sent_on >= oldest]
-    window = timezone.make_aware(datetime(oldest.year, oldest.month, 1))
-    entries = Counter(
-        (_day(moment) or oldest).replace(day=1)
-        for moment in Entry.objects.visible_to(person)
-        .filter(author=person, occurred_at__gte=window)
-        .values_list("occurred_at", flat=True)
-    )
-    kinds: dict[str, str] = {
-        ChangeEventType.MATTER_CLOSED: "closed",
-        ChangeEventType.WEBSITE_OVERVIEW_PUBLISHED: "overviews",
-        ChangeEventType.ENGAGEMENT_ADDED: "engagements",
-    }
-    acted: Counter[tuple[str, date]] = Counter()
     visible = Matter.objects.visible_to(person).values("pk")
-    for kind, moment in ChangeEvent.objects.filter(
-        actor=person, event_type__in=list(kinds), occurred_at__gte=window, matter_id__in=visible
-    ).values_list("event_type", "occurred_at"):
-        acted[(kinds[kind], (_day(moment) or oldest).replace(day=1))] += 1
 
-    rows = []
-    for month in shown:
-        cells = (
-            sent_in_month(facts, ownership, person.pk, month, reliable["sent"]),
-            owned_at(ownership, person.pk, month.end),
-            cell(month, reliable["entries"], entries[month.start]),
-            *(
-                cell(month, reliable[key], acted[(key, month.start)])
-                for key in ("closed", "overviews", "engagements")
-            ),
+    all_facts = opinions.opinion_facts(person)
+    facts = [fact for fact in all_facts if first <= fact.sent_on <= period.until]
+    first_sent: dict[Any, date] = {}
+    for fact in all_facts:
+        known = first_sent.get(fact.matter.matter_id)
+        if known is None or fact.sent_on < known:
+            first_sent[fact.matter.matter_id] = fact.sent_on
+
+    kinds = dict(Entry._meta.get_field("kind").choices or [])
+    entries = Series(since=reliable["entries"])
+    for moment, matter_id, kind in (
+        Entry.objects.visible_to(person)
+        .filter(author=person, occurred_at__gte=window)
+        .values_list("occurred_at", "matter_id", "kind")
+    ):
+        day = _day(moment)
+        if day is not None:
+            entries.records.append(Record(day, matter_id, str(kinds.get(kind, kind))))
+
+    closed = Series(since=reliable["closed"])
+    unanswered = Series(since=reliable["closed"])
+    for moment, matter_id, payload in ChangeEvent.objects.filter(
+        actor=person,
+        event_type=ChangeEventType.MATTER_CLOSED,
+        occurred_at__gte=window,
+        matter_id__in=visible,
+    ).values_list("occurred_at", "matter_id", "payload"):
+        day = _day(moment)
+        if day is None:
+            continue
+        reason = closure_reason_label(str((payload or {}).get("disposition") or ""))
+        closed.records.append(Record(day, matter_id, "Lõpetatud", reason))
+        sent_on = first_sent.get(matter_id)
+        if sent_on is None or sent_on > day:
+            unanswered.records.append(Record(day, matter_id, "Lõpetatud arvamuseta", reason))
+
+    created: list[tuple[Any, date]] = []
+    for matter_id, moment in ChangeEvent.objects.filter(
+        event_type=ChangeEventType.MATTER_CREATED,
+        occurred_at__gte=window,
+        matter_id__in=visible,
+        matter__origin=MatterOrigin.NATIVE,
+    ).values_list("matter_id", "occurred_at"):
+        day = _day(moment)
+        if day is not None:
+            created.append((matter_id, day))
+
+    series: dict[str, Series] = {
+        "saadetud": sent_series(facts, ownership, person.pk, reliable["sent"]),
+        "uued": arrivals_series(ownership, created, person.pk, reliable["trail"]),
+        "lopetatud": closed,
+        "arvamuseta": unanswered,
+        "sissekanded": entries,
+        **incoming_series(person, ownership, first, period.until, riigikogu_on=switched_on()),
+    }
+
+    present: dict[str, tuple[list[DrillRow], int]] = {}
+    if period.is_current:
+        present = _present_state(person, today)
+
+    def card_for(figure: FigureDef) -> Card:
+        url = period.url(path, naitaja=figure.key)
+        chosen = figure.key == selected
+        if figure.mode == PRESENT:
+            if figure.key in present:
+                total = present[figure.key][1]
+                return Card(figure, Cell(Coverage.VERIFIED, total), url, chosen)
+            return Card(
+                figure, Cell(Coverage.UNKNOWN), url, chosen, None, "ainult täna", ONLY_TODAY
+            )
+        if figure.mode == OWNED:
+            now = owned_at(ownership, person.pk, period.until)
+            before = owned_at(ownership, person.pk, compared.end)
+            hint, why = _hint(now, ownership.reliable, Day(period.until, period.until))
+            return Card(figure, now, url, chosen, _delta(now, before), hint, why)
+        found = series[figure.key]
+        if found.off:
+            return Card(figure, Cell(Coverage.UNKNOWN), url, chosen, off=found.off)
+        now, before = found.cell(counted), found.cell(compared)
+        if found.readings is not None and now.coverage is Coverage.PARTIAL:
+            hint, why = "osaline", f"Seda allikat loetakse alates {found.since:%d.%m.%Y}."
+        elif found.readings is not None:
+            hint, why = ("", "") if now.exact else ("lugemata", NOT_READ)
+        else:
+            hint, why = _hint(now, found.since, counted)
+        return Card(figure, now, url, chosen, _delta(now, before), hint, why)
+
+    groups = [
+        Group("oma", "Minu töö", [card_for(figure) for figure in OWN]),
+        Group("seire", "Sissetulev seire", [card_for(figure) for figure in INCOMING_FIGURES]),
+    ]
+    chosen = next(card for group in groups for card in group.cards if card.selected)
+
+    columns, note = _chart(chosen, period, series, ownership, person.pk)
+    drill = _drill(chosen, period, series, ownership, person.pk, present, show_all, path)
+
+    bar = []
+    for key, label in stat_periods.KINDS:
+        if key == stat_periods.CUSTOM:
+            url = period.url(path, naitaja=selected) if period.kind == key else ""
+        else:
+            url = stat_periods.current(today, key).url(path, naitaja=selected)
+        bar.append((key, label, url, period.kind == key))
+    previous_url = period.previous.url(path, naitaja=selected) if period.has_previous else ""
+    next_url = period.shifted(1).url(path, naitaja=selected) if period.has_next else ""
+    return MyStatistics(
+        period=period,
+        today=today,
+        groups=groups,
+        selected=chosen,
+        columns=columns,
+        chart_note=note,
+        drill=drill,
+        kinds=bar,
+        previous_url=previous_url,
+        next_url=next_url,
+        recording=recording,
+        reliable=reliable,
+    )
+
+
+def _present_state(person: Any, today: date) -> dict[str, tuple[list[DrillRow], int]]:
+    """Minu asjad's own overdue band and «Vajab sekkumist» rows, for today."""
+    from app.matters import work_items as wi
+    from app.matters.my_work import VIEW_ATTENTION, build_portfolio, default_horizon
+
+    everything = wi.work_items(person, today=today, responsible=person)
+    bands = wi.band_items(everything, today, horizon=default_horizon(today).until)
+    overdue = next((band for band in bands if band.key == wi.BAND_OVERDUE), None)
+    late = [
+        DrillRow(
+            item.period_end or item.when,
+            item.matter.display_reference,
+            item.matter.title,
+            _matter_url(item.matter.pk),
+            item.text,
+            item.display_date,
         )
-        rows.append(MonthRow(month, cells))
-    return MyStatistics(current, COLUMNS, rows, recording, today, reliable)
+        for item in (overdue.items if overdue else [])
+    ]
+    portfolio = build_portfolio(person, person, today=today, items=everything, view=VIEW_ATTENTION)
+    attention = [
+        DrillRow(
+            row.action.when if row.action else None,
+            row.matter.display_reference,
+            row.matter.title,
+            _matter_url(row.matter.pk),
+            row.action.text if row.action else "",
+            "Tähtaeg möödas" if row.action and row.action.is_overdue else "Ülevaatamise aeg",
+        )
+        for row in portfolio.all_rows
+        if row.needs_attention
+    ]
+    # The band lists its first `BAND_LIMIT` rows; its total is every overdue one.
+    return {
+        "ule-tahtaja": (late, overdue.total if overdue else 0),
+        "sekkumist": (attention, len(attention)),
+    }
+
+
+def _chart(
+    card: Card, period: Any, series: dict[str, Series], ownership: Ownership, person_id: Any
+) -> tuple[list[Column], str]:
+    """The selected figure by day, week or month (`Period.grain`); future columns empty."""
+    figure = card.figure
+    if figure.mode == PRESENT:
+        return [], ONLY_TODAY
+    if card.off:
+        return [], card.off
+    values: list[tuple[Any, Cell | None]] = []
+    for bucket in period.buckets():
+        if bucket.future:
+            values.append((bucket, None))
+            continue
+        span = Day(bucket.span.start, min(bucket.span.end, period.today))
+        if figure.mode == OWNED:
+            values.append((bucket, owned_at(ownership, person_id, span.end)))
+        else:
+            values.append((bucket, series[figure.key].cell(span)))
+    top = max([found.value or 0 for _, found in values if found is not None] + [0])
+    columns = []
+    for bucket, found in values:
+        span_text = (
+            f"{bucket.span.start:%d.%m.%Y}"
+            if bucket.span.start == bucket.span.end
+            else bucket.span.text
+        )
+        if found is None:
+            columns.append(Column(bucket.label, bucket.sublabel, span_text, "", 0.0, future=True))
+            continue
+        height = 100.0 * (found.value or 0) / top if top else 0.0
+        columns.append(
+            Column(
+                bucket.label,
+                bucket.sublabel,
+                f"{span_text}: {found.spoken}",
+                found.text,
+                height,
+                partial=not found.exact,
+            )
+        )
+    return columns, ""
+
+
+def _drill(
+    card: Card,
+    period: Any,
+    series: dict[str, Series],
+    ownership: Ownership,
+    person_id: Any,
+    present: dict[str, tuple[list[DrillRow], int]],
+    show_all: bool,
+    path: str,
+) -> Drill:
+    """The records behind the selected figure for the period, newest first."""
+    figure = card.figure
+    rows: list[DrillRow]
+    if figure.mode == PRESENT:
+        rows, total = present.get(figure.key, ([], 0))
+    elif card.off:
+        rows, total = [], 0
+    elif figure.mode == OWNED:
+        mine, _ = owned_matters(ownership, person_id, period.until)
+        rows = []
+        for pk in mine:
+            reference, title = ownership.names.get(pk, ("", ""))
+            rows.append(DrillRow(None, reference, title, _matter_url(pk)))
+        rows.sort(key=lambda row: (row.reference, row.title))
+        total = len(rows)
+    else:
+        rows = []
+        for record in sorted(
+            series[figure.key].within(period.counted), key=lambda r: r.day, reverse=True
+        ):
+            reference, title = ownership.names.get(record.matter_id, ("", ""))
+            rows.append(
+                DrillRow(
+                    record.day,
+                    reference,
+                    title,
+                    _matter_url(record.matter_id),
+                    record.what,
+                    record.detail,
+                    record.source_url,
+                )
+            )
+        total = len(rows)
+    if show_all or len(rows) <= DRILL_LIMIT:
+        return Drill(rows, total)
+    return Drill(rows[:DRILL_LIMIT], total, period.url(path, naitaja=figure.key, kaik="1"))

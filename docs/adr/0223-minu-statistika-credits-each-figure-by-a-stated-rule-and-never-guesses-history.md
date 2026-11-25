@@ -1,7 +1,8 @@
 # 0223 — Minu statistika credits each figure by a stated rule and never guesses history
 
 Date: 2026-11-25 · Status: Accepted (owner, 25.11.2026: accepted with the r93 release; developed overnight 25.11.2026);
-amended in the corrections round 25.11.2026 (§6–§9, also Proposed).
+amended in the corrections round 25.11.2026 (§6–§9), the integration review (§10) and the owner's
+redesign (§11); the amendments are accepted with the r93 and r94 releases (owner, 25.11.2026).
 Owner decision BLOCK-4 (UX programme preparation report, 24.11.2026): historical workload is
 credited to the owner *at the time*; the page is for the signed-in person only.
 
@@ -165,6 +166,42 @@ the responsible lawyer before then were never applied in Juristid.
     figure and says the figures count activities recorded in Juristid, not all work actually
     done; a `VERIFIED` 0 means no activity was recorded, not that none was done. Access (the
     signed-in person only), stable owner ids and existing audit rows are unchanged.
+
+11. **Amendment (owner's redesign, 25.11.2026): one period, figure cards, a chart and the
+    records.** The twelve-month table, the current-owner tiles, the opening paragraph and «Kuidas
+    arvestatakse» are gone, and so is the foldout's sentence of §9; the crediting, ownership and
+    coverage rules of §2–§10 are unchanged and are now applied to a chosen period
+    (`app/matters/stat_periods.py`, `my_statistics.my_statistics`):
+    * **The period bar**: Nädal (Monday–Sunday, the default), Kuu, Kvartal, Aasta, Muu periood
+      (two dates). ‹ › step one period; › is not offered before the next period has begun. The
+      state is the URL (`?periood=&algus=&kuni=&naitaja=&kaik=`); nothing in it names a person.
+      A running period counts to today.
+    * **«Minu töö»**, eight cards: Saadetud arvamused (§2's rule), Uued teemad (a recorded
+      hand-over to the person — not an owner back-fill — or a Teema created in Juristid with
+      them as owner that day), Lõpetatud teemad (`MATTER_CLOSED` by the person), Ei saatnud
+      arvamust (those of them with no sent opinion on or before the closing day), Sissekanded,
+      Menetluses teemad (§8's reconstruction at the period's last counted day), Tähtaja
+      ületanud and Vajab sekkumist (Minu asjad's own overdue band and «Vajab sekkumist» rows).
+      The last two are present state: shown for the current period only, «—» with «ainult
+      täna» for a past one. Avaldatud ülevaated and Lisatud kaasamised are no longer shown.
+    * **«Sissetulev seire»**, five cards of incoming events, never added to the person's work:
+      register documents found (`WatchFinding`, not `BASELINE`), Riigikogu invitations,
+      committee sittings and mentions of koda on bills the person's Teemad follow, and
+      Government agenda items tied to them. An item is the person's when the Teema was theirs on
+      its day by the trail, otherwise by its owner now. A span in which the source was never
+      read (no `WatchRun`, no successful or partial `StageRun` covering it, no stored agenda for
+      its week) is «—», never 0; with `RIIGIKOGU_MONITORING` off the three Riigikogu cards say
+      so instead of a value.
+    * **A value** is the count when the whole period is inside reliable coverage (a 0 there is a
+      real 0); otherwise «≥ N» or «—» with an «osaline» hint whose ⓘ names the day recording
+      began (or that it cannot be established). The change against the previous equal period —
+      to the same point while the period runs — is shown only when both values are exact; no
+      direction is coloured as good or bad, only the overdue count keeps Minu asjad's colour.
+    * **Each card** has a one-sentence ⓘ and selects the chart (by day for a week or a month,
+      by week for a quarter, by month for a year or a long custom period; future columns empty)
+      and the list of the records behind it, each linked to its Teema and, for an incoming item,
+      to its source; the list shows 20 and offers «Näita kõiki». Server-rendered, the
+      Statistika column chart's markup; no new script.
 
 ## Consequences
 

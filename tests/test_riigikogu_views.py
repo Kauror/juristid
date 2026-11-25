@@ -369,3 +369,75 @@ def test_reading_an_outcome_analysis_twice_never_doubles_or_relabels_official_ro
         )
     levels = [p["evidence_level"] for p in row.result["proposals"]]
     assert levels == ["DIRECT", "SHARED"]
+
+
+# -- r94: «Lisa tähtajana» with the date beside it; «Märgi loetuks» (owner, 25.11) --------
+
+
+def _open_invitation(mark: int):
+    return next(
+        i
+        for i in Invitation.objects.filter(review=InvitationReview.NEW).select_related(
+            "document__bill"
+        )
+        if i.document.bill and i.document.bill.mark == mark
+    )
+
+
+def test_the_page_offers_the_date_beside_lisa_tahtajana_and_marks_read(client, world):
+    html = _get(client, world["head"], reverse("register_watch:riigikogu")).content.decode()
+    assert 'type="date" name="paev"' in html and "Lisa tähtajana" in html
+    assert "Märgi loetuks" in html and "Edasist tööd pole vaja</button>" not in html
+    # Removed on the owner's request: the plain «found» state, the register note,
+    # the nightly-read note and the automatic «Koja arvamus registris».
+    for gone in (
+        "Tähtaeg tuvastatud",
+        "teine kaitseliin",
+        "loetakse kord ööl",
+        "Koja arvamus registris",
+    ):
+        assert gone not in html, gone
+    # A date that needs checking still says so.
+    assert "Tähtaeg vajab kontrollimist" in html
+
+
+def test_lisa_tahtajana_adds_the_date_read_from_the_letter(client, world):
+    invitation = _open_invitation(1201)
+    read = invitation.document.deadlines.get(kind="OPINION_REQUEST", state="ACTIVE")
+    client.force_login(world["lawyer"])
+    client.post(
+        reverse("register_watch:riigikogu_decide", kwargs={"pk": invitation.pk}),
+        {"otsus": "kuupaev", "teema_id": str(world["one"].pk), "paev": read.due_on.isoformat()},
+    )
+    invitation.refresh_from_db()
+    assert invitation.review == InvitationReview.DATE_ADDED
+    assert invitation.important_date.date_value == read.due_on
+
+
+def test_lisa_tahtajana_with_a_date_chosen_from_the_calendar(client, world):
+    invitation = _open_invitation(1201)
+    chosen = dt.date(2026, 12, 18)
+    client.force_login(world["lawyer"])
+    client.post(
+        reverse("register_watch:riigikogu_decide", kwargs={"pk": invitation.pk}),
+        {"otsus": "kuupaev", "teema_id": str(world["one"].pk), "paev": chosen.isoformat()},
+    )
+    invitation.refresh_from_db()
+    assert invitation.important_date.date_value == chosen
+    assert invitation.important_date.kind == "RK_OPINION_REQUEST"
+    # The letter's reading is kept, superseded by the person's date.
+    rows = invitation.document.deadlines.filter(kind="OPINION_REQUEST")
+    assert rows.filter(state="SUPERSEDED").count() == 1
+    assert rows.get(state="ACTIVE").due_on == chosen
+
+
+def test_marking_read_records_no_date(client, world):
+    invitation = _open_invitation(1201)
+    client.force_login(world["lawyer"])
+    client.post(
+        reverse("register_watch:riigikogu_decide", kwargs={"pk": invitation.pk}),
+        {"otsus": "pole_vaja", "teema_id": str(world["one"].pk)},
+    )
+    invitation.refresh_from_db()
+    assert invitation.review == InvitationReview.NO_ACTION
+    assert invitation.important_date is None

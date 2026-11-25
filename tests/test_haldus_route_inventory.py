@@ -24,7 +24,7 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from django.test import Client
-from django.urls import URLPattern, URLResolver, get_resolver, reverse
+from django.urls import NoReverseMatch, URLPattern, URLResolver, get_resolver, reverse
 
 from app.accounts.enums import Capability, UserRole
 from app.haldus import sections
@@ -290,3 +290,24 @@ def test_a_shared_gate_session_with_no_persona_gets_no_shell(client, gate):
     assert client.get(reverse("core:release_notes")).status_code == 200
     body = client.get(reverse("core:release_notes")).content.decode()
     assert 'class="haldusnav"' not in body
+
+
+@pytest.mark.parametrize("persona", sorted(set(PERSONAS) - {"shared-gate-only"}))
+def test_every_page_the_sidebar_offers_shows_the_sidebar(client, gate, persona):
+    """A page reached from the Haldus sidebar keeps the sidebar (owner, 25.11.2026:
+    «Teavitused» under Isiklikud seaded opened without it). Every item, and every
+    sub-page that needs no id, opened by a reader who may open it."""
+    PERSONAS[persona](client)
+    missing = []
+    for item in sections.SECTIONS:
+        for name in item.routes:
+            try:
+                url = reverse(name)
+            except NoReverseMatch:
+                continue  # a sub-page that needs an id
+            response = client.get(url)
+            if response.status_code != 200 or "text/html" not in response.get("Content-Type", ""):
+                continue
+            if '<nav class="haldusnav"' not in response.content.decode():
+                missing.append((item.key, name))
+    assert not missing, " | ".join(f"{key} {name}" for key, name in missing)

@@ -1,0 +1,45 @@
+{% comment %}
+The month calendar of Minu tähtajad and Minu jõustumised (app/matters/my_dates.py).
+Monday first; ‹ › and every day are plain links, so it works without script.
+A day with rows carries a mark (red when the day is behind us); today is
+outlined; the chosen day is filled. `calendar_noun` names what is counted.
+{% endcomment %}
+<section class="mycal" aria-labelledby="mycal-title">
+  <div class="mycal__head">
+    <a class="mycal__nav" href="{{ calendar.previous_url }}" aria-label="Eelmine kuu" title="Eelmine kuu">‹</a>
+    <h2 class="mycal__title" id="mycal-title">{{ calendar.label }}</h2>
+    <a class="mycal__nav" href="{{ calendar.next_url }}" aria-label="Järgmine kuu" title="Järgmine kuu">›</a>
+    <a class="mycal__today" href="{{ calendar.today_url }}">Täna</a>
+  </div>
+  <table class="mycal__grid">
+    <caption class="visually-hidden">{{ calendar_noun|capfirst }}: {{ calendar.label }}</caption>
+    <thead>
+      <tr>{% for short, name in calendar.weekdays %}<th scope="col" abbr="{{ name }}" title="{{ name }}">{{ short }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for week in calendar.weeks %}
+        <tr>
+          {% for cell in week %}
+            <td class="mycal__cell{% if not cell.in_month %} mycal__cell--outside{% endif %}">
+              <a class="mycal__day{% if cell.is_today %} mycal__day--today{% endif %}{% if cell.is_selected %} mycal__day--selected{% endif %}{% if cell.count %} mycal__day--busy{% endif %}"
+                 href="{{ cell.url }}" aria-label="{{ cell.label }}"{% if cell.is_selected %} aria-current="date"{% endif %}>
+                <span class="mycal__num">{{ cell.day.day }}</span>
+                {% if cell.count %}<span class="mycal__mark{% if cell.is_past %} mycal__mark--past{% endif %}" aria-hidden="true">{% if cell.count > 1 %}{{ cell.count }}{% endif %}</span>{% endif %}
+              </a>
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if calendar.period_rows %}
+    <div class="mycal__periods">
+      <h3 class="mycal__periodstitle">Periood, päev teadmata</h3>
+      <ul class="mycal__periodlist">
+        {% for row in calendar.period_rows %}
+          <li><span class="mycal__perioddate">{{ row.display_date }}</span> <a href="{{ row.matter_url }}">{{ row.matter.title }}</a>{% if row.what %} · <span class="mycal__periodwhat">{{ row.what }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+</section>

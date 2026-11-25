@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% block title %}Arendusseis · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -10,14 +10,11 @@ Every row comes from app/core/development_status.py, which is where the rows are
 edited — in a pull request, beside the code they describe.
 {% endcomment %}
 
-{% block content %}
-<div class="page">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Arendusseis</h1>
-    <span class="pagehead__context">
+{% block haldus_title %}Arendusseis{% endblock %}
+{% block haldus_context %}<span class="pagehead__context">
       Lahtised otsused ja teadlikud kõrvalekalded v2 disainist.
-    </span>
-  </div>
+    </span>{% endblock %}
+{% block haldus_content %}
 
   <div class="tablewrap">
     <table class="table">
@@ -57,5 +54,4 @@ edited — in a pull request, beside the code they describe.
       </tbody>
     </table>
   </div>
-</div>
 {% endblock %}

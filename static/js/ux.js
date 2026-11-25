@@ -2352,7 +2352,30 @@
    *
    * A popover opened by a click or a tap is the reader's: leaving does not
    * close it. Touch screens have no hover, so they get the tap alone. */
+  /* Escape closes a popover the pointer opened, wherever keyboard focus is: the
+   * generic contract above closes only the popover that holds focus, and a
+   * tooltip opened by resting the mouse never has it (WCAG 1.4.13; r93 review
+   * UI-01). One listener for the page. */
+  var railTipEscapeBound = false;
+  function bindRailTipEscape() {
+    if (railTipEscapeBound) {
+      return;
+    }
+    railTipEscapeBound = true;
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      document
+        .querySelectorAll('details[data-railtip][open][data-railtip-passing="1"]')
+        .forEach(function (holder) {
+          holder.open = false;
+        });
+    });
+  }
+
   function bindRailTips(scope) {
+    bindRailTipEscape();
     scope.querySelectorAll("details[data-railtip]").forEach(function (holder) {
       if (!once(holder, "RailTip")) {
         return;
@@ -2391,6 +2414,9 @@
       }
       if (summary) {
         summary.addEventListener("click", function (event) {
+          // A click decides: a hover still waiting to open must not reopen it
+          // after the reader has closed it (the race behind the CI flake).
+          window.clearTimeout(openTimer);
           if (holder.open && passing()) {
             event.preventDefault();
             holder.removeAttribute("data-railtip-passing");
@@ -2412,6 +2438,9 @@
       });
       holder.addEventListener("toggle", function () {
         if (!holder.open) {
+          // Closed by Escape, a click elsewhere or the summary: a pending hover
+          // must not open it again under a pointer that has not moved.
+          window.clearTimeout(openTimer);
           holder.removeAttribute("data-railtip-passing");
         }
       });

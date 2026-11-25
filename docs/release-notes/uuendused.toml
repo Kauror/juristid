@@ -7,6 +7,9 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# r94 — samal päeval paigaldatud (omaniku otsus 25.11.2026): Riigikogu protokolli juurdepääs (#728,
+# ADR 0228 muudatus), «Minu statistika» v2, «Minu tähtajad», «Minu jõustumised» ja Minu lehtede sakid
+# (#729, ADR 0223 §11). README: üks kirje päevas, nii et r94 muudatused on r93 kirje lõpus.
 # r93 — ühendatud väljalase (25.11.2026 koordinaatori otsus): parendusprogramm (#721: A1 #711, A2 #712,
 # B1 #718, B2 #722, C1 #717, C2 #720, D1 #713, D2 #716, D3 #719, E1 #715), Lovable'i tavamuudatuste piir
 # 20 → 100 (#725, ADR 0213 §14), üks öine tsükkel kell 00.00 Tallinna aja järgi (#726, ADR 0229) ja
@@ -17,7 +20,7 @@
 [[day]]
 date = 2026-11-25
 basis = "deployment"
-prs = [711, 712, 713, 715, 716, 717, 718, 719, 720, 722, 723, 724, 725, 726]
+prs = [711, 712, 713, 715, 716, 717, 718, 719, 720, 722, 723, 724, 725, 726, 728, 729]
 changes = [
   "Minu asjade «Viimastes tegevustes» on iga tegevus ühel real: teema pealkirja järel on kohe kuupäev ja tegevuse liik (ja kolleegi nimi, kui tegevuse tegi keegi teine). Korraga on näha 20 tegevust, ülejäänud on nagu varem «Näita veel» all.",
   "Teavituste lehe «Varasemad» on nüüd kokku volditav ja vaikimisi kinni; pealkirjas on varasemate teavituste arv. Juristid jätab meelde, kas hoiad selle lahti või kinni. «Näita varasemaid» avab selle alati, ning lahti- või kinnivoltimine ei märgi ühtegi teavitust loetuks ega lugemata.",
@@ -54,6 +57,17 @@ changes = [
   "Monitooring → Riigikogu näitab ka kahe nädala komisjonide päevakordi teie teemade eelnõude kohta (või kõiki komisjone) ja Riigikogu muudatusettepanekute tähtaegu. Muudatusettepanekute tähtaeg on Riigikogu liikmete ja fraktsioonide tähtaeg: koda ise muudatusettepanekut esitada ei saa.",
   "Teema vahekaardil «Registritest» on uus osa «Riigikogu»: jälgitavad eelnõud (eelnõu saab teemaga siduda numbri järgi, näiteks «1082 SE»), selle teema kutsed ja tähtajad, komisjonide arutelud ja teiste organisatsioonide arvamused eelnõu kohta.",
   "Kui kutse tähtaeg on möödas ja registris ei ole koja arvamust, on kutse juures «Kutsele vastamine vajab kontrollimist». See ei tähenda, et koda ei vastanud: saab märkida, et vastati ühispöördumisega, osaleti istungil või otsustati mitte vastata.",
+  "Halduse «Registrite jälgimine» Riigikogu tabelis on nüüd kirjas, kui Riigikogu keeldus mõne komisjoni protokolli näitamast (juurdepääs keelatud). Selline protokoll ei märgi enam kogu öist kontrolli osaliseks; teda küsitakse järgmisel ööl uuesti ja loetakse siis, kui see on avalik.",
+  "Monitooring → Riigikogu: «Lisa tähtajana» kõrval on kuupäev, mis teemale lisatakse — vaikimisi kirjast loetud tähtaeg, kalendrist saab valida ka teise päeva. Kui tähtaeg vajab kontrollimist, vali kuupäev ise.",
+  "«Edasist tööd pole vaja» on nüüd «Märgi loetuks».",
+  "Monitooring → Riigikogu: kutse, millele on koja arvamus juba registris, on «Varasemad kutsed» all; kutse, mille vastamist tuleb kontrollida, on «Kutsele vastamine vajab kontrollimist» all. Üleval ja Riigikogu vahelehe arvus on ainult kutsed, mis ootavad otsust.",
+  "«Koja mainimised täiskogus»: päevakorrapunktide pealkirjad on ilma HTML-märgenditeta, sama lõik ei ole enam kaks korda ja eelnõu arutelul tehtud mainimise juures on eelnõu number.",
+  "Halduse «Registrite jälgimine»: Riigikogu etappide loendurid on etapi all omaette real (tabel ei veni enam väga kõrgeks) ning «Seis» näitab iga silti koos selle väärtusega.",
+  "Menetluse kulus sulgeb Esc nüüd ka selle etapi hüpiku, mis avanes hiirega etapile peatudes, ning suletud hüpik ei avane enam iseenesest uuesti.",
+  "Halduse vasakpoolne menüü on nüüd nähtaval kõigil Halduse lehtedel, ka Isiklikud seaded → Teavitused, Kiirklahvid, Arendusseis, Arvamuste arhiiv, Andmekvaliteet, Ajaloolised materjalid, Statistika definitsioonid, uue kasutaja lisamine ja halduri sisselogimine.",
+  "Kutsete loendis ei ole enam ridu «Tähtaeg tuvastatud» ja «Koja arvamus registris» ega selgitusi öise lugemise ja registri kohta; alles on see, mis vajab tähelepanu, näiteks «Tähtaeg vajab kontrollimist».",
+  "«Minu statistika» on uues kujus: vali nädal, kuu, kvartal, aasta või oma periood ning liigu noolega eelmisele. Kaartidel on sinu saadetud arvamused, uued, lõpetatud ja ilma arvamuseta lõpetatud teemad, sissekanded, menetluses olevad, tähtaja ületanud ja sekkumist vajavad teemad koos muutusega eelmise perioodi suhtes; «Sissetulev seire» näitab, mida registrite, Riigikogu ja valitsuse päevakorra jälgimine sinu teemadele tõi. Kaardil klõpsates näed joonist päevade kaupa ja kirjeid, millest arv koosneb. Kui Juristid ei ole tegevust kogu perioodi jooksul salvestanud, on arvu ees «≥» või kriips, mitte 0.",
+  "Uued lehed «Minu tähtajad» ja «Minu jõustumised»: kuu kalender, valitud päeva loetelu ja tabel kõigist sinu tähtaegadest või sinu teemade jõustumistest; kaardid näitavad, mitu on möödunud, täna, sel nädalal ja järgmise 30 päeva jooksul. Minu asjade, tähtaegade, jõustumiste ja statistika vahel liigud lehe ülaosa sakkidega.",
 ]
 
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,

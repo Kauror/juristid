@@ -2,7 +2,7 @@
 <li class="regwatch__row">
   <span class="regwatch__date">{{ mention.sitting_on|date:"d.m.Y" }}</span>
   <div class="regwatch__body">
-    <span class="regwatch__title">{{ mention.agenda_title|default:mention.sitting_title }}</span>
+    <span class="regwatch__title">{{ mention.agenda_title|striptags|default:mention.sitting_title }}{% if mention.bill_mark %} <span class="regwatch__meta">· eelnõu {{ mention.bill_mark }}</span>{% endif %}</span>
     <blockquote class="rkinv__evidence">{{ mention.quote }}</blockquote>
     <span class="regwatch__meta">{% if mention.source == "PROTOCOL" %}Komisjoni protokoll{% if mention.participation %} · koda osalejate seas{% endif %}{% else %}Täiskogu stenogramm{% endif %}{% if mention.speaker %} · {{ mention.speaker }}{% endif %}{% if mention.url %} · <a href="{{ mention.url }}" target="_blank" rel="noopener noreferrer">Allikas<span class="visually-hidden"> — avaneb uues aknas</span></a>{% endif %}</span>
   </div>

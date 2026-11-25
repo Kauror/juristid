@@ -12,14 +12,22 @@
   <section class="panel" aria-labelledby="regwatchlog-state">
     <h2 class="acctsection__title" id="regwatchlog-state">Seis</h2>
     <dl class="detailgrid">
-      <dt>Viimane kontroll</dt>
-      <dd>{% if latest %}{{ latest.started_at|date:"j.n.Y H:i" }} · {% if latest.aborted %}<span class="statechip statechip--problem">Katkes</span>{% elif latest.running %}<span class="statechip">Käib</span>{% elif latest.errors %}<span class="statechip statechip--problem">{{ latest.errors|length }} viga</span>{% else %}<span class="statechip statechip--ok">Vigadeta</span>{% endif %}{% else %}—{% endif %}{% if health.problem %}<br><span class="statechip statechip--problem">{{ health.problem }}</span>{% endif %}</dd>
-      <dt>AI</dt>
-      <dd>{% if latest.ai_model %}<span class="mono">{{ latest.ai_model }}</span>{% else %}Väljas{% endif %}</dd>
-      <dt>Ootab otsust</dt>
-      <dd>{% if show_monitooring %}<a href="{% url 'register_watch:review' %}">{{ waiting }} dokument{{ waiting|pluralize:"i" }}</a>{% else %}{{ waiting }} dokument{{ waiting|pluralize:"i" }}{% endif %}</dd>
-      <dt>{{ total_days }} päeva kokku</dt>
-      <dd>{{ totals.runs }} kontroll{{ totals.runs|pluralize:"i" }} · {{ totals.offered|default:0 }} pakutud dokument{{ totals.offered|default:0|pluralize:"i" }} · {{ totals.calls|default:0 }} AI päring{{ totals.calls|default:0|pluralize:"ut" }} ({{ totals.judged|default:0 }} hinnatud{% if totals.failures %}, {{ totals.failures }} ebaõnnestus{% endif %}) · <span class="mono">{{ totals.input_tokens|default:0 }} / {{ totals.output_tokens|default:0 }}</span> tokenit</dd>
+      <div>
+        <dt>Viimane kontroll</dt>
+        <dd>{% if latest %}{{ latest.started_at|date:"j.n.Y H:i" }} · {% if latest.aborted %}<span class="statechip statechip--problem">Katkes</span>{% elif latest.running %}<span class="statechip">Käib</span>{% elif latest.errors %}<span class="statechip statechip--problem">{{ latest.errors|length }} viga</span>{% else %}<span class="statechip statechip--ok">Vigadeta</span>{% endif %}{% else %}—{% endif %}{% if health.problem %}<br><span class="statechip statechip--problem">{{ health.problem }}</span>{% endif %}</dd>
+      </div>
+      <div>
+        <dt>AI</dt>
+        <dd>{% if latest.ai_model %}<span class="mono">{{ latest.ai_model }}</span>{% else %}Väljas{% endif %}</dd>
+      </div>
+      <div>
+        <dt>Ootab otsust</dt>
+        <dd>{% if show_monitooring %}<a href="{% url 'register_watch:review' %}">{{ waiting }} dokument{{ waiting|pluralize:"i" }}</a>{% else %}{{ waiting }} dokument{{ waiting|pluralize:"i" }}{% endif %}</dd>
+      </div>
+      <div>
+        <dt>{{ total_days }} päeva kokku</dt>
+        <dd>{{ totals.runs }} kontroll{{ totals.runs|pluralize:"i" }} · {{ totals.offered|default:0 }} pakutud dokument{{ totals.offered|default:0|pluralize:"i" }} · {{ totals.calls|default:0 }} AI päring{{ totals.calls|default:0|pluralize:"ut" }} ({{ totals.judged|default:0 }} hinnatud{% if totals.failures %}, {{ totals.failures }} ebaõnnestus{% endif %}) · <span class="mono">{{ totals.input_tokens|default:0 }} / {{ totals.output_tokens|default:0 }}</span> tokenit</dd>
+      </div>
     </dl>
   </section>
 
@@ -30,7 +38,7 @@
     <div class="accttable">
       <table class="data-table">
         <thead>
-          <tr><th scope="col">Etapp</th><th scope="col">Seis</th><th scope="col">Viimane katse</th><th scope="col">Viimane õnnestunud</th><th scope="col">Päringuid / 429</th><th scope="col">Vigu</th><th scope="col">Loendurid</th></tr>
+          <tr><th scope="col">Etapp</th><th scope="col">Seis</th><th scope="col">Viimane katse</th><th scope="col">Viimane õnnestunud</th><th scope="col">Päringuid / 429</th><th scope="col">Vigu</th></tr>
         </thead>
         <tbody>
           {% for row in riigikogu %}
@@ -41,7 +49,9 @@
               <td class="regwatchlog__nowrap">{{ row.health.last_success.started_at|date:"j.n.Y H:i"|default:"—" }}</td>
               <td>{% if row.last %}{{ row.last.requests }} / {{ row.last.rate_limited }}{% else %}—{% endif %}</td>
               <td>{{ row.errors }}</td>
-              <td class="mono">{{ row.counts|default:"—" }}</td>
+            </tr>
+            <tr class="regwatchlog__countsrow">
+              <td colspan="6"><span class="visually-hidden">Loendurid: </span><span class="mono regwatch__meta">{{ row.counts|default:"—" }}</span>{% if row.refused %}<br><span class="regwatch__meta">Juurdepääs keelatud (HTTP 403): {{ row.refused|length }} dokument{{ row.refused|length|pluralize:"i" }} — {{ row.refused|join:", " }}. Neid küsitakse järgmisel ööl uuesti.</span>{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>

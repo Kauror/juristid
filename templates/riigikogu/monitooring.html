@@ -16,8 +16,7 @@ Teema is named only where the reader may see it.
   {% include "register_watch/_monitooring_head.html" %}
 
   {% if not actions_on %}<p class="regwatch__meta">Riigikogu jälgimine ei ole sisse lülitatud: siin ei saa praegu midagi otsustada ega teemaga siduda. Allpool on viimati loetud andmed.</p>
-  {% elif not watch_on %}<p class="regwatch__meta">Riigikogu öine jälgimine on välja lülitatud. Allpool on viimati loetud andmed.</p>
-  {% else %}<p class="regwatch__meta">Andmed loetakse kord ööl öise tsükli osana, alates kella 01:00 Tallinna aja järgi. Päeval Riigikogu andmeid uuesti ei loeta.</p>{% endif %}
+  {% elif not watch_on %}<p class="regwatch__meta">Riigikogu öine jälgimine on välja lülitatud. Allpool on viimati loetud andmed.</p>{% endif %}
   {% if health %}
     <p class="rkpage__health" role="status">
       {% for stage in health %}{{ stage.label }}: {{ stage.line }}{% if not forloop.last %} · {% endif %}{% endfor %}
@@ -26,7 +25,6 @@ Teema is named only where the reader may see it.
 
   <section class="rkpage__section" aria-labelledby="rk-kutsed">
     <h2 class="regtab__subhead" id="rk-kutsed">Kojale saadetud kutsed</h2>
-    <p class="regwatch__meta">Riigikogu dokumendiregistri järgi. Register on teine kaitseliin: e-kiri jääb esimeseks.</p>
     <ul class="regwatch__list">
       {% for row in page.open_rows %}{% include "riigikogu/_invitation.html" with row=row can_act=may_decide %}
       {% empty %}<li class="regwatch__empty">Uusi kutseid ei ole.</li>{% endfor %}
@@ -85,8 +83,8 @@ Teema is named only where the reader may see it.
 
   {% if page.mentions %}
     <details class="regwatch__unrelated rkpage__section" {% disclosure "riigikogu.mentions" %}>
-      <summary>Muud koja mainimised täiskogus ({{ page.mentions|length }})</summary>
-      <p class="regwatch__meta">Stenogrammist, mitte eelnõuga seotud päevakorrapunktist. Ainult lugemiseks; teemasid siit ei teki.</p>
+      <summary>Koja mainimised täiskogus ({{ page.mentions|length }})</summary>
+      <p class="regwatch__meta">Täiskogu stenogrammist. Kui mainimine oli eelnõu arutelul, on eelnõu number juures; teie teemade eelnõude mainimised on teema vahekaardil «Registritest». Ainult lugemiseks; teemasid siit ei teki.</p>
       <ul class="regwatch__list">{% for mention in page.mentions %}{% include "riigikogu/_mention.html" %}{% endfor %}</ul>
     </details>
   {% endif %}

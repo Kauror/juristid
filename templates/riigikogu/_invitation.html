@@ -14,7 +14,7 @@ the Teema's own deadline (Lovable's) is shown, never resolved.
   </span>
   <div class="regwatch__body">
     <span class="regwatch__title">{{ invitation.committee|default:"Riigikogu komisjon" }} · {% if document.bill %}{{ document.bill.label|default:document.bill.title }}{% else %}{{ document.title }}{% endif %}</span>
-    <span class="rkinv__status rkinv__status--{{ deadline.extraction|default:'NOT_FOUND'|lower }}">{{ row.status_label }}{% if deadline.doubt %} — {{ deadline.doubt }}{% endif %}</span>
+    {% if not deadline or deadline.extraction != "FOUND" %}<span class="rkinv__status rkinv__status--{{ deadline.extraction|default:'NOT_FOUND'|lower }}">{{ row.status_label }}{% if deadline.doubt %} — {{ deadline.doubt }}{% endif %}</span>{% endif %}
     {% if row.changed %}<span class="rkinv__changed">Tähtaeg muutus: oli {{ row.previous.due_on|date:"d.m.Y"|default:"—" }}, nüüd {{ deadline.due_on|date:"d.m.Y"|default:"—" }}.</span>{% endif %}
     {% if deadline.evidence %}<blockquote class="rkinv__evidence">{{ deadline.evidence }}</blockquote>{% endif %}
     <span class="regwatch__meta">
@@ -34,8 +34,8 @@ the Teema's own deadline (Lovable's) is shown, never resolved.
     {% if row.lovable == "same" %}<span class="regwatch__meta">Sama mis teema arvamuse tähtaeg.</span>
     {% elif row.lovable == "differs" %}<span class="rkinv__changed">Erineb teema arvamuse tähtajast ({{ row.lovable_date|date:"d.m.Y" }}). Teema tähtaeg tuleb Lovable'ist ja seda siin ei muudeta.</span>
     {% elif row.lovable == "none" %}<span class="regwatch__meta">Teemal pole arvamuse tähtaega.</span>{% endif %}
-    {% if invitation.review != "NEW" %}<span class="regwatch__meta">{{ invitation.get_review_display }}{% if invitation.decided_by %} · {{ invitation.decided_by.get_short_name|default:invitation.decided_by }}{% endif %}{% if invitation.decided_at %} · {{ invitation.decided_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
-    {% if invitation.response == "NEEDS_CHECK" or invitation.response == "FOUND" or invitation.response_by %}<span class="regwatch__meta">{{ invitation.get_response_display }}{% if invitation.response_note %} — {{ invitation.response_note }}{% endif %}</span>{% endif %}
+    {% if invitation.review != "NEW" %}<span class="regwatch__meta">{% if invitation.review == "NO_ACTION" %}Märgitud loetuks{% else %}{{ invitation.get_review_display }}{% endif %}{% if invitation.decided_by %} · {{ invitation.decided_by.get_short_name|default:invitation.decided_by }}{% endif %}{% if invitation.decided_at %} · {{ invitation.decided_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
+    {% if invitation.response == "NEEDS_CHECK" or invitation.response_by %}<span class="regwatch__meta">{{ invitation.get_response_display }}{% if invitation.response_note %} — {{ invitation.response_note }}{% endif %}</span>{% endif %}
   </div>
   {% if can_act %}
     <div class="regwatch__actions regwatch__actions--stack">
@@ -43,8 +43,8 @@ the Teema's own deadline (Lovable's) is shown, never resolved.
         <form method="post" action="{% url 'register_watch:riigikogu_decide' pk=invitation.pk %}"{% if from_teema %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
           {% csrf_token %}
           {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% elif row.teemad|length == 1 %}<input type="hidden" name="teema_id" value="{{ row.teemad.0.pk }}">{% elif row.teemad and not row.needs_check %}<label class="visually-hidden" for="tm-{{ invitation.pk }}">Teema</label><select id="tm-{{ invitation.pk }}" name="teema_id" class="field__input">{% for matter_choice in row.teemad %}<option value="{{ matter_choice.pk }}">{{ matter_choice.display_reference }} {{ matter_choice.title|truncatechars:40 }}</option>{% endfor %}</select>{% endif %}
-          {% if not row.needs_check and row.teemad %}<button type="submit" name="otsus" value="kuupaev" class="button button--primary button--tiny">Lisa tähtajana</button>{% endif %}
-          <button type="submit" name="otsus" value="pole_vaja" class="button button--quiet button--tiny">Edasist tööd pole vaja</button>
+          {% if row.teemad or from_teema %}<label class="visually-hidden" for="lt-{{ invitation.pk }}">Tähtaja kuupäev</label><input id="lt-{{ invitation.pk }}" type="date" name="paev" class="field__input rkinv__date" value="{% if deadline.due_on and not row.needs_check %}{{ deadline.due_on|date:'Y-m-d' }}{% endif %}"{% if row.needs_check %} required{% endif %}><button type="submit" name="otsus" value="kuupaev" class="button button--primary button--tiny">Lisa tähtajana</button>{% endif %}
+          <button type="submit" name="otsus" value="pole_vaja" class="button button--quiet button--tiny" formnovalidate>Märgi loetuks</button>
         </form>
         {% if row.needs_check %}
           <details class="rkinv__more">

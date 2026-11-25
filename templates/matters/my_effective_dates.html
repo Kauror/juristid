@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Minu jõustumised · {{ application_name }}{% endblock %}
+
+{% comment %}
+Minu jõustumised: active commencements on the signed-in person's own Teemad,
+open and closed (app/matters/my_dates.py). A past date reads «Kirjas olev
+kuupäev on möödunud», never «jõustunud»: the record states a date, nothing on
+it confirms the act came into force.
+{% endcomment %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'css/my-dates.css' %}">
+<div class="page mydates">
+  {% include "matters/_my_tabs.html" %}
+
+  <div class="pagehead">
+    <h1 class="pagehead__title">Minu jõustumised</h1>
+    <span class="pagehead__context">sinu teemade jõustumised, ka suletud teemadel</span>
+  </div>
+
+  <p class="mydates__headline">
+    <a href="{{ page.next_30_url }}">Järgmise 30 päeva jooksul <b>{{ page.next_30_count }}</b> {{ page.next_30_label }}</a>
+  </p>
+
+  <section class="mydates__next" aria-labelledby="mydates-next">
+    <h2 class="mydates__sectiontitle" id="mydates-next">Järgmised jõustumised</h2>
+    {% if page.upcoming %}
+      <ul class="mydates__nextlist">
+        {% for row in page.upcoming %}
+          <li class="mydates__nextcard">
+            <span class="mydates__nextdate">{{ row.display_date }}</span>
+            <span class="mydates__rel">{{ row.relative }}</span>
+            <a class="mydates__nextmatter" href="{{ row.matter_url }}">{{ row.matter.title }}</a>
+            <span class="mydates__what">{{ row.what }}</span>
+            <span class="mydates__badge mydates__badge--{{ row.certainty }}">{{ row.certainty_label }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">Sul ei ole tulevasi jõustumisi.</p>
+    {% endif %}
+  </section>
+
+  <div class="mydates__split">
+    {% include "matters/partials/my_month_calendar.html" with calendar_noun="jõustumised" %}
+
+    <section class="mydates__panel" aria-labelledby="mydates-day" aria-live="polite">
+      <h2 class="mydates__paneltitle" id="mydates-day">{% if page.selected_day %}{{ page.selected_label }}{% if page.selected_day == page.today %} · täna{% endif %}{% else %}Päev{% endif %}</h2>
+      {% if page.selected_day %}
+        {% if page.day_rows %}
+          <ul class="mydates__daylist">
+            {% for row in page.day_rows %}
+              <li class="mydates__dayitem{% if row.is_past %} is-past{% endif %}">
+                <a class="mydates__daymatter" href="{{ row.matter_url }}">{{ row.matter.title }}</a>
+                <span class="mydates__daywhat">{{ row.what }}</span>
+                <span class="mydates__rel">{% if row.is_past %}{{ row.relative }} · kirjas olev kuupäev on möödunud{% else %}{{ row.relative }}{% endif %}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="mydates__dayempty">Sel päeval sinu teemadel jõustumisi ei ole.</p>
+        {% endif %}
+      {% else %}
+        <p class="mydates__dayempty">Vali kalendrist päev, et näha selle päeva jõustumisi.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="mydates__tablesection" id="tabel" aria-labelledby="mydates-table">
+    <div class="mydates__tablehead">
+      <h2 class="mydates__tabletitle" id="mydates-table">Jõustumised</h2>
+      <span class="mydates__tablecount">{{ page.rows|length }} / {{ page.total }}</span>
+    </div>
+    <form class="mydates__filters" method="get" action="#tabel" role="search">
+      {% if request.GET.kuu %}<input type="hidden" name="kuu" value="{{ request.GET.kuu }}">{% endif %}
+      {% if request.GET.paev %}<input type="hidden" name="paev" value="{{ request.GET.paev }}">{% endif %}
+      <label class="mydates__field">
+        <span class="mydates__fieldlabel">Otsi</span>
+        <input class="field__input" type="search" name="q" value="{{ page.search }}" placeholder="Teema või akt">
+      </label>
+      <label class="mydates__field">
+        <span class="mydates__fieldlabel">Periood</span>
+        <select class="field__input" name="periood">
+          {% for choice in page.periods %}<option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="mydates__field">
+        <span class="mydates__fieldlabel">Olek</span>
+        <select class="field__input" name="olek">
+          <option value="">Kõik olekud</option>
+          {% for choice in page.certainties %}<option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <button class="button" type="submit">Näita</button>
+      {% if page.is_filtered %}<a class="mydates__clear" href="{{ page.clear_url }}">Tühjenda valik</a>{% endif %}
+    </form>
+
+    {% if not page.total %}
+      <p class="empty">Sul ei ole tulevasi jõustumisi.</p>
+    {% elif not page.rows %}
+      <p class="empty">Selle valikuga jõustumisi ei ole.<a class="empty__hint" href="{{ page.clear_url }}">Näita tulevasi</a></p>
+    {% else %}
+      <div class="mydates__tablewrap">
+        <table class="mydates__table">
+          <thead>
+            <tr>
+              <th scope="col">Jõustumise aeg</th>
+              <th scope="col">Olek</th>
+              <th scope="col">Teema</th>
+              <th scope="col">Selgitus</th>
+              <th scope="col"><span class="visually-hidden">Muuda</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in page.rows %}
+              <tr class="{% if row.is_past %}is-past{% endif %}">
+                <td class="mydates__when" data-label="Jõustumise aeg">
+                  {% if row.relative %}<span class="mydates__rel">{{ row.relative }}</span>{% endif %}
+                  {% if row.is_dated %}<span class="mydates__date">{{ row.display_date }}</span>{% else %}<span class="mydates__date mydates__date--none">kuupäev puudub</span>{% endif %}
+                </td>
+                <td data-label="Olek">
+                  <span class="mydates__badge mydates__badge--{{ row.certainty }}">{{ row.certainty_label }}</span>
+                  {% if row.is_past %}<span class="mydates__passed">kirjas olev kuupäev on möödunud</span>{% endif %}
+                </td>
+                <td data-label="Teema">
+                  <a href="{{ row.matter_url }}">{{ row.matter.title }}</a>{% if row.matter.display_reference %} <span class="mydates__ref">{{ row.matter.display_reference }}</span>{% endif %}{% if not row.matter.is_open %} <span class="mydates__closed">suletud</span>{% endif %}
+                </td>
+                <td data-label="Selgitus">
+                  {{ row.record.description|default:"—" }}
+                  {% if row.record.source_url %}<a class="mydates__source" href="{{ row.record.source_url }}" rel="noopener noreferrer" target="_blank">akt</a>{% endif %}
+                </td>
+                <td class="mydates__actions">
+                  {% if can_write_business_content %}
+                    <a class="button button--tiny button--quiet" href="{{ row.edit_url }}" aria-label="Muuda: {{ row.matter.title }}">Muuda</a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

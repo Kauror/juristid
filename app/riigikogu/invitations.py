@@ -539,13 +539,18 @@ def current_opinion_date(invitation: Invitation) -> ExternalDeadline | None:
 
 
 @transaction.atomic
-def add_as_date(invitation: Invitation, matter: Any, *, actor: Any) -> Any:
+def add_as_date(
+    invitation: Invitation, matter: Any, *, actor: Any, day: dt.date | None = None
+) -> Any:
     """«Lisa tähtajana»: an informational `Oluline tähtaeg` on the Teema (ADR 0225 §3).
 
-    Only a verified date: a date that needs checking is checked first (the person
-    reads the sentence, and «Kontrolli tähtaega» confirms it). Never `Arvamuse
-    tähtaeg`, which is Lovable's; the kind keeps it out of next steps, lateness,
-    work counts and closure holds.
+    Only a verified date. ``day`` is the date the person chose beside the button
+    (prefilled with the date read from the letter, changeable from the calendar):
+    when it differs from the verified date, or there is none yet, it is recorded
+    first as the person's confirmed date (`confirm_date`: the read row superseded,
+    both kept) and that is the date added. Never `Arvamuse tähtaeg`, which is
+    Lovable's; the kind keeps it out of next steps, lateness, work counts and
+    closure holds.
     """
     from app.core.errors import DomainError
     from app.intelligence.enums import ImportantDateKind
@@ -554,6 +559,9 @@ def add_as_date(invitation: Invitation, matter: Any, *, actor: Any) -> Any:
 
     locked = _lock(invitation)
     due = current_opinion_date(locked)
+    if day is not None and (due is None or not due.verified or due.due_on != day):
+        confirm_date(locked, actor=actor, day=day)
+        due = current_opinion_date(locked)
     if due is None or due.due_on is None or not due.verified:
         raise DomainError(NOT_CONFIRMED)
     bill = locked.document.bill

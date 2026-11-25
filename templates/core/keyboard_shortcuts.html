@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% block title %}Kiirklahvid · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -20,18 +20,15 @@ breaks across lines; the alternatives between chords may, which is what lets
 the key column narrow on a phone instead of scrolling the table sideways.
 {% endcomment %}
 
-{% block content %}
-<div class="page page--narrow">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Kiirklahvid</h1>
-    <span class="pagehead__context">
+{% block haldus_title %}Kiirklahvid{% endblock %}
+{% block haldus_context %}<span class="pagehead__context">
       Sagedasi toiminguid saab teha ka klaviatuurilt. Iga kiirklahvi jaoks on ekraanil
       olemas ka nupp või link. Windowsis ja Linuxis kasuta klahvi
       <kbd class="key">Ctrl</kbd>, macOSis selle asemel klahvi <kbd class="key">⌘</kbd>
       (Command). Tähtedega kiirklahvid ei tööta, kui kursor on tekstiväljas — siis
       kirjutad lihtsalt teksti.
-    </span>
-  </div>
+    </span>{% endblock %}
+{% block haldus_content %}
 
   {% for group in shortcut_groups %}
     <section class="shortcuts" aria-labelledby="kiirklahvid-{{ group.slug }}">
@@ -68,5 +65,4 @@ the key column narrow on a phone instead of scrolling the table sideways.
       </div>
     </section>
   {% endfor %}
-</div>
 {% endblock %}

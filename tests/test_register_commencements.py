@@ -139,12 +139,13 @@ def test_the_view_is_never_a_page_of_its_own(signed_in, params):
     assert "commencement_calendar" not in response.context
 
 
-def test_the_retired_destination_still_redirects_to_the_register(signed_in):
-    """docs/adr/0071 and 0155: the standalone page stays retired."""
+def test_the_retired_destination_redirects_to_minu_joustumised(signed_in):
+    """docs/adr/0071 and 0155: the department-wide page stays retired; a signed-in
+    person's bookmark now lands on their own commencements (Minu jõustumised)."""
     for path in ("/jalgimine/joustumised/", "/joustuvad-aktid/"):
         response = signed_in.get(path)
         assert response.status_code == 302
-        assert response["Location"] == f"{REGISTER}?joustumine=on&olek=koik"
+        assert response["Location"] == reverse("matters:my_effective_dates")
 
 
 # ---------------------------------------------------------------------------

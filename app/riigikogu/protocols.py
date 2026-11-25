@@ -3,8 +3,17 @@
 A committee sitting that has happened lists its minutes (``protocolDocuments``)
 in `/api/events`. Each new protocol is read once (its content digest is kept), and
 every place it names koda is kept as a `StenogramMention` of source PROTOCOL with
-the exact passage. A passage in the protocol's attendance block («Kutsutud:»,
-«Osalesid:», «Istungist võtsid osa:») marks ``participation``: evidence that koda
+the exact passage. A protocol the source refuses (HTTP 403 on its metadata or its
+file) is not an error of the night: it is counted and named in the stage's run
+record (``refused``), nothing is stored for it, and it is asked again on the next
+night while its sitting is inside `BACK_DAYS` — a refusal today says nothing about
+tomorrow. Only a protocol actually read is never read again; one stored unread
+(no file, or a file the parsers could not read) is checked again in the same
+window. Many refusals in one night (`REFUSED_IS_A_PROBLEM`) are the source's
+problem, not one document's, and keep the stage PARTIAL.
+
+A passage in the protocol's attendance block («Kutsutud:», «Osalesid:»,
+«Istungist võtsid osa:») marks ``participation``: evidence that koda
 took part, which an invitation alone never is.
 """
 
@@ -29,6 +38,9 @@ _ATTENDANCE = re.compile(
     r"(kutsutud|osalesid|istungist\s+võtsid\s+osa|istungil\s+osalesid|kutsutud\s+isikud)\s*:",
     re.IGNORECASE,
 )
+#: Refusals in one night that make the stage PARTIAL: at least this many, and at
+#: least half of the protocols asked for. Below it a refusal is one document's.
+REFUSED_IS_A_PROBLEM = 3
 _SECTION_END = re.compile(r"\n\s*(\d+\.\s|päevakord|istungi\s+juhataja|protokollis)", re.IGNORECASE)
 
 
@@ -37,12 +49,44 @@ class Counts:
     sittings: int = 0
     protocols_new: int = 0
     protocols_unreadable: int = 0
+    #: Asked for this night (refused ones included); the base of `REFUSED_IS_A_PROBLEM`.
+    protocols_asked: int = 0
+    #: Refused by the source (HTTP 403): counted apart from unreadable files.
+    protocols_refused: int = 0
     mentions_new: int = 0
     participations: int = 0
     errors: list[dict[str, str]] = field(default_factory=list)
+    #: One entry per refused protocol: its id, where it was refused, the status, when.
+    refused: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if k != "errors"}
+        out: dict[str, Any] = {
+            k: v for k, v in self.__dict__.items() if k not in ("errors", "refused")
+        }
+        if self.refused:
+            out["refused"] = list(self.refused)
+        return out
+
+
+class Refused(client.FetchError):
+    """The source answered 403 for this one protocol (its metadata or its file)."""
+
+    def __init__(self, protocol_uuid: uuid_module.UUID, where: str) -> None:
+        super().__init__(f"Riigikogu keeldus protokollist ({where}): 403", status=403)
+        self.protocol_uuid = protocol_uuid
+        self.where = where
+
+
+def _get(call: Any, protocol_uuid: uuid_module.UUID, where: str) -> Any:
+    """``call()``, with a 403 told apart by its structured status, never by its text."""
+    try:
+        return call()
+    except client.BudgetExceeded:
+        raise
+    except client.FetchError as error:
+        if error.status == 403:
+            raise Refused(protocol_uuid, where) from error
+        raise
 
 
 def attendance_spans(text: str) -> list[tuple[int, int]]:
@@ -78,7 +122,11 @@ def read_protocol(
     counts: Counts,
 ) -> None:
     now = timezone.now()
-    detail = client.get_json(f"/api/documents/{protocol_uuid}", budget=budget)
+    detail = _get(
+        lambda: client.get_json(f"/api/documents/{protocol_uuid}", budget=budget),
+        protocol_uuid,
+        "metaandmed",
+    )
     if not isinstance(detail, dict):
         raise client.FetchError("Riigikogu protokolli vastus on võõra kujuga")
     files = [f for f in detail.get("files") or [] if isinstance(f, dict) and f.get("uuid")]
@@ -92,7 +140,11 @@ def read_protocol(
     )
     text = documents.Text(TextStatus.NO_FILE)
     if chosen is not None:
-        raw = client.get_bytes(f"/api/files/{chosen['uuid']}/download", budget=budget)
+        raw = _get(
+            lambda: client.get_bytes(f"/api/files/{chosen['uuid']}/download", budget=budget),
+            protocol_uuid,
+            "fail",
+        )
         text = documents.read(raw, str(chosen.get("fileName") or ""))
     document, created = ParliamentDocument.objects.get_or_create(
         uuid=protocol_uuid,
@@ -170,8 +222,12 @@ def read_recent(*, today: dt.date, budget: client.Budget | None = None) -> Count
     )
     if not isinstance(answer, list):
         raise client.FetchError("Riigikogu päevakorra vastus on võõra kujuga")
+    # Only a protocol actually read is done; one stored unread is asked again while
+    # its sitting is inside the window (the window is the bound on rechecking).
     known = set(
-        ParliamentDocument.objects.filter(kind=DocumentKind.PROTOCOL).values_list("uuid", flat=True)
+        ParliamentDocument.objects.filter(
+            kind=DocumentKind.PROTOCOL, text_status=TextStatus.READ
+        ).values_list("uuid", flat=True)
     )
     for day in answer:
         for group in (day or {}).get("committeeSittings") or []:
@@ -196,10 +252,30 @@ def read_recent(*, today: dt.date, budget: client.Budget | None = None) -> Count
                     if key in known:
                         continue
                     known.add(key)
+                    counts.protocols_asked += 1
                     try:
                         read_protocol(key, agenda=first, budget=budget, counts=counts)
                     except client.BudgetExceeded:
                         raise
+                    except Refused as refused:
+                        counts.protocols_refused += 1
+                        counts.refused.append(
+                            {
+                                "protokoll": str(key),
+                                "koht": refused.where,
+                                "status": 403,
+                                "nähtud": timezone.now().isoformat(timespec="seconds"),
+                            }
+                        )
                     except client.FetchError as error:
                         counts.errors.append({"protokoll": str(key), "viga": str(error)[:200]})
+    if counts.protocols_refused >= REFUSED_IS_A_PROBLEM and (
+        2 * counts.protocols_refused >= counts.protocols_asked
+    ):
+        counts.errors.append(
+            {
+                "viga": f"Riigikogu keeldus {counts.protocols_refused} protokollist "
+                f"{counts.protocols_asked}-st: allika juurdepääsu viga, mitte üksiku dokumendi oma"
+            }
+        )
     return counts
