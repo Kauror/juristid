@@ -1234,6 +1234,26 @@ p.formnote {
   width: 132px;
 }
 
+/* The two date columns hold their widest real content at Tavaline (above); at
+   Suur and Väga suur the same dates are wider, so the columns grow with the
+   type instead of running into the next one (docs/adr/0221, text size).
+   Tavaline and Väike keep the widths above. */
+:root[data-text-size="suur"] .table--register .table__date {
+  width: 220px;
+}
+
+:root[data-text-size="suur"] .table--register .table__lastactivity {
+  width: 152px;
+}
+
+:root[data-text-size="vaga-suur"] .table--register .table__date {
+  width: 250px;
+}
+
+:root[data-text-size="vaga-suur"] .table--register .table__lastactivity {
+  width: 174px;
+}
+
 /* Columns added with «Vali veerud». Each has a width, and the table's
    minimum grows by that width per added column (`--extra-columns`, the count
    the template writes), so the layout stays fixed and the title keeps what is
@@ -10249,8 +10269,15 @@ button.opinionmenu__item {
 
 /* ---- Aktiivsed teemad ----------------------------------------------- */
 
+/* At Väga suur on a 320px phone the heading beside it grows; the search gives
+   way rather than pushing the page sideways. Tavaline keeps its 200px. */
+.pw-search {
+  min-width: 0;
+}
+
 .pw-search input {
   width: 200px;
+  max-width: 100%;
   padding: 5px var(--spacing-25);
   border: 1px solid var(--border-input);
   border-radius: var(--radius-md);

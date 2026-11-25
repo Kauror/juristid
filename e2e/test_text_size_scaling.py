@@ -14,7 +14,8 @@ on a desktop (1440) and a phone (375):
 
 * at Tavaline it is exactly its frozen size (no default page moved);
 * the four sizes grow strictly, smallest to largest;
-* on the phone, no size makes the page scroll sideways.
+* on the phone, no size makes the page scroll sideways; on the desktop the
+  register's date cells never run into the next column.
 """
 
 from __future__ import annotations
@@ -137,6 +138,14 @@ def test_each_surface_scales_with_the_text_size(page, base_url, width, persona, 
                 assert value == float(tavaline[:-2]), (name, selector, value, tavaline)
         if width < 900:
             assert not document_overflows(page), (address, size)
+        elif path == "/teemad/":
+            # The register's date cells grow with the type and never run into the next column.
+            spilling = page.evaluate(
+                "() => Array.from(document.querySelectorAll("
+                "'.table--register td.table__date, .table--register td.table__lastactivity'))"
+                ".filter(c => c.scrollWidth > c.clientWidth + 1).map(c => c.textContent.trim())"
+            )
+            assert not spilling, (size, spilling)
     _choose(page, None)
 
     for name, values in measured.items():
