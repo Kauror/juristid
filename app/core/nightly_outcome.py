@@ -272,13 +272,24 @@ def _riigikogu(since: dt.datetime, rc: int) -> StepOutcome:
     step = "riigikogu"
     if not cycle.enabled():
         return StepOutcome(step, SKIPPED_DELIBERATE, "the Riigikogu cycle is off")
-    runs = list(StageRun.objects.filter(started_at__gte=since).exclude(stage=Stage.ANALYSIS))
-    if not runs:
+    started = StageRun.objects.filter(started_at__gte=since).order_by("-started_at")
+    latest = started.first()
+    if latest is None:
         if rc == 1:
             return StepOutcome(step, SKIPPED_UNEXPECTED, "another Riigikogu cycle held the lock")
         if rc:
             return StepOutcome(step, FAILED, f"exit {rc} with no run record")
         return StepOutcome(step, SKIPPED_UNEXPECTED, "no run record")
+    # One cycle, the one this step started (the newest since the step began; the
+    # cycle's advisory lock keeps two from overlapping), judged on every stage a
+    # nightly cycle runs (`cycle.ORDER`), not on whatever rows happen to exist.
+    this_cycle = list(StageRun.objects.filter(cycle=latest.cycle))
+    analysis = [run for run in this_cycle if run.stage == Stage.ANALYSIS]
+    runs = [run for run in this_cycle if run.stage != Stage.ANALYSIS]
+    expected = [stage for stage in cycle.ORDER if stage != Stage.ANALYSIS]
+    missing = [stage for stage in expected if stage not in {run.stage for run in runs}]
+    if not cycle.analysis_enabled() and any(run.status != RunStatus.DISABLED for run in analysis):
+        return StepOutcome(step, FAILED, "document analysis ran while it is switched off")
     statuses = [run.status for run in runs]
     new = sum(
         int(value)
@@ -288,6 +299,7 @@ def _riigikogu(since: dt.datetime, rc: int) -> StepOutcome:
     )
     counts = {
         "stages": len(runs),
+        "missing": len(missing),
         "failed": statuses.count(RunStatus.FAILED),
         "partial": statuses.count(RunStatus.PARTIAL),
         "new": new,
@@ -295,6 +307,8 @@ def _riigikogu(since: dt.datetime, rc: int) -> StepOutcome:
     }
     if RunStatus.RUNNING in statuses:
         return StepOutcome(step, INTERRUPTED, "a stage never finished", counts)
+    if missing:
+        return StepOutcome(step, INTERRUPTED, "stages not recorded: " + ", ".join(missing), counts)
     if all(status == RunStatus.FAILED for status in statuses):
         return StepOutcome(step, FAILED, "every stage failed", counts)
     if counts["failed"] or counts["partial"]:

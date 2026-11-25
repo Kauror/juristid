@@ -93,12 +93,12 @@ def test_a_riigikogu_date_leaves_every_lovable_authoritative_field_alone(special
 # ---------------------------------------------------------------------------
 
 
-def _stage(stage, status, *, finished=True, counts=None, since=None):
+def _stage(stage, status, *, finished=True, counts=None, since=None, cycle=None):
     from app.riigikogu.models import StageRun
 
     now = since or timezone.now()
     return StageRun.objects.create(
-        cycle=uuid.uuid4(),
+        cycle=cycle or uuid.uuid4(),
         stage=stage,
         status=status,
         started_at=now,
@@ -108,19 +108,23 @@ def _stage(stage, status, *, finished=True, counts=None, since=None):
     )
 
 
-def _night(failed=None, *, counts=None, running=None):
-    """Every reading stage once: SUCCEEDED, except the ones named."""
+def _night(failed=None, *, counts=None, running=None, skip=(), since=None, analysis=None):
+    """One cycle: every reading stage once, SUCCEEDED except the ones named."""
     from app.riigikogu.enums import RunStatus, Stage
 
+    cycle = uuid.uuid4()
     for stage in Stage.values:
+        if stage in skip:
+            continue
         if stage == Stage.ANALYSIS:
-            _stage(stage, RunStatus.DISABLED)
+            _stage(stage, analysis or RunStatus.DISABLED, cycle=cycle, since=since)
         elif stage == failed:
-            _stage(stage, RunStatus.FAILED)
+            _stage(stage, RunStatus.FAILED, cycle=cycle, since=since)
         elif stage == running:
-            _stage(stage, RunStatus.RUNNING, finished=False)
+            _stage(stage, RunStatus.RUNNING, finished=False, cycle=cycle, since=since)
         else:
-            _stage(stage, RunStatus.SUCCEEDED, counts=counts)
+            _stage(stage, RunStatus.SUCCEEDED, counts=counts, cycle=cycle, since=since)
+    return cycle
 
 
 def _failed_stage():
@@ -252,3 +256,36 @@ def test_production_not_found_is_the_applications_own_phone_ready_page(client, s
     html = response.content.decode()
     assert 'name="viewport"' in html
     assert 'class="meta"' not in html
+
+
+@pytest.mark.django_db
+@override_settings(RIIGIKOGU_MONITORING=True, REGISTER_WATCH_FETCH=True)
+def test_a_cycle_that_stopped_before_its_last_stages_is_interrupted():
+    """Every stage a nightly cycle runs must be recorded: a cycle killed after three
+    stages left no row for the rest, and «no failed row» is not success."""
+    _night(skip=("PROTOCOLS", "STENOGRAMS", "RESPONSES"))
+    result = _outcome()
+    assert result.outcome == "INTERRUPTED"
+    assert "PROTOCOLS" in result.reason and result.counts["missing"] == 3
+
+
+@pytest.mark.django_db
+@override_settings(RIIGIKOGU_MONITORING=True, REGISTER_WATCH_FETCH=True)
+def test_only_the_steps_own_cycle_is_judged_not_older_rows():
+    """A failed stage of an earlier cycle (started before the step) does not spoil
+    tonight; tonight's own missing stage is not covered by an earlier success."""
+    earlier = timezone.now() - dt.timedelta(hours=2)
+    _night(failed="AGENDAS", since=earlier)
+    _night(counts={"invitations_new": 1})
+    assert _outcome().outcome == "SUCCEEDED"
+
+
+@pytest.mark.django_db
+@override_settings(
+    RIIGIKOGU_MONITORING=True, REGISTER_WATCH_FETCH=True, RIIGIKOGU_DOCUMENT_AI=False
+)
+def test_document_analysis_running_while_switched_off_is_a_failure():
+    _night(analysis="SUCCEEDED")
+    result = _outcome()
+    assert result.outcome == "FAILED"
+    assert "switched off" in result.reason
