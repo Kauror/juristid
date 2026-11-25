@@ -7,6 +7,16 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# 25.11: omaniku otsus tõsta Lovable'i öise sünkroonimise tavamuudatuste piir 20-lt 100-le (#725, ADR 0213 §14).
+# Kuupäev on ettevaatav: kui väljalase jõuab kasutajateni hiljem, parandatakse kuupäev enne väljalaset.
+[[day]]
+date = 2026-11-25
+basis = "deployment"
+prs = [725]
+changes = [
+  "Lovable'i öine sünkroonimine kirjutab ühe ööga nüüd kuni 100 Lovable'is muudetud teemat (varem 20). Kui muudetud teemasid on rohkem, jääb öö nagu varemgi kirjutamata ja ootab inimese otsust. Vastutaja üleandmistel on endiselt oma piir, 150 teemat ööga. Varasemate käivituste kokkuvõtetes on alles piir, mis neil öödel kehtis.",
+]
+
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
 # sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
 # #691, #692, #693, #694, #695.
