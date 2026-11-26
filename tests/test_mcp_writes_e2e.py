@@ -23,6 +23,7 @@ with connections of their own.
 from __future__ import annotations
 
 import io
+import re
 from datetime import timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -144,7 +145,8 @@ def _prepare(mcp: w.Mcp, operation: str, arguments: dict[str, Any]) -> dict[str,
 def _approve(client: Client, prepared: dict[str, Any], code: str | None) -> str:
     page = client.get(_path(prepared["approval_url"]))
     assert page.status_code == 200, page.content.decode()[:600]
-    form = {"otsus": "kinnita"}
+    shown = re.search(r'name="sidumine" value="([0-9a-f]{64})"', page.content.decode())
+    form = {"otsus": "kinnita", "sidumine": shown.group(1) if shown else ""}
     if code is not None:
         form["kood"] = code
     answered = client.post(_path(prepared["approval_url"]), form)

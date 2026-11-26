@@ -1247,7 +1247,9 @@ MCP_WRITE_MAX_CONCURRENT_CALLS = env_int("MCP_WRITE_MAX_CONCURRENT_CALLS", 2)
 MCP_WRITE_CALL_TIMEOUT_SECONDS = env_int("MCP_WRITE_CALL_TIMEOUT_SECONDS", 30)
 MCP_WRITE_MAX_REQUEST_BYTES = env_int("MCP_WRITE_MAX_REQUEST_BYTES", 64 * 1024)
 # How long a prepared change waits for its person's approval, how long an
-# approval may wait for its commit, and how long one authenticator code in a
+# approval may wait for its commit (r94 only: since docs/adr/0234 approving
+# saves at once, and this is kept for a rollback's sake), and how long one
+# authenticator code in a
 # gate session spares the person typing another for the next approval. Each
 # approval is still its own button press for its own proposal.
 MCP_WRITE_PROPOSAL_SECONDS = env_int("MCP_WRITE_PROPOSAL_SECONDS", 15 * 60)

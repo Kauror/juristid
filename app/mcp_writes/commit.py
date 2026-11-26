@@ -13,7 +13,8 @@ write privilege on any business table and cannot update a proposal at all
 unapproved proposal into a saved change. What `commit_prepared_action` keeps
 is its interface and its answers:
 
-1. the principal's commit budget is charged (`app.mcp_writes.budgets`); a
+1. the account is asked again whether this token may write (`writer_for`);
+   then the principal's commit budget is charged (`app.mcp_writes.budgets`); a
    call that finds the caller's own saved proposal is counted but never
    refused — the receipt of a saved change is always available;
 2. **identity**: the token's user, grant, client and token family must be the
@@ -40,7 +41,7 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from app.mcp_writes import budgets
-from app.mcp_writes.access import family_id, writes_enabled
+from app.mcp_writes.access import family_id, writer_for, writes_enabled
 from app.mcp_writes.models import (
     CURRENT_FORMAT,
     McpWriteEvent,
@@ -161,6 +162,12 @@ def commit(*, access: Any, user: Any, proposal_id: Any) -> dict[str, Any] | Refu
         return refusal("not_found")
     if not writes_enabled():
         return refusal("writes_disabled")
+    # The gateway asked this already; asked again here, so a commit is never
+    # answered for a token that expired, was revoked, lost its write scope or
+    # began under an earlier write decision — whoever calls it.
+    writer = writer_for(access)
+    if writer is None or user is None or writer.pk != user.pk:
+        return refusal("forbidden")
     proposal = McpWriteProposal.objects.filter(pk=pid).first()
     own = proposal is not None and same_principal(proposal, access, user)
 

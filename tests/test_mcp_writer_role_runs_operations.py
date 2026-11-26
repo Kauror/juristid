@@ -5,13 +5,15 @@ through prepare → lock → state → execute; agent C's (`test_mcp_write_propo
 `test_mcp_write_commit`, `test_mcp_write_gateway`, `test_mcp_writes_e2e`) drive
 the gateway's prepare and commit — proposals, events, security audit rows —
 end to end. Their test functions are collected a second time, with one
-difference: every call into an operation's `prepare`, `lock`, `state` and
-`execute`, and into the gateway's `proposals.prepare` and `commit.commit`, runs
-under `SET ROLE juristid_mcp_writer_<random>`, a role made by
+difference: every call into an operation's `prepare` and `state`, and into the
+gateway's `proposals.prepare` and `commit.commit`, runs under
+`SET ROLE juristid_mcp_writer_<random>`, a role made by
 `app.mcp_writes.db_role.role_sql`. PostgreSQL then refuses any write, row lock
-or read the role does not hold — so a green run proves the allow-list suffices
-for every case those tests cover, and a table a canonical service starts
-writing fails here by name.
+or read the role does not hold — so a green run proves the role suffices for
+everything the gateway does. Since format 2 (docs/adr/0234) an operation's
+`lock` and `execute` run on `web`, in the approval page's transaction, and are
+*not* wrapped: tests/test_mcp_writer_cannot.py and
+tests/test_mcp_writer_allowlist.py prove the role cannot run them.
 
 This module re-collects B's four operation suites (they share no fixtures).
 Each of C's suites has its own module (`test_mcp_writer_role_runs_<suite>.py`),
@@ -133,7 +135,10 @@ def as_writer_role(request: Any, monkeypatch: Any) -> Iterator[None]:
         if cls in seen:
             continue
         seen.add(cls)
-        for method in ("prepare", "lock", "state", "execute"):
+        # What the gateway runs (prepare, and the state it judges against).
+        # `lock` and `execute` run on `web` since format 2 (docs/adr/0234):
+        # tests/test_mcp_writer_cannot.py proves the role cannot run them.
+        for method in ("prepare", "state"):
             monkeypatch.setattr(cls, method, wrap(getattr(cls, method), method))
     for module_name, function_name in GATEWAY_ENTRIES:
         try:
@@ -179,4 +184,4 @@ def _as_writer_role(as_writer_role: None) -> None:
 def test_zz_the_operations_really_ran_as_the_writer_role() -> None:
     if not LOADED:
         pytest.skip("INTEGRATION: agent B's operation suites are not on this branch")
-    assert calls(__name__, "execute") > 0 and calls(__name__, "prepare") > 0, CALLS
+    assert calls(__name__, "state") > 0 and calls(__name__, "prepare") > 0, CALLS

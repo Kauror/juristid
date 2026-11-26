@@ -83,12 +83,14 @@ same request's deadline moved vs a correction), `add_important_date`.
    The text item is the same JSON after one instruction to the assistant: show
    the preview, give the link, commit only after the user says they approved.
    `approval_url` is refused unless it points into `JURISTID_PUBLIC_ORIGIN`.
-4. The user opens the link (Juristid behind the gate), reads the preview stored
-   at prepare time, and approves it with the six-digit code from their
-   authenticator — or declines it.
+4. The user opens the link (Juristid behind the gate), reads the preview
+   Juristid derives itself from the proposal's arguments, and approves it with
+   the six-digit code from their authenticator — which **saves it** (since r96,
+   docs/adr/0234) — or declines it.
 5. The user tells ChatGPT they approved; the model calls
    `commit_prepared_action(proposal_id)`. ChatGPT confirms again
-   (`destructiveHint: true`). The writer commits in one transaction:
+   (`destructiveHint: true`, kept from r94 so the tool list is unchanged). The
+   gateway executes nothing and reports:
 
    - `{"status": "executed", "replayed": false, "record_type", "record_id",
      "matter_reference", "url", "saved"}` — saved. **Only this means saved.**
@@ -102,8 +104,9 @@ gateway's own safe message (bounded, one line): `forbidden`, `not_found`,
 `invalid_argument`, `missing_information` (ask the user — nothing is
 invented), `domain_rule`, `stale` (the record moved on: prepare again),
 `expired`, `declined`, `approval_mismatch`, `already_failed`, `too_large`,
-`method_not_allowed`, `writes_disabled`. These all come before anything
-executes, so only they (and a request that never reached the gateway — a
+`method_not_allowed`, `writes_disabled`, `rate_limited` (a budget ran out:
+the message says which and roughly how many minutes to wait; nothing was saved
+or changed). These all come before anything executes, so only they (and a request that never reached the gateway — a
 refused connection) may say «Nothing was saved». A schema violation names the
 field and the rule, never the value.
 

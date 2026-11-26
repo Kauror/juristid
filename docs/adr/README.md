@@ -246,9 +246,14 @@ requires every gap in the numbering to be named here:
   It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
   the architecture only on 2026-10-13, with activation not approved. The record
   lands with that PR.
-- 0230–0233 — left for packages A–D of the security round of 2026-11-26, which
-  are developed in parallel with 0234 (package E); the integration owner renumbers
-  if they land under other numbers.
+- 0230 — left for package A of the security round of 2026-11-26, developed in
+  parallel with 0234 (package E); the integration owner renumbers if it lands elsewhere.
+- 0231 — left for package B of the security round of 2026-11-26, developed in
+  parallel with 0234 (package E); the integration owner renumbers if it lands elsewhere.
+- 0232 — left for package C of the security round of 2026-11-26, developed in
+  parallel with 0234 (package E); the integration owner renumbers if it lands elsewhere.
+- 0233 — left for package D of the security round of 2026-11-26, developed in
+  parallel with 0234 (package E); the integration owner renumbers if it lands elsewhere.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated

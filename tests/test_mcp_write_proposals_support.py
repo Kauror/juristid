@@ -301,3 +301,23 @@ def writer(user: Any) -> tuple[McpAccessGrant, str, Access]:
     grant = active_grant(user)
     raw = token_for(user, grant)
     return grant, raw, verified(raw)
+
+
+# -- approving (since docs/adr/0234: the approval page approves *and* saves) ---------
+
+
+def approve_and_save(proposal: Any) -> Any:
+    """What the approval page does once the person's code was accepted (format 2).
+
+    Derives the change as the page shows it and approves it with that binding;
+    the canonical service runs in the same transaction. Answers the outcome."""
+    from app.mcp_writes import approval, review
+    from app.mcp_writes.models import ApprovalMethod
+
+    return approval.approve_and_save(
+        proposal_id=proposal.pk,
+        user=proposal.user,
+        binding=review.derive(proposal, proposal.user).binding,
+        method=ApprovalMethod.TOTP,
+        ip=None,
+    )
