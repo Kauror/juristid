@@ -7,12 +7,35 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# r96 kandidaat (turvavoor 26.11.2026 + omaniku kasutajaliidese parandused: #731 #733 #734 #735 #736, ühendatud
+# #732 peale; ADR 0230–0234). KUUPÄEV ON AJUTINE: pane siia paigalduspäev (README: üks kirje päevas,
+# kuupäev = paigalduspäev). Kui r95 ja r96 paigaldatakse samal päeval, liida see kirje r95 omaga.
+# Kasutajale nähtamatud muudatused (SEC-006/007/011/012, parserite isolatsioon konteineris, MCP kirjutaja
+# andmebaasirolli vähendamine) siia ei kuulu.
+[[day]]
+date = 2026-11-27
+basis = "deployment"
+prs = [731, 733, 734, 735, 736]
+changes = [
+  "Statistika → Andmekvaliteet: korduvad selgitustekstid on eemaldatud.",
+  "Osakond → Muudatused: plokk «Mida see ei näita» on eemaldatud.",
+  "Osakond → Muudatused: tabeli «Vastutajate kaupa» rida «Kokku» on veergudega joondatud ja eraldatud õhukese joonega.",
+  "Teema → Dokumendid: OneNote'i kuupäevade ja impordi selgitused on eemaldatud; OneNote'i link jääb alles.",
+  "Faili võetakse vastu ainult sisseloginud kasutajalt: aegunud seansiga saadetud fail suunab enne vastuvõtmist uuesti sisse logima.",
+  "Faili lugemine katkestatakse, kui see kestab üle kahe minuti (näiteks väga pikk skaneering); fail jääb alles ja on avatav.",
+  "ChatGPT kaudu ette valmistatud muudatuse kinnituslehel salvestab «Kinnita» muudatuse kohe; nuppu «Tühista kinnitus» enam ei ole.",
+  "Kinnituslehe eelvaate koostab Juristid ise; kui muudatus või teema on vahepeal muutunud, näidatakse uut eelvaadet ja küsitakse kinnitust uuesti.",
+  "ChatGPT kaudu tehtavatel päringutel on piirangud; piirangu ületamisel öeldakse, millal uuesti proovida. Haldus → Süsteemi seis näitab nende loendureid.",
+  "Haldus → Registrite jälgimine näitab öise tsükli iga sammu viimast tulemust; ajapiiri tõttu peatatud samm on märgitud.",
+  "Öised registrikontrollid ja Valitsuse päevakorra lugemine lõpevad kindla ajapiiri jooksul; pooleli jäänu loetakse järgmisel ööl.",
+]
+
 # r95 kandidaat (hoolduskorraldus, valitsuse päevakorra leidmine ja 403; ADR 0219 muudatused 26.11.2026). Kuupäev on
 # ajutine: pane siia paigalduspäev (README: üks kirje päevas, kuupäev = paigalduspäev).
 [[day]]
 date = 2026-11-26
 basis = "deployment"
-prs = [730]
+prs = [730, 732]
 changes = [
   "Valitsuse päevakord leitakse nüüd valitsus.ee enda avalehe ja sisukaardi linkide järgi, mitte ainult aadressi ära arvates. Nii loetakse ka päevakord, mille aadressi lõpus on «-0» (nagu 26.11.2026 istungi oma). Kui valitsus.ee loendeid ei saa lugeda, märgitakse avaldamine kinnitamata, mitte «veel avaldamata».",
   "Kui valitsus muudab juba loetud päevakorda, loetakse muudatus järgmisel ööl: uued ja muutunud punktid hinnatakse uuesti, varasem tekst jääb alles ja juba tehtud otsuseid ei muudeta.",
