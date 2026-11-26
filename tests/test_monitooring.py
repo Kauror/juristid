@@ -239,6 +239,8 @@ def test_the_command_ends_with_a_machine_line_when_asked(monkeypatch):
         "unconfirmed": 0,
         "revised": 0,
         "discovery_failed": 0,
+        # r96: the nightly step's deadline (SEC-010) did not stop the run.
+        "out_of_time": 0,
     }
 
 

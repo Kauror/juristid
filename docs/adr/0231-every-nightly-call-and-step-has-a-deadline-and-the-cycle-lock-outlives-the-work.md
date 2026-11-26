@@ -2,7 +2,9 @@
 
 Date: 2026-11-26 · Status: proposed (security round 26.11.2026, SEC-010; prepared and tested only — no production schedule, host script or configuration changed, nothing merged or deployed)
 
-Numbering: 0230–0233 are left for the other packages of the same security round.
+Numbering (after integration): 0230 parser isolation (SEC-008), 0232 credential links,
+Access sessions and private backups (SEC-006/007/011/012), 0233 multipart boundary
+(SEC-013), 0234 MCP approval and budgets (SEC-009/014).
 
 ## Context
 
@@ -66,6 +68,19 @@ of `sources/http.py` and nothing else — they inherit the run's deadline withou
 any parameter. Between units of work, `http.check_deadline(what)` raises
 `DeadlineExceeded` once the run's time is spent, `http.out_of_time()` asks, and
 `http.remaining()` gives the seconds left (``None`` without a run deadline).
+
+**The Government agenda under this door (r96 integration, 2026-11-26).** The r95
+discovery (`sources.valitsus.discover`/`look`, `agenda.run`/`_reread`) reads only
+through `get_text`, so the step's deadline bounds every read. Once the run's own
+deadline has passed: discovery stops at the page it was on (the listings not reached
+count as unread, so `Discovery.ok` is false); a lookup ends at once as
+`SOURCE_ERROR` — a `DeadlineExceeded` never yields «not yet published» or «not
+found», whatever 403/404 answers came before it; a call cut only by `CALL_SECONDS`
+while the run has time left is an ordinary failure and the next address is still
+read. No model request is started when the time is spent, and none is charged to
+the agenda's three attempts (`agenda.MAX_ATTEMPTS`); `OUTCOME-JSON` carries
+``out_of_time`` and the night's verdict is PARTIAL «stopped at its time limit».
+Tests: `tests/test_government_agenda_discovery.py` (the r96 section).
 
 ### §2 Retries, back-offs and model requests stop at the same deadline
 

@@ -40,7 +40,7 @@ from app.register_watch.models import (
     GovernmentAgendaRevision,
     Strength,
 )
-from app.register_watch.sources import valitsus
+from app.register_watch.sources import http, valitsus
 
 logger = logging.getLogger("app.register_watch")
 
@@ -383,6 +383,9 @@ class Outcome:
     revised: list[GovernmentAgendaRevision] = field(default_factory=list)
     #: The site's listings were needed and could not be read (`valitsus.Discovery.ok`).
     discovery_failed: bool = False
+    #: The nightly step's deadline (SEC-010, ADR 0231) stopped reading or judging:
+    #: what was left is read on the next night. Always also among `errors`.
+    out_of_time: bool = False
 
     def count(self, *states: str) -> int:
         return sum(1 for check in self.checks if check.state in states)
@@ -554,9 +557,18 @@ def run(
         for agenda in GovernmentAgenda.objects.filter(
             judged_at__isnull=True, ai_attempts__lt=MAX_ATTEMPTS
         ).order_by("session_date"):
+            if http.out_of_time():
+                # The step's time is spent (ADR 0231): no request is started, and
+                # no attempt is charged — the agenda is judged on a later night.
+                errors.append(f"{valitsus.HOST}: päevakorra hindamine: {http.OUT_OF_TIME}")
+                break
             part = candidates_ai.Usage()
             count = judge(agenda, part, client=ai_client)
             _add_usage(usage, part)
+            if not (part.calls or part.failures) and http.out_of_time():
+                # The time ran out just before the request (`judge` charged nothing).
+                errors.append(f"{valitsus.HOST}: päevakorra hindamine: {http.OUT_OF_TIME}")
+                break
             if not (part.calls or part.failures):
                 continue  # the model was off or had nothing to be asked
             week = week_monday(agenda.session_date)
@@ -619,6 +631,7 @@ def run(
         checks=checks,
         revised=[revised.revision for revised in revisions],
         discovery_failed=bool(discovered) and not discovered[0].ok,
+        out_of_time=http.out_of_time(),
     )
 
 
@@ -831,6 +844,10 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
         client=client,
     )
     if isinstance(answers, ai_call.Failure):
+        if answers.kind == "request" and answers.reason == ai_call.OUT_OF_TIME:
+            # No request was made: the nightly step's time was spent (ADR 0231). Not
+            # a model failure and not an attempt; `run` records the deadline.
+            return 0
         # The agenda is stored without the model; a later run may try again.
         return _failed_attempt(agenda, usage, answers.reason)
     allowed = {Strength.STRONG, Strength.POSSIBLE, Strength.WEAK, Strength.NONE}

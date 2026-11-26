@@ -389,6 +389,7 @@ def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
         "missing",
         "revised",
         "discovery_failed",
+        "out_of_time",
     )
     counts = {k: int(reported.get(k) or 0) for k in keys}
     # The session day and status of the week still waiting (r95): evidence, not a count.
@@ -404,6 +405,12 @@ def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
             PARTIAL,
             f"this week's agenda missing after its last nightly reading{where}",
             counts,
+        )
+    if counts["out_of_time"]:
+        # ADR 0231: the step's deadline stopped reading or judging; what was stored
+        # is kept, the rest is read next night — never «not yet published».
+        return StepOutcome(
+            step, PARTIAL, f"stopped at its time limit; the rest next night{where}", counts
         )
     # r95: a source failure is reported even in a run that stored the agenda, and a
     # model failure is never a clean classification (items stay «Hindamata»).

@@ -383,3 +383,144 @@ def test_a_model_failure_leaves_items_unjudged_and_the_night_partial(site, previ
     this_week, last_week = dt.date(2026, 11, 23), dt.date(2026, 11, 16)
     assert rows[this_week].ai_failures == 1
     assert rows[last_week].ai_failures == 0 and rows[last_week].ai_calls == 0
+
+
+# -- r96 integration: discovery under the nightly step's deadline (SEC-010, ADR 0231) ---
+
+
+def test_a_spent_run_deadline_ends_discovery_and_lookup_as_source_failures_unread():
+    """The real `sources.http` door, no network: with the run's time spent, discovery
+    reads nothing and records why, and a lookup is a source failure — never «not yet
+    published» and never «not found»."""
+    from app.register_watch.sources import http
+
+    with override_settings(REGISTER_WATCH_FETCH=True), http.run_deadline(seconds=0):
+        assert http.out_of_time()
+        found = valitsus.discover()
+        look = valitsus.look(dt.date(2026, 11, 26), today=dt.date(2026, 11, 25), discovery=found)
+
+    assert found.out_of_time and not found.ok and found.read == []
+    # Stopped at the first page: the rest of the listings were not even tried.
+    assert [path for path, _ in found.failures] == [valitsus.HOMEPAGE]
+    assert all(isinstance(error, http.DeadlineExceeded) for _, error in found.failures)
+    assert look.state == valitsus.SOURCE_ERROR
+    assert look.status is None and look.agenda is None
+    assert "ajapiir" in look.detail or "ei vastanud" in look.detail
+
+
+class _Clock:
+    """The run's time, spent on demand (`http.remaining` is what every check reads)."""
+
+    def __init__(self) -> None:
+        self.spent = False
+
+    def remaining(self) -> float | None:
+        return -1.0 if self.spent else None
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    from app.register_watch.sources import http
+
+    spent = _Clock()
+    monkeypatch.setattr(http, "remaining", spent.remaining)
+    return spent
+
+
+def _deadline_at(site, clock, path):
+    """``path`` is where the run's time runs out: it and every later read are cut."""
+    from app.register_watch.sources import http
+
+    inner = valitsus.get_text
+
+    def get_text(host: str, wanted: str, **kwargs: object) -> str:
+        if wanted == path:
+            clock.spent = True
+        if clock.spent:
+            site.asked.append(wanted)
+            raise http.DeadlineExceeded(f"{host} ei vastanud ettenähtud aja jooksul")
+        return inner(host, wanted, **kwargs)
+
+    return get_text
+
+
+def test_a_deadline_in_the_sitemap_is_a_source_failure_never_not_published(
+    site, previous_week, clock, monkeypatch
+):
+    # Wednesday night: the session is still to come and the plain address is 403 —
+    # exactly where r95 must not say «not yet published» without the listings.
+    monkeypatch.setattr(valitsus, "get_text", _deadline_at(site, clock, valitsus.SITEMAP))
+    outcome = _run(dt.date(2026, 11, 25))
+
+    assert outcome.stored == []
+    states = {c.state for c in outcome.checks}
+    assert states == {AgendaCheckState.SOURCE_ERROR}
+    assert not states & {AgendaCheckState.NOT_PUBLISHED, AgendaCheckState.NOT_FOUND}
+    assert outcome.out_of_time and outcome.discovery_failed
+    # Discovery stopped at the deadline: the sitemap's pages were never asked.
+    assert f"{valitsus.SITEMAP}?page=17" not in site.asked
+    result = _classified(outcome)
+    assert result.outcome == no.PARTIAL and "time limit" in result.reason
+
+
+def test_a_deadline_during_the_lookup_after_a_403_is_a_source_failure(
+    site, previous_week, clock, monkeypatch
+):
+    # The listings are down, the plain address is refused, and the time runs out on
+    # the next address: the refusal must not decide the week.
+    site.answers[valitsus.SITEMAP] = 503
+    monkeypatch.setattr(valitsus, "get_text", _deadline_at(site, clock, SUFFIXED))
+    outcome = _run(dt.date(2026, 11, 25))
+
+    (check,) = outcome.checks
+    assert check.state == AgendaCheckState.SOURCE_ERROR
+    assert PLAIN in site.asked and SUFFIXED in site.asked
+    # The lookup stopped at the deadline: no later guessed address was tried.
+    assert site.asked[-1] == SUFFIXED
+    assert _classified(outcome).outcome == no.PARTIAL
+
+
+def test_one_slow_call_cut_with_time_left_does_not_stop_the_lookup(site, previous_week):
+    # `CALL_SECONDS` cut one read, but the run still has time: the next address is
+    # read and the agenda is stored; the cut read stays visible as a failure.
+    from app.register_watch.sources import http
+
+    site.answers[valitsus.SITEMAP] = 503
+    site.answers[PLAIN] = http.DeadlineExceeded("valitsus.ee ei vastanud ettenähtud aja jooksul")
+    outcome = _run(THURSDAY)
+
+    (stored,) = outcome.stored
+    assert stored.url.endswith(SUFFIXED)
+    assert not outcome.out_of_time
+    assert any(PLAIN in e for e in outcome.errors)
+    assert _classified(outcome).outcome == no.PARTIAL
+
+
+@override_settings(REGISTER_SWEEP_AI=True, REGISTER_SWEEP_AI_MODEL="claude-test")
+def test_a_spent_deadline_charges_no_model_attempt_and_the_night_says_so(
+    site, previous_week, clock
+):
+    stored = agenda.store(valitsus.parse(f"https://valitsus.ee{SUFFIXED}", AGENDA))
+    clock.spent = True
+    outcome = agenda.run(today=THURSDAY, ai_client=NoModel())
+
+    stored.refresh_from_db()
+    # No request was made, so none is counted: the three attempts stay for real ones.
+    assert stored.judged_at is None and stored.ai_attempts == 0
+    assert outcome.usage.calls == 0 and outcome.usage.failures == 0
+    assert outcome.out_of_time
+    assert any("ajapiir" in e for e in outcome.errors)
+    result = _classified(outcome)
+    assert result.outcome == no.PARTIAL and "time limit" in result.reason
+
+
+@override_settings(REGISTER_SWEEP_AI=True, REGISTER_SWEEP_AI_MODEL="claude-test")
+def test_judge_charges_no_attempt_when_the_request_was_never_made(clock):
+    stored = agenda.store(valitsus.parse(f"https://valitsus.ee{SUFFIXED}", AGENDA))
+    clock.spent = True
+    from app.register_watch import candidates_ai
+
+    usage = candidates_ai.Usage()
+    assert agenda.judge(stored, usage, client=NoModel()) == 0
+    stored.refresh_from_db()
+    assert stored.ai_attempts == 0 and usage.failures == 0 and usage.calls == 0

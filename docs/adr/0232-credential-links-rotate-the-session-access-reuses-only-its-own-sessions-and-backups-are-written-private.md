@@ -2,9 +2,9 @@
 
 Date: 2026-11-26 · Status: proposed (security round of 2026-11-26, package C: SEC-006, SEC-007, SEC-011, SEC-012; developed and tested only — nothing merged, deployed or switched on; the authentication mode of every deployment is unchanged)
 
-Numbering: 0230–0233 are left for packages A–D of the security round of
-2026-11-26 and 0234 for package E (docs/adr/README.md); this is package C's.
-The integration owner renumbers if the packages land in another order.
+Numbering (after integration in r96): 0230 parser isolation (SEC-008), 0231
+nightly deadlines (SEC-010), 0232 this record, 0233 multipart boundary (SEC-013),
+0234 MCP approval and budgets (SEC-009/014).
 
 ## Context
 
