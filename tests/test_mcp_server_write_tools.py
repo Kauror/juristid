@@ -623,6 +623,8 @@ def test_the_refusals_before_execution_are_the_only_ones_mapped_as_refusals():
         "already_failed",
         "too_large",
         "method_not_allowed",
+        # docs/adr/0234 §4: a budget ran out before anything was done.
+        "rate_limited",
     }
     assert not set(write_client.REFUSAL_TEXT) & write_client.UNKNOWN_OUTCOME_CODES
 

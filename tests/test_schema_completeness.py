@@ -195,6 +195,11 @@ EXPECTED_TRIGGERS: dict[str, str] = {
     "mcp_access_mcpaccessevent_append_only": "mcp_access_mcpaccessevent",
     "mcp_writes_mcpwriteevent_append_only": "mcp_writes_mcpwriteevent",
     "mcp_writes_mcpwriteapproval_append_only": "mcp_writes_mcpwriteapproval",
+    # SEC-009 (docs/adr/0234 §2): a proposal is born PENDING, what it proposes
+    # never changes, its status only moves forward and it is never deleted —
+    # for every role, so the AI-reachable gateway cannot rewrite one.
+    "mcp_writes_proposal_insert_guard": "mcp_writes_mcpwriteproposal",
+    "mcp_writes_proposal_update_guard": "mcp_writes_mcpwriteproposal",
     # Immutable evidence. A stored version is a fixed artefact, and the raw
     # provenance of an imported row is what proves nothing was invented.
     "documents_documentversion_immutable": "documents_documentversion",
