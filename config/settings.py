@@ -104,6 +104,11 @@ MIDDLEWARE = [
     # every other (app/core/middleware.py, 2026-10-17 audit JUX-013).
     "app.core.middleware.MethodNotAllowedPageMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    # Before anything reads a body: a multipart request is parsed only for a
+    # session that already carries a signed-in person (by the mode's own test),
+    # and never on a sign-in surface; everything else is refused from the
+    # session and headers alone, the body unread (SEC-013, docs/adr/0233).
+    "app.documents.multipart_boundary.MultipartAuthBoundaryMiddleware",
     # The first thing that parses a multipart body: a request over the upload
     # policy (UPLOAD_MAX_*) is answered 413 here, its temporary files already
     # closed, before the NUL check, CSRF's own read or any view touches a field

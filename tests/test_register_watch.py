@@ -1187,11 +1187,15 @@ def test_a_handed_over_teema_takes_its_notice_to_the_new_owner(specialist, other
 
 
 class _Response:
+    """One body, served afresh to every call that opens it, then end-of-file."""
+
     def __init__(self, body: bytes):
         self.body = body
         self.asked: list[int] = []
+        self.position = 0
 
     def __enter__(self):
+        self.position = 0
         return self
 
     def __exit__(self, *exc):
@@ -1199,7 +1203,10 @@ class _Response:
 
     def read(self, size=-1):
         self.asked.append(size)
-        return self.body if size is None or size < 0 else self.body[:size]
+        end = len(self.body) if size is None or size < 0 else self.position + size
+        piece = self.body[self.position : end]
+        self.position += len(piece)
+        return piece
 
 
 class _Opener:
@@ -1254,7 +1261,9 @@ def test_an_answer_over_the_cap_is_refused_unread(door):
         http.get_json("api.riigikogu.ee", "/api/volumes/drafts")
     with pytest.raises(FetchError, match="liiga suur"):
         http.get_text("adr.rik.ee", "/ram/")
-    assert big.outcome.asked == [http.MAX_BYTES + 1, http.MAX_BYTES + 1]
+    # Read in pieces against the clock (ADR 0231), never past the cap plus one byte.
+    assert sum(big.outcome.asked) == 2 * (http.MAX_BYTES + 1)
+    assert max(big.outcome.asked) <= http.CHUNK_BYTES
 
 
 def test_http_and_network_failures_are_fetch_errors_with_safe_words(door):

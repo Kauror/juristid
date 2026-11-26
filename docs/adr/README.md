@@ -237,6 +237,8 @@ consequences and reversibility.
 | [0227](0227-full-document-parliamentary-analysis-is-built-controlled-and-left-off.md) | Full-document parliamentary analysis is built, controlled, and left off (one cached, validated, quote-verified pipeline; deterministic version comparison; official evidence first; work-victory candidates only) | Accepted — code only; full-document processing not authorised |
 | [0228](0228-protocols-stenograms-and-answers-are-evidence-never-verdicts.md) | Protocols, stenograms and answers to invitations are evidence, never verdicts («vajab kontrollimist», never «ei vastanud»; deferred extensions listed) | Accepted |
 | [0229](0229-the-nightly-jobs-run-in-one-coordinated-cycle-at-midnight-in-tallinn.md) | The nightly jobs run in one coordinated cycle at midnight in Tallinn (one cron line fires 21:00 and 22:00 UTC, the script runs the 00:00 Tallinn one; Lovable first, then the registers lane and the agenda side by side; outcomes from run records; one cycle lock a release must take; prepared, not deployed) | Accepted |
+| [0231](0231-every-nightly-call-and-step-has-a-deadline-and-the-cycle-lock-outlives-the-work.md) | Every nightly call and step has a deadline, and the cycle lock outlives the work (one whole-call deadline in `sources/http.py`: the caller's, the run's or the step's, `CALL_SECONDS`; DNS, connect, TLS, headers, body, spacing, retries and model requests inside it; `DeadlineExceeded`; per-step execution budgets enforced in the container by `app.core.nightly_bounded`; the cycle keeps its lock until the work is verified gone; TIMEOUT/BUSY/STUCK in Haldus and the monitor; SEC-010) | Proposed |
+| [0233](0233-a-multipart-body-is-parsed-only-for-a-signed-in-session.md) | A multipart body is parsed only for a signed-in session (`MultipartAuthBoundaryMiddleware` before every body reader, decided from the session and headers alone; sign-in surfaces take at most 64 KiB; SEC-013) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -250,6 +252,10 @@ requires every gap in the numbering to be named here:
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
   rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
   The record lands with that branch, which then removes this line.
+- 0230 — parser isolation (SEC-008), security round of 2026-11-26, on
+  `sec/r96-parser-isolation`; the integration removes this line when it lands.
+- 0232 — credential links, Access sessions, private backups (SEC-006/011/012),
+  on `sec/r96-contained`; as 0230.
 
 Naming: `NNNN-short-decision-title.md`.
 

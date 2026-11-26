@@ -24,6 +24,15 @@ release lock before every step, 20 for the Lovable runner's lock):
 * ``register-sweep``: 6 h — after the Riigikogu step (5 h), one lock wait (20 min)
   and the sweep (≈ 1 min; 40 min allowed).
 
+Each in-container step also has a hard **execution budget** (`EXECUTION_BUDGET`,
+ADR 0231), enforced inside the container by `app.core.nightly_bounded`: register
+watch 68 min, Riigikogu 98 min (its own 90-minute limit inside), the sweep and the
+agenda 38 min each. At the budget less `GRACE` every register call and model
+request stops (the run closes as partial); at the budget the step's process group
+is terminated and verified gone. A budget plus the termination's own bound
+(`TERMINATION`: 30 s to SIGKILL, up to 60 s to vanish) fits inside the step's
+allowance above, so a step stopped at its budget still finishes by its finish-by.
+
 These hold whether or not the Riigikogu step is installed: without it the sweep
 simply finishes early. The cycle is complete by the last of them, 6 h after it
 began: 03:00 UTC in summer, 04:00 UTC in winter — before the daily monitor's
@@ -58,6 +67,27 @@ FINISH_BY: dict[str, dt.timedelta] = {
     "riigikogu": dt.timedelta(hours=5),
     "register-sweep": dt.timedelta(hours=6),
 }
+#: Each in-container step's hard execution budget (the cycle script's `step_budget`,
+#: ADR 0231), and the soft deadline's lead: every external call stops `GRACE`
+#: before the budget, so the run can close its record as partial first.
+EXECUTION_BUDGET: dict[str, dt.timedelta] = {
+    "register-watch": dt.timedelta(minutes=68),
+    "riigikogu": dt.timedelta(minutes=98),
+    "register-sweep": dt.timedelta(minutes=38),
+    "government-agenda": dt.timedelta(minutes=38),
+}
+GRACE = dt.timedelta(minutes=5)
+#: SIGTERM → SIGKILL (30 s) and the SIGKILLed group's time to vanish (60 s).
+TERMINATION = dt.timedelta(seconds=90)
+#: What each step is allowed after the lanes may start, inside its finish-by: the
+#: watch 1 h 10, Riigikogu 1 h 40, the sweep and the agenda 40 min.
+STEP_ALLOWANCE: dict[str, dt.timedelta] = {
+    "register-watch": dt.timedelta(hours=1, minutes=10),
+    "riigikogu": dt.timedelta(hours=1, minutes=40),
+    "register-sweep": dt.timedelta(minutes=40),
+    "government-agenda": dt.timedelta(minutes=40),
+}
+
 #: The whole cycle: a cycle started longer ago than this and not completed was
 #: interrupted (or overran); the host's daily monitor uses the same figure.
 CYCLE_COMPLETE_BY = max(FINISH_BY.values())
