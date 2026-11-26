@@ -90,7 +90,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
-. "$SCRIPT_DIR/lib.sh" # lock_fd_proven (the inherited-lock contract)
+. "$SCRIPT_DIR/lib.sh" # lock_fd_proven (the inherited-lock contract), share_set_proof
 
 APPDATA=${JURISTID_SYNC_APPDATA:-/mnt/user/appdata/juristid-main}
 REPO=$APPDATA/repo
@@ -109,6 +109,9 @@ HOST_LOCK=${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}
 ONENOTE_TIMEOUT=3600
 # ADR 0231: a docker client `timeout` gave up on is itself killed this long after.
 KILL_AFTER=60
+# The application's group inside the image (Dockerfile: gid 10001): the one-off
+# that checks a set's proof reads it as that account (lib.sh `share_set_proof`).
+APP_GID=${JURISTID_SYNC_APP_GID:-10001}
 
 TRIGGER=scheduled
 ON_DEMAND=0
@@ -237,6 +240,12 @@ take_backup() {
       BACKUP_SET="sets/$(basename "$SET_PATH")"
       BACKUP_DIR="$SET_PATH"
       say "backup $BACKUP_SET verified (level 2)"
+      # SEC-011 writes the set 0700/0600 as root; the run reads its proof as the
+      # application's account. Only the proof's three objects are opened to that
+      # group (r96 integration). Should it fail, the run refuses the set itself.
+      if ! share_set_proof "$SET_PATH" "$APP_GID"; then
+        say "WARN the set's proof could not be opened to group $APP_GID: the run will refuse it"
+      fi
     else
       say "WARN backup verification failed: nothing is written"
     fi

@@ -387,6 +387,7 @@ private whatever umask cron gives it:
 | `database.dump`, `manifest.json`, `SHA256SUMS`, `*.files0` | 0600 | the same |
 | a pool object copied for the first time | 0600 (directories 0700) | kept from the source: 10001 on the host |
 | a pool object already in the pool | **unchanged** | unchanged |
+| a set the Lovable/OneNote lane took and verified: its directory, `VERIFIED-L2`, `SHA256SUMS`, `database.dump` (r96) | 0750 / 0640, group 10001 | root; the group is the application's |
 
 Who reads them, and why that still works: the backup, the verifier, the
 restore and `offhost-backup.sh` all run as root on the host; `pg_restore` reads
@@ -395,6 +396,17 @@ the dump inside the `db` container as that container's root after
 mode and numeric owner (10001), which is the account the application reads
 them as. No digest, inventory or count includes a mode, so integrity, the
 membership check, level-2 verification and the restore rehearsal are unchanged.
+
+The one reader that is not root: the Lovable lane's one-off containers (the sync
+and the OneNote import) run as the application's account (uid/gid 10001) and read
+the set they were given, mounted read-only at `/backup-set`, to check its proof
+before writing (`lovable_sync.backup_proof_problem`: `VERIFIED-L2`, `SHA256SUMS`,
+and the dump hashed again). After verifying such a set, `juristid-lovable-sync.sh`
+gives exactly those three objects and the set directory to group 10001, read-only
+(`lib.sh` `share_set_proof`; r96 integration) — never to others, and nothing else
+in the set. That account already holds the database's own credentials, so its
+group reading a dump of that database exposes nothing new. Without this every
+APPLY and OneNote import would be refused (`PROOF_MISSING`).
 
 Every run inspects the backup root, `sets/` and both pools and writes one line
 per directory that lets anybody but its owner in: `confidentiality note` for
@@ -451,7 +463,11 @@ deletes nothing, so every checksum stays valid.
    ```
 
    Ownership is left alone: pool objects keep 10001, which the restore relies
-   on. `operator-reports/` and anything else under `$B` that is not a set or a
+   on. This also closes the group bits of sets the Lovable lane opened to group
+   10001 (table above); that is harmless — the proof is read only by the run that
+   took the set — and sets taken after the remediation are opened again by their
+   own run, so step 5's set counts are 0 only until the next Lovable APPLY (count
+   `-perm /007` to see what reaches others). `operator-reports/` and anything else under `$B` that is not a set or a
    pool is decided separately.
 
 5. **Release the lock** (`rm -r /tmp/juristid-host-lock`) and **prove nothing

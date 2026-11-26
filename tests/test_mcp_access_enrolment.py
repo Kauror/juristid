@@ -305,3 +305,42 @@ def test_the_enrolled_authenticator_is_the_one_authorize_checks(client, moment):
     client.post(ENROL, {"kood": pyotp.TOTP(secret).at(moment - timedelta(seconds=30))})
     code = support.code_for(user, secret, moment)
     assert code
+
+
+def test_a_planted_gate_session_holds_no_enrolment_link(client, django_user_model):
+    """r96 integration (SEC-006 x MCP enrolment): the link's arrival rotates the
+    session identifier and the CSRF secret, as the account links do (docs/adr/0232).
+    A gate session somebody opened and planted in the victim's browser stops naming
+    anything, so its holder never reaches the address step or the secret."""
+    from django.contrib.sessions.models import Session
+    from django.test import Client
+
+    user = factories.UserFactory()
+    path, _ = _link(user)
+    planter = Client()
+    support.through_the_gate(planter)
+    planted = planter.cookies["sessionid"].value
+    csrf_before = planter.cookies.get("csrftoken")
+
+    # The victim's browser carries the planted cookie and opens the link.
+    client.cookies["sessionid"] = planted
+    if csrf_before is not None:
+        client.cookies["csrftoken"] = csrf_before.value
+    arrived = client.get(path)
+    assert arrived.status_code == 302 and arrived["Location"] == ENROL
+    rotated = client.cookies["sessionid"].value
+    assert rotated != planted
+    assert not Session.objects.filter(session_key=planted).exists()
+    if csrf_before is not None:
+        assert client.cookies["csrftoken"].value != csrf_before.value
+
+    # The planter's copy names nothing: no proof, no address step, no secret.
+    refused = planter.get(ENROL)
+    assert refused.status_code != 200 or 'name="epost"' not in refused.content.decode()
+    assert "enrolment" not in (refused.context or {})
+
+    # The victim goes on as before: address, then the secret.
+    named = client.post(ENROL, {"epost": user.upn})
+    assert named.status_code == 302 and named["Location"] == ENROL
+    page = client.get(ENROL)
+    assert page.status_code == 200 and _secret_on(page)

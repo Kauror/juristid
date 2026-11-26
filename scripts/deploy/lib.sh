@@ -623,6 +623,30 @@ reaches_others() {
   esac
 }
 
+# r96 integration (SEC-011 x the Lovable and OneNote lanes): a set is written
+# 0700/0600 by root, but the one-off container that must check its proof before
+# writing (`lovable_sync.backup_proof_problem`) runs as the application's account
+# (uid/gid 10001), with the set mounted read-only at /backup-set. It reads exactly
+# three objects: the VERIFIED-L2 marker, SHA256SUMS and database.dump (hashed again).
+# Those three, and the set directory to reach them, are given to the
+# application's group — read-only, never to others — and nothing else in the set
+# changes. The account already holds the database's own credentials, so its group
+# reading a dump of that database exposes nothing it could not read; the rest of
+# the backup root stays private. Returns non-zero if any change could not be made
+# (the engine then refuses the set: fail-closed stays where it was).
+share_set_proof() {
+  local dir="$1" group="$2" name failed=0
+  [ -d "$dir" ] || return 1
+  if ! { chgrp -- "$group" "$dir" 2>/dev/null && chmod 0750 -- "$dir"; }; then failed=1; fi
+  for name in VERIFIED-L2 SHA256SUMS database.dump; do
+    [ -f "$dir/$name" ] || continue
+    if ! { chgrp -- "$group" "$dir/$name" 2>/dev/null && chmod 0640 -- "$dir/$name"; }; then
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
 count_files() {
   [ -d "$1" ] || { printf '0\n'; return 0; }
   find "$1" -type f 2>/dev/null | wc -l | tr -d ' '

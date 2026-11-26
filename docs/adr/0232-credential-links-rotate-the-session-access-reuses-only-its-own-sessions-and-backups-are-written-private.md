@@ -106,6 +106,26 @@ chmod a nightly run does by itself. Modes are in no digest, inventory or count, 
 set integrity, membership, retention, level-2 verification, the restore and the
 CI recovery rehearsal are unchanged. Off-host disaster recovery is out of scope.
 
+**Amendment (r96 integration, 2026-11-26).** One reader of a set is not root: the
+Lovable lane's one-off containers (sync and OneNote import) check the proof of the
+set they were given as the application's account (10001), read-only at
+`/backup-set` (`lovable_sync.backup_proof_problem`). With the set 0700/0600 every
+APPLY and import would have been refused (`PROOF_MISSING`). After verification,
+`juristid-lovable-sync.sh` therefore gives exactly the set directory (0750) and
+`VERIFIED-L2`, `SHA256SUMS` and `database.dump` (0640) to group 10001
+(`lib.sh: share_set_proof`) — never to others, nothing else in the set. That
+account already holds the database's credentials, so nothing is exposed it could
+not read. Tests: `tests/test_backup_confidentiality.py` (the r96 section).
+
+**Amendment (r96 integration): the MCP authenticator's enrolment link.**
+`mcp_access.views.enrol` keeps a link's proof in the session like the account
+links do, so its arrival now rotates the identifier and the CSRF secret too
+(`local_views.rotate_session`); a gate session planted beforehand no longer reaches
+the address step or the secret. Not changed there: a link arriving in front of the
+gate still travels in the gate's `next` (as before r96), and a link that opens
+nothing still writes its proof (the page then answers 400). Test:
+`tests/test_mcp_access_enrolment.py::test_a_planted_gate_session_holds_no_enrolment_link`.
+
 ### 5. The shared gate's persona risk is accepted for now (owner deferral)
 
 Somebody who knows the department password can choose any persona, including

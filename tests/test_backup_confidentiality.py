@@ -373,3 +373,51 @@ def test_a_private_set_still_verifies_and_restores(tmp_path: Path):
     assert evidence.read_bytes() == b"synthetic evidence one"
     assert (target / "legacy-source" / "page.xml").read_bytes() == b"<page>synthetic</page>"
     assert _mode(evidence) == 0o600
+
+
+# -- r96 integration: the Lovable/OneNote one-off reads its set's proof ------------------
+
+
+@posix_modes
+def test_a_private_set_opens_only_its_proof_to_the_applications_group(tmp_path: Path):
+    """SEC-011 writes a set 0700/0600 as root; `lovable_sync.backup_proof_problem` reads
+    VERIFIED-L2, SHA256SUMS and database.dump as the application's account (10001) in
+    a one-off container. Without `share_set_proof` every Lovable APPLY and OneNote
+    import would be refused (PROOF_MISSING). With it, exactly those three objects and
+    the directory reach the group, read-only, and nothing reaches others."""
+    group = os.getgid()  # a group the runner belongs to stands in for 10001
+    set_dir = tmp_path / "sets" / "20261127T001500Z"
+    set_dir.mkdir(parents=True)
+    set_dir.chmod(0o700)
+    proof = ("VERIFIED-L2", "SHA256SUMS", "database.dump")
+    private = ("manifest.txt", "evidence.inventory")
+    for name in (*proof, *private):
+        (set_dir / name).write_bytes(b"synthetic")
+        (set_dir / name).chmod(0o600)
+
+    done = _lib(f'share_set_proof "{set_dir.as_posix()}" {group}', tmp_path)
+    assert done.returncode == 0, done.stdout + done.stderr
+
+    assert _mode(set_dir) == 0o750 and set_dir.stat().st_gid == group
+    for name in proof:
+        assert _mode(set_dir / name) == 0o640, name
+        assert (set_dir / name).stat().st_gid == group
+    for name in private:
+        assert _mode(set_dir / name) == 0o600, name
+    beyond = _lib(f'reaches_others "$(access_beyond_owner "{set_dir.as_posix()}")"', tmp_path)
+    assert beyond.returncode == 1  # nothing reaches outside the owner's group
+
+
+@posix_modes
+def test_a_proof_that_cannot_be_opened_is_reported_not_hidden(tmp_path: Path):
+    missing = _lib(f'share_set_proof "{(tmp_path / "absent").as_posix()}" 0', tmp_path)
+    assert missing.returncode != 0
+
+
+def test_the_lovable_lane_opens_the_proof_after_verifying_and_before_mounting_it():
+    text = (SCRIPTS / "juristid-lovable-sync.sh").read_text(encoding="utf-8")
+    verified = text.index("--level 2 --record")
+    shared = text.index('share_set_proof "$SET_PATH" "$APP_GID"')
+    mounted = text.index('proof=(-v "$SET_DIR:/backup-set:ro"')
+    assert verified < shared < mounted
+    assert "APP_GID=${JURISTID_SYNC_APP_GID:-10001}" in text
