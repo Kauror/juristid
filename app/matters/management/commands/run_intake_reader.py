@@ -50,7 +50,7 @@ import time
 from typing import Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import DatabaseError
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,14 @@ BATCH = 10
 #: times an hour rather than seven thousand (AUD-025). The first turn sweeps
 #: too, so a reader restarted after a long stop catches up at once.
 TEXT_SWEEP_SECONDS = 600.0
+
+#: How long the loop waits after the parser service could not be reached.
+#:
+#: The file went back to the queue untouched, so the next turn would take it
+#: straight back; a pause of this length turns a parser container that is
+#: restarting into a short delay on the form instead of a hot loop of
+#: connection attempts (docs/adr/0230).
+PARSER_UNAVAILABLE_BACKOFF_SECONDS = 15.0
 
 
 class Command(BaseCommand):
@@ -101,9 +109,27 @@ class Command(BaseCommand):
         # list is what `tests/test_intake_reader.py` reads to prove this
         # process cannot reach the corpus queue, so anything added to it is a
         # decision somebody has to make on purpose.
+        from app.documents.extraction import isolation
         from app.documents.extraction.heartbeat import INTAKE_READER as mark
-        from app.matters.intake_extraction import drain, pending_intake_files
+        from app.matters.intake_extraction import (
+            PARSER_UNAVAILABLE,
+            drain,
+            pending_intake_files,
+        )
         from app.matters.intake_staging import clear_expired_intake_text
+
+        # A deployed reader never opens a file in its own process: that process
+        # holds the database password and the secret key (SEC-008,
+        # docs/adr/0230). Refused at start, loudly, rather than discovered later.
+        # Only a development server (DEBUG) or the test suite may parse here.
+        chosen = isolation.mode()
+        trusted_runtime = settings.DEBUG or getattr(settings, "IS_TEST_SETTINGS", False)
+        if chosen == isolation.INPROCESS and not trusted_runtime:
+            raise CommandError(
+                "DOCUMENT_PARSER_ISOLATION=inprocess is refused outside development and "
+                "tests; use 'service' (the intake-parser container) — docs/adr/0230."
+            )
+        self.stdout.write(f"Failide lugemise isolatsioon: {chosen}.")
 
         idle = options["idle_seconds"]
         if idle is None:
@@ -169,6 +195,9 @@ class Command(BaseCommand):
                 break
             if options["once"]:
                 break
+            if any(report.state == PARSER_UNAVAILABLE for report in reports):
+                time.sleep(max(idle, PARSER_UNAVAILABLE_BACKOFF_SECONDS))
+                continue
             if reports:
                 # Something was staged this turn, so there may be more of it —
                 # a person dropping five files produces five rows within a

@@ -7,6 +7,7 @@ tree, so a deployed container is configured the same way the local container is.
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from typing import cast
@@ -856,6 +857,48 @@ INTAKE_READER_IDLE_SECONDS = env_float("INTAKE_READER_IDLE_SECONDS", 0.5)
 # claim older than this belongs to a reader that died — and waiting thirty minutes to find that out
 # would strand the form it was reading for long past the session's own life.
 INTAKE_READER_STALE_CLAIM_MINUTES = env_int("INTAKE_READER_STALE_CLAIM_MINUTES", 5)
+
+# --------------------------------------------------------------------------
+# Where untrusted files are parsed (SEC-008, docs/adr/0230)
+# --------------------------------------------------------------------------
+#
+# `service`: over DOCUMENT_PARSER_SOCKET to the no-network, no-secret parser
+# container — what the deployed `Uus teema` reader runs. `subprocess`: a fresh,
+# resource-limited child with an allow-listed environment in this container —
+# the default, for operator commands and the nightly register reads; it cannot
+# take the network away, so it is defence in depth, not the boundary.
+# `inprocess`: the parser in this process — the test suite's mode, refused by
+# the deployed reader.
+DOCUMENT_PARSER_ISOLATION = env(
+    "DOCUMENT_PARSER_ISOLATION", "subprocess" if os.name == "posix" else "inprocess"
+)
+DOCUMENT_PARSER_SOCKET = env("DOCUMENT_PARSER_SOCKET", "")
+# Where `subprocess` mode makes each child's private directory.
+DOCUMENT_PARSER_SCRATCH_ROOT = env("DOCUMENT_PARSER_SCRATCH_ROOT", "")
+# Wall-clock seconds per file. The intake budget must end well inside the
+# reader's stale-claim window (system check documents.E001 holds it there), so a file the
+# boundary stops is settled by the pass that claimed it. The batch budget is
+# for corpus runs and register reads nobody is waiting on, inside
+# EXTRACTION_STALE_CLAIM_MINUTES for the same reason.
+DOCUMENT_PARSER_INTAKE_WALL_SECONDS = env_int("DOCUMENT_PARSER_INTAKE_WALL_SECONDS", 120)
+DOCUMENT_PARSER_BATCH_WALL_SECONDS = env_int("DOCUMENT_PARSER_BATCH_WALL_SECONDS", 1200)
+# How long a request may wait for the file in front of it at the service.
+DOCUMENT_PARSER_QUEUE_SECONDS = env_int("DOCUMENT_PARSER_QUEUE_SECONDS", 120)
+# Address space of a child and everything it starts (RLIMIT_AS). Sized from
+# the measurements in docs/adr/0230; the container's mem_limit is the second,
+# cgroup-wide ceiling.
+DOCUMENT_PARSER_MEMORY_BYTES = env_int("DOCUMENT_PARSER_MEMORY_BYTES", 2 * 1024**3)
+# Largest single file a child may write (RLIMIT_FSIZE).
+DOCUMENT_PARSER_FILE_BYTES = env_int("DOCUMENT_PARSER_FILE_BYTES", 256 * 1024**2)
+DOCUMENT_PARSER_OPEN_FILES = env_int("DOCUMENT_PARSER_OPEN_FILES", 256)
+# What a child may print back. Text-only intake answers are bounded by
+# EXTRACTION_MAX_CHARACTERS (8 M characters, up to 4 bytes each in UTF-8, plus
+# JSON); batch answers also carry thumbnails and e-mail attachments as base64.
+DOCUMENT_PARSER_INTAKE_OUTPUT_BYTES = env_int("DOCUMENT_PARSER_INTAKE_OUTPUT_BYTES", 64 * 1024**2)
+DOCUMENT_PARSER_BATCH_OUTPUT_BYTES = env_int("DOCUMENT_PARSER_BATCH_OUTPUT_BYTES", 512 * 1024**2)
+# Test-only parser hooks (a hang, a crash, a flood). Never read from the
+# environment: only config/test_settings.py can switch it on.
+EXTRACTION_PARSER_TEST_HOOKS = False
 
 # Whether `Uus teema` offers what the reader found in the file.
 #

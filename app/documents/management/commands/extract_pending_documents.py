@@ -26,6 +26,7 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         from app.documents.extraction.orchestrator import (
+            PARSER_UNAVAILABLE,
             claim_version,
             extract_document_version,
             pending_versions,
@@ -45,6 +46,9 @@ class Command(BaseCommand):
             if claimed is None:
                 continue
             report = extract_document_version(claimed)
+            if report.state == PARSER_UNAVAILABLE:
+                self.stderr.write("Faili lugeja ei ole kättesaadav; töötlemine peatub.")
+                break
             states[report.state] = states.get(report.state, 0) + 1
             processed += 1
             # Named here rather than left in the summary count. "3 files, 1
