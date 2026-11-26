@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import dataclasses
 import json
 import logging
 import os
@@ -244,8 +245,14 @@ def extraction_settings() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def parse_isolated(parser: Any, source: SourceFile, *, budget: str = BATCH) -> ParseResult:
+def parse_isolated(
+    parser: Any, source: SourceFile, *, budget: str = BATCH, wall_seconds: float | None = None
+) -> ParseResult:
     """Run ``parser`` over ``source`` behind the configured boundary.
+
+    ``wall_seconds`` narrows the budget's wall (and CPU) limit for this one file —
+    a caller whose own time runs out sooner, such as the nightly Riigikogu step
+    (r96 integration, ADR 0231). It never widens it, and the service clamps again.
 
     Returns the parser's result, or raises what the parser would have raised —
     ``ExtractionFailed`` / ``ExtractionNotApplicable`` — plus
@@ -259,6 +266,13 @@ def parse_isolated(parser: Any, source: SourceFile, *, budget: str = BATCH) -> P
         return parser.parse(source)
 
     limits = limits_for(budget)
+    if wall_seconds is not None and wall_seconds < limits.wall_seconds:
+        narrowed = max(1.0, float(wall_seconds))
+        limits = dataclasses.replace(
+            limits,
+            wall_seconds=narrowed,
+            cpu_seconds=min(limits.cpu_seconds, max(1, int(narrowed))),
+        )
     header = {
         "op": "parse",
         "filename": source.filename,

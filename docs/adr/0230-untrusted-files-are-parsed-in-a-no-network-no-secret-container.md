@@ -111,6 +111,19 @@ stored and opens as always, and the Teema is created regardless. A batch file pa
 1200 s (a several-hundred-page scan) fails the same way in a corpus run and can be
 re-run with a larger `DOCUMENT_PARSER_BATCH_WALL_SECONDS` by an operator who decides to.
 
+**Inside the nightly Riigikogu step** (r96 integration with docs/adr/0231). The step
+has a 98-minute budget around its own 90-minute limit, so a 1200 s parse near its
+end would carry it past the budget and be killed by the supervisor. `parse_isolated`
+takes ``wall_seconds``, which only narrows the budget's wall (and CPU) for one file,
+and `app/riigikogu/documents.py` passes the stage's time left (`client.time_left`)
+less 30 s. With no time left the file is not parsed; a parse stopped by that narrowed
+wall is `client.OutOfTime` (the stage's «the rest next night»), never an unreadable
+letter. A file stopped by the plain 1200 s budget stays the file's own failure.
+Tests: `tests/test_r96_riigikogu_parse_deadline.py`. The supervisor stopping the
+step ends the socket client in `web`; `batch-parser` finishes or stops the one file
+in hand at its own wall and sweeps it, and the next night's request queues behind it
+for at most `DOCUMENT_PARSER_QUEUE_SECONDS`.
+
 ## Failure
 
 * **The boundary stopped the file** (deadline, CPU, memory, file size, output, crash,
