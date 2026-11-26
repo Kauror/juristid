@@ -31,6 +31,8 @@
     </dl>
   </section>
 
+  {% include "haldus/_nightly_steps.html" %}
+
   <section class="panel" aria-labelledby="regwatchlog-riigikogu">
     <h2 class="acctsection__title" id="regwatchlog-riigikogu">Riigikogu öine kontroll</h2>
     {% comment %}docs/adr/0224 §6: per stage, its last attempt and last success; a failed, partial or never-run stage says so. Timing: docs/adr/0229, app/riigikogu/cycle.py CYCLE_TIME_LIMIT, app/core/nightly_schedule.py FINISH_BY.{% endcomment %}

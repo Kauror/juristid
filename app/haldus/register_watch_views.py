@@ -93,6 +93,9 @@ def runs(request: HttpRequest) -> HttpResponse:
             # «Valitsuse päevakord» (r95): each night's verdict for its week, so a
             # page not yet published reads differently from a failure.
             agenda_checks=_agenda_checks(),
+            # The nightly cycle's last verdict per step (ADR 0234): a step stopped
+            # at its execution budget shows here even when it left no record.
+            nightly_steps=_nightly_steps(),
             waiting=WatchFinding.objects.filter(
                 status=FindingStatus.PENDING, matter__in=_visible(request)
             ).count(),
@@ -115,6 +118,39 @@ def _agenda_checks() -> list[dict[str, Any]]:
         {"check": check, "problem": check.state in AGENDA_PROBLEMS or check.missing}
         for check in GovernmentAgendaCheck.objects.order_by("-created_at")[:AGENDA_CHECKS_SHOWN]
     ]
+
+
+#: The cycle's steps and outcomes in the page's words (app/core/nightly_outcome.py).
+NIGHTLY_STEP_LABELS = {
+    "lovable": "Lovable'i sünkroonimine",
+    "register-watch": "Registrite jälgimine",
+    "riigikogu": "Riigikogu kontroll",
+    "register-sweep": "Uute eelnõude otsing",
+    "government-agenda": "Valitsuse päevakord",
+}
+NIGHTLY_OUTCOME_LABELS = {
+    "SUCCEEDED": "Õnnestus",
+    "SUCCEEDED_NO_NEW": "Õnnestus, uut ei olnud",
+    "PARTIAL": "Osaline",
+    "SKIPPED_DELIBERATE": "Teadlikult vahele jäetud",
+    "SKIPPED_UNEXPECTED": "Jäi vahele",
+    "FAILED": "Ebaõnnestus",
+    "INTERRUPTED": "Katkes",
+}
+
+
+def _nightly_steps() -> list[dict[str, Any]]:
+    from app.core import nightly_outcome
+
+    try:
+        rows = nightly_outcome.remembered()
+    except Exception:  # the cache table is a diagnostic aid, never the page's failure
+        return []
+    for row in rows:
+        row["label"] = NIGHTLY_STEP_LABELS.get(row["step"], row["step"])
+        row["outcome_label"] = NIGHTLY_OUTCOME_LABELS.get(row["outcome"], row["outcome"])
+        row["timeout"] = str(row.get("reason", "")).startswith(("TIMEOUT", "BUSY", "STUCK"))
+    return rows
 
 
 def _riigikogu_timing() -> dict[str, int]:

@@ -57,6 +57,13 @@ ABANDONED_AFTER = dt.timedelta(hours=3)
 #: The machine line's prefix, for the host script.
 PREFIX = "NIGHTLY-OUTCOME "
 
+#: The supervisor's exit codes (`app.core.nightly_bounded`, ADR 0234): the step was
+#: stopped at its execution budget; its previous run was still alive, so it was not
+#: started; its process group could not be verified gone.
+RC_TIMEOUT = 124
+RC_BUSY = 75
+RC_STUCK = 70
+
 
 @dataclass(frozen=True)
 class StepOutcome:
@@ -86,18 +93,54 @@ def classify(
     manual: bool = False,
 ) -> StepOutcome:
     """``manual``: the cycle was a person's recovery run (`--manual`), whose Lovable
-    synchronisation is recorded with trigger MANUAL, not SCHEDULED."""
+    synchronisation is recorded with trigger MANUAL, not SCHEDULED.
+
+    The supervisor's own exit codes (ADR 0234) decide before the step's record:
+    a step stopped at its budget is FAILED (TIMEOUT) even when its record looks
+    tidy — it did not finish its night — and a step not started because its
+    previous run was still alive is SKIPPED_UNEXPECTED (BUSY). The record's counts
+    are kept beside the verdict."""
     if step == "lovable":
         return _lovable(since, rc, manual=manual)
     if step == "register-watch":
-        return _watch(since, rc)
-    if step == "register-sweep":
-        return _sweep(since, rc)
-    if step == "government-agenda":
-        return _agenda(rc, reported)
-    if step == "riigikogu":
-        return _riigikogu(since, rc)
-    raise ValueError(f"unknown step: {step}")
+        found = _watch(since, rc)
+    elif step == "register-sweep":
+        found = _sweep(since, rc)
+    elif step == "government-agenda":
+        found = _agenda(rc, reported)
+    elif step == "riigikogu":
+        found = _riigikogu(since, rc)
+    else:
+        raise ValueError(f"unknown step: {step}")
+    return _supervised(found, rc)
+
+
+def _supervised(found: StepOutcome, rc: int) -> StepOutcome:
+    """The step's outcome, overridden by what the supervisor's exit code says."""
+    if found.outcome == SKIPPED_DELIBERATE:
+        return found
+    if rc == RC_TIMEOUT:
+        return StepOutcome(
+            found.step,
+            FAILED,
+            "TIMEOUT: stopped at its execution budget; the rest is read next night",
+            found.counts,
+        )
+    if rc == RC_BUSY:
+        return StepOutcome(
+            found.step,
+            SKIPPED_UNEXPECTED,
+            "BUSY: its previous run was still running in the container; not started",
+            found.counts,
+        )
+    if rc == RC_STUCK:
+        return StepOutcome(
+            found.step,
+            INTERRUPTED,
+            "STUCK: its processes could not be verified gone after the budget",
+            found.counts,
+        )
+    return found
 
 
 def _lovable(since: dt.datetime, rc: int, *, manual: bool = False) -> StepOutcome:
@@ -193,8 +236,13 @@ def _ledger(
         return StepOutcome(step, INTERRUPTED, "the run never finished", counts)
     if rc != 0:
         return StepOutcome(step, FAILED, f"exit {rc}", counts)
+    out_of_time = any(isinstance(e, dict) and e.get("ajapiir") for e in errors)
     if errors and read == 0:
-        return StepOutcome(step, FAILED, "read no source", counts)
+        why = "read no source before its time limit" if out_of_time else "read no source"
+        return StepOutcome(step, FAILED, why, counts)
+    if out_of_time:
+        # ADR 0234: what was read is kept; the rest is read next night.
+        return StepOutcome(step, PARTIAL, "stopped at its time limit; the rest next night", counts)
     if errors or counts["ai_failures"]:
         return StepOutcome(step, PARTIAL, "source errors or model failures", counts)
     if new == 0:
@@ -369,3 +417,48 @@ def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
             return StepOutcome(step, SUCCEEDED_NO_NEW, f"agenda not yet published{where}", counts)
         return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
     return StepOutcome(step, SUCCEEDED, "", counts)
+
+
+# -- what Haldus shows ------------------------------------------------------------------
+
+#: One cache entry per step (the database cache, `core_cache`): the host's cycle
+#: records each verdict as it is given, so Haldus shows a timed-out, busy or stuck
+#: step that left no run record of its own (ADR 0234). The host's state files stay
+#: the cycle's own ledger; this is the application's view of the last night.
+CACHE_KEY = "nightly-step:{step}"
+REMEMBER_SECONDS = 14 * 24 * 3600
+
+
+def remember(result: StepOutcome, *, rc: int, seconds: int | None = None, night: str = "") -> None:
+    """Keep ``result`` as the step's last verdict (counts and codes, never a title)."""
+    from django.core.cache import cache
+    from django.utils import timezone
+
+    cache.set(
+        CACHE_KEY.format(step=result.step),
+        {
+            "step": result.step,
+            "outcome": result.outcome,
+            "reason": result.reason[:200],
+            "counts": result.counts,
+            "rc": rc,
+            "seconds": seconds,
+            "night": night[:40],
+            "at": timezone.now().isoformat(),
+        },
+        REMEMBER_SECONDS,
+    )
+
+
+def remembered() -> list[dict[str, Any]]:
+    """Every step's last recorded verdict, in the cycle's order; a step never recorded
+    is left out. ``problem`` marks the outcomes the daily monitor reports."""
+    from django.core.cache import cache
+
+    found = cache.get_many([CACHE_KEY.format(step=step) for step in STEPS])
+    rows = []
+    for step in STEPS:
+        row = found.get(CACHE_KEY.format(step=step))
+        if isinstance(row, dict):
+            rows.append({**row, "problem": row.get("outcome") in PROBLEMS})
+    return rows

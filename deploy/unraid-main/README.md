@@ -551,6 +551,24 @@ its log, recover it by hand: `juristid-nightly-cycle.sh --manual`. Pause it with
 end; a release or a restore takes the same lock first and refuses while the
 cycle runs, and the cycle refuses to start under them.
 
+**Execution budgets (ADR 0234).** Every in-container step runs under
+`python -m app.core.nightly_bounded`: register watch 68 min, Riigikogu 98 min, the
+sweep and the agenda 38 min each; every register call and model request stops five
+minutes before that, and at the budget the step's processes are terminated and
+verified gone. The cycle releases its lock only once nothing of a step is left
+running in the container. A step stopped at its budget is `FAILED` with reason
+`TIMEOUT` (`BUSY`: its previous run was still alive; `STUCK`: not verified gone —
+`nightly/state/<night>.stuck` exists and the cycle is holding its lock). By hand:
+
+```bash
+docker exec juristid-main-web python -m app.core.nightly_bounded status --step register-watch
+docker exec juristid-main-web python -m app.core.nightly_bounded stop --step register-watch
+```
+
+`status` answers `gone` (exit 0) or `alive` (exit 3); `stop` terminates the step's
+process group and verifies it gone (exit 0), or answers `stuck` (70). Haldus →
+Registrite jälgimine → «Öine tsükkel» shows each step's last verdict.
+
 ## Recurring operations — refreshing the register
 
 > **Historical — superseded by ADR 0203 (2026-11-03). Do not run this cycle

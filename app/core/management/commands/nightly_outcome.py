@@ -3,10 +3,11 @@
     manage.py nightly_outcome --step register-watch --since 2026-11-25T22:00:05Z --rc 0
     manage.py nightly_outcome --step government-agenda --since … --rc 0 --reported '{…}'
 
-Read-only: it reads run records and settings and prints one line,
+It reads run records and settings and prints one line,
 ``NIGHTLY-OUTCOME {"step": …, "outcome": …, "reason": …, "counts": {…}}``
 (`app.core.nightly_outcome`). The host's nightly cycle calls it after each step.
-Exit 0 whenever it could answer.
+With ``--record`` it also keeps that verdict in the database cache for Haldus
+(ADR 0234); it writes nothing else. Exit 0 whenever it could answer.
 """
 
 from __future__ import annotations
@@ -33,6 +34,13 @@ class Command(BaseCommand):
         parser.add_argument(
             "--manual", action="store_true", help="a person's recovery run (`--manual`)"
         )
+        parser.add_argument(
+            "--record",
+            action="store_true",
+            help="also keep the verdict for Haldus (the database cache; ADR 0234)",
+        )
+        parser.add_argument("--seconds", type=int, default=None, help="how long the step ran")
+        parser.add_argument("--night", default="", help="the cycle's run name")
 
     def handle(self, *args: Any, **options: Any) -> None:
         try:
@@ -56,4 +64,11 @@ class Command(BaseCommand):
             reported=reported,
             manual=options["manual"],
         )
+        if options["record"]:
+            try:
+                nightly_outcome.remember(
+                    result, rc=options["rc"], seconds=options["seconds"], night=options["night"]
+                )
+            except Exception as error:  # the verdict still reaches the host's ledger
+                self.stderr.write(f"could not keep the verdict for Haldus: {type(error).__name__}")
         self.stdout.write(result.line())

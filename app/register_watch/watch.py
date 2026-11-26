@@ -35,7 +35,7 @@ from app.register_watch.models import (
     WatchSource,
     WatchTarget,
 )
-from app.register_watch.sources import adr, pdr, riigikogu
+from app.register_watch.sources import adr, http, pdr, riigikogu
 from app.register_watch.sources.http import FetchError
 from app.register_watch.sources.items import Item
 
@@ -209,6 +209,10 @@ def _watch_matter(
         record.errors.append({"teema": matter.display_reference, "viga": _error_text(error)})
         return
     for target in targets:
+        if http.out_of_time():
+            # The nightly step's time is spent (ADR 0234): the rest is read next
+            # night; `run` writes the one line that says so.
+            return
         try:
             items = read(target, today=today)
             with transaction.atomic():
@@ -288,6 +292,9 @@ def run(
                 .prefetch_related("source_organisations")
                 .order_by("reference_year", "reference_number")
             ):
+                if http.out_of_time():
+                    record.errors.append(_stopped_at_the_deadline())
+                    break
                 _watch_matter(
                     record, matter, use_ai=use_ai, ai_client=ai_client, usage=usage, today=today
                 )
@@ -297,6 +304,12 @@ def run(
             raise
         _close(record, usage)
     return record
+
+
+def _stopped_at_the_deadline() -> dict[str, Any]:
+    """The run's one line when its time ran out (ADR 0234): not a stop (``katkes``)
+    — what was read is kept and recorded — but not a whole night either."""
+    return {"viga": f"Kontroll peatus: {http.OUT_OF_TIME}", "ajapiir": True}
 
 
 def _close(record: WatchRun, usage: Any) -> None:
