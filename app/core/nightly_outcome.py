@@ -339,6 +339,8 @@ def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
         "inaccessible",
         "unconfirmed",
         "missing",
+        "revised",
+        "discovery_failed",
     )
     counts = {k: int(reported.get(k) or 0) for k in keys}
     # The session day and status of the week still waiting (r95): evidence, not a count.
@@ -346,26 +348,31 @@ def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
     where = f" ({note})" if note else ""
     if rc != 0:
         return StepOutcome(step, FAILED, f"exit {rc}", counts)
-    if counts["errors"] or counts["ai_failures"]:
-        return StepOutcome(step, PARTIAL, "valitsus.ee errors or model failures", counts)
     if counts["missing"]:
-        # Friday's cycle was the week's last reading and nothing was stored.
+        # Friday's cycle was the week's last reading and nothing was stored: said
+        # first, whatever else went wrong.
         return StepOutcome(
             step,
             PARTIAL,
             f"this week's agenda missing after its last nightly reading{where}",
             counts,
         )
+    # r95: a source failure is reported even in a run that stored the agenda, and a
+    # model failure is never a clean classification (items stay «Hindamata»).
+    if counts["errors"]:
+        return StepOutcome(step, PARTIAL, f"valitsus.ee could not be read in full{where}", counts)
+    if counts["ai_failures"]:
+        return StepOutcome(step, PARTIAL, "model failures: agenda items left unjudged", counts)
     if counts["unconfirmed"]:
-        return StepOutcome(
-            step, PARTIAL, f"valitsus.ee refused the agenda; publication unconfirmed{where}", counts
-        )
+        return StepOutcome(step, PARTIAL, f"agenda publication unconfirmed{where}", counts)
     if counts["inaccessible"]:
         return StepOutcome(
             step, PARTIAL, f"a past session's agenda address is inaccessible{where}", counts
         )
-    if not (counts["stored"] or counts["judged"]):
+    if not (counts["stored"] or counts["judged"] or counts["revised"]):
         if counts["not_published"]:
-            return StepOutcome(step, SUCCEEDED_NO_NEW, f"agenda not yet published{where}", counts)
+            return StepOutcome(
+                step, SUCCEEDED_NO_NEW, f"agenda likely not yet published{where}", counts
+            )
         return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
     return StepOutcome(step, SUCCEEDED, "", counts)

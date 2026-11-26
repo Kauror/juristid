@@ -2,8 +2,8 @@
 
     manage.py watch_government_agenda [--weeks N] [--no-ai] [--dry-run] [--outcome-json]
 
-Run every night at 00:00 Tallinn time by the nightly cycle (ADR 0229); there is no
-daytime reading. A week whose agenda is already stored reads nothing, so the other
+Run every night by the nightly cycle (ADR 0229), in the agenda lane from 01:00 Tallinn
+time; there is no daytime reading. A week whose agenda is already stored reads nothing, so the other
 nights of that week cost one query. A person may run it by hand to recover a week
 (an authorised manual run). ``--weeks 4`` also reads the three weeks before (once,
 at release). ``--dry-run`` does the whole run and rolls it back. ``--outcome-json``
@@ -69,6 +69,9 @@ class Command(BaseCommand):
             "inaccessible": outcome.count(valitsus.INACCESSIBLE),
             "unconfirmed": outcome.count(valitsus.UNCONFIRMED),
             "missing": int(outcome.missing),
+            # r95: the Government changed a stored agenda; the site's listings unread.
+            "revised": len(outcome.revised),
+            "discovery_failed": int(outcome.discovery_failed),
             # The session day and HTTP status of the newest week without an agenda.
             "note": outcome.note(),
         }
@@ -87,8 +90,13 @@ class Command(BaseCommand):
         )
         for error in outcome.errors[:10]:
             self.stdout.write(f"  ERROR {error}")
+        for revision in outcome.revised:
+            self.stdout.write(
+                f"  REVISED {revision.agenda.session_date} +{revision.added} "
+                f"~{revision.changed} -{revision.removed}"
+            )
         for check in outcome.checks:
-            if check.state in ("STORED", "ALREADY_STORED"):
+            if check.state in ("STORED", "ALREADY_STORED", "REVISED"):
                 continue
             day = check.session_date or check.week
             status = f" HTTP {check.http_status}" if check.http_status else ""

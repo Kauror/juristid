@@ -1,11 +1,13 @@
 """«Valitsuse info»: the Government's weekly commented agenda, read and judged (ADR 0219).
 
-Every night at 00:00 Tallinn time the nightly cycle (ADR 0229) runs
-`watch_government_agenda`; there is no daytime reading. A run looks for this
-week's agenda on valitsus.ee
-(`sources.valitsus`), stores it once with every item as published, lets Claude say
-which items may matter to the Chamber (`judge`), and tells the Monitooring audience in
-the bell. A week whose agenda is stored is done: later runs that week read nothing.
+Every night, in its own lane from 01:00 Tallinn time, the nightly cycle (ADR 0229)
+runs `watch_government_agenda`; there is no daytime reading. A run finds this week's
+agenda through the links valitsus.ee publishes (`sources.valitsus.discover`), stores
+it once with every item as published, lets Claude say which items may matter to the
+Chamber (`judge`), and tells the Monitooring audience in the bell. Until the week's
+last cycle (Friday's) a stored agenda is read once more each night: a change the
+Government makes is a revision (`revise`) — kept with the earlier text, never over a
+person's decision, and only new or changed items are judged and told again.
 
 Nothing here writes on a Teema. The model's verdict and its pointer to a Teema are shown
 beside the Government's own text; a person decides what to do with them.
@@ -14,6 +16,7 @@ beside the Government's own text; a person decides what to do with them.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import logging
 from collections.abc import Iterable
@@ -34,6 +37,7 @@ from app.register_watch.models import (
     AgendaItemStatus,
     GovernmentAgenda,
     GovernmentAgendaCheck,
+    GovernmentAgendaRevision,
     Strength,
 )
 from app.register_watch.sources import valitsus
@@ -95,14 +99,42 @@ def missing_this_week(now: dt.datetime | None = None) -> bool:
 # -- storing -----------------------------------------------------------------------
 
 
+def _norm(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _row(number: int, title: str, presenter: str, kind: str, text: str) -> tuple[Any, ...]:
+    """One item as stored: the same truncation as `store`, whitespace normalised."""
+    return (number, _norm(title[:1000]), _norm(presenter[:300]), _norm(kind[:120]), _norm(text))
+
+
+def fingerprint(rows: Iterable[tuple[Any, ...]]) -> str:
+    return hashlib.sha256(json.dumps(sorted(rows), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def source_rows(found: valitsus.Agenda) -> list[tuple[Any, ...]]:
+    return [_row(i.number, i.title, i.presenter, i.kind, i.text) for i in found.items]
+
+
+def stored_rows(agenda: GovernmentAgenda) -> list[tuple[Any, ...]]:
+    return [
+        _row(i.number, i.title, i.presenter, i.kind, i.text)
+        for i in agenda.items.filter(source_removed_at__isnull=True)
+    ]
+
+
+def _published(found: valitsus.Agenda) -> dt.datetime | None:
+    return found.published.replace(tzinfo=TALLINN) if found.published is not None else None
+
+
 @transaction.atomic
 def store(found: valitsus.Agenda) -> GovernmentAgenda:
-    published = found.published.replace(tzinfo=TALLINN) if found.published is not None else None
     agenda = GovernmentAgenda.objects.create(
         url=found.url[:500],
         title=found.title[:300],
         session_date=found.session_date,
-        published_at=published,
+        published_at=_published(found),
+        source_fingerprint=fingerprint(source_rows(found)),
     )
     AgendaItem.objects.bulk_create(
         AgendaItem(
@@ -118,15 +150,239 @@ def store(found: valitsus.Agenda) -> GovernmentAgenda:
     return agenda
 
 
+# -- revisions (r95) ---------------------------------------------------------------
+
+
+@dataclass
+class Revised:
+    revision: GovernmentAgendaRevision
+    #: Items new to the agenda or reopened for the model: only these are told.
+    fresh: list[AgendaItem]
+
+
+def _snapshot(item: AgendaItem) -> dict[str, Any]:
+    return {
+        "number": item.number,
+        "title": item.title,
+        "presenter": item.presenter,
+        "kind": item.kind,
+        "text": item.text,
+        "strength": item.strength,
+        "reason": item.reason,
+        "status": item.status,
+    }
+
+
+def _source_dict(item: valitsus.AgendaItem) -> dict[str, Any]:
+    return {
+        "number": item.number,
+        "title": item.title[:1000],
+        "presenter": item.presenter[:300],
+        "kind": item.kind[:120],
+        "text": item.text,
+    }
+
+
+def _match(found: valitsus.Agenda, live: list[AgendaItem]) -> list[tuple[Any, AgendaItem | None]]:
+    """Pair each published item with a stored one: by title first, then by number (a
+    reworded title keeps its place). Unpaired published items are new."""
+    by_title: dict[str, list[AgendaItem]] = {}
+    for item in live:
+        by_title.setdefault(_norm(item.title[:1000]).casefold(), []).append(item)
+    taken: set[Any] = set()
+    pairs: list[tuple[Any, AgendaItem | None]] = []
+    for new in found.items:
+        same = by_title.get(_norm(new.title[:1000]).casefold()) or []
+        match = next((o for o in same if o.pk not in taken), None)
+        if match is not None:
+            taken.add(match.pk)
+        pairs.append((new, match))
+    for index, (new, match) in enumerate(pairs):
+        if match is None:
+            other = next((o for o in live if o.pk not in taken and o.number == new.number), None)
+            if other is not None:
+                taken.add(other.pk)
+                pairs[index] = (new, other)
+    return pairs
+
+
+def revise(agenda: GovernmentAgenda, found: valitsus.Agenda) -> Revised | None:
+    """Bring a stored agenda up to the Government's changed page; None if unchanged.
+
+    * A waiting item takes the new text; when its title or explanation changed, the
+      model's verdict is dropped (kept in the revision) so it is judged again.
+    * An item a person decided keeps what the person saw; only ``revised_at`` marks it.
+    * A new item is added unjudged; an item gone from the page is marked
+      ``source_removed_at``, never deleted.
+    * The revision row keeps every earlier text. The same page read again is no
+      revision (`GovernmentAgenda.source_fingerprint`), so nothing is told twice.
+    """
+    new_print = fingerprint(source_rows(found))
+    with transaction.atomic():
+        locked = GovernmentAgenda.objects.select_for_update().get(pk=agenda.pk)
+        old_print = locked.source_fingerprint or fingerprint(stored_rows(locked))
+        if new_print == old_print:
+            if not locked.source_fingerprint:
+                locked.source_fingerprint = new_print
+                locked.save(update_fields=["source_fingerprint", "updated_at"])
+            return None
+        now = timezone.now()
+        live = list(
+            AgendaItem.objects.select_for_update()
+            .filter(agenda=locked, source_removed_at__isnull=True)
+            .order_by("number")
+        )
+        pairs = _match(found, live)
+        kept = {old.pk for _new, old in pairs if old is not None}
+        changes: list[dict[str, Any]] = []
+        fresh: list[AgendaItem] = []
+        removed = [o for o in live if o.pk not in kept]
+        for gone in removed:
+            changes.append(
+                {
+                    "number": gone.number,
+                    "title": gone.title,
+                    "change": "removed",
+                    "before": _snapshot(gone),
+                    "after": None,
+                    "decided": gone.status != AgendaItemStatus.PENDING,
+                }
+            )
+            gone.source_removed_at = now
+            gone.save(update_fields=["source_removed_at", "updated_at"])
+        before_numbers = {old.pk: old.number for _new, old in pairs if old is not None}
+        for new, old in pairs:  # out of the way first: a live number is unique
+            if old is not None and old.number != new.number:
+                old.number = old.number + 1000
+                old.save(update_fields=["number", "updated_at"])
+        added = changed = 0
+        for new, old in pairs:
+            after = _source_dict(new)
+            if old is None:
+                fresh.append(
+                    AgendaItem.objects.create(
+                        agenda=locked,
+                        number=new.number,
+                        title=after["title"],
+                        presenter=after["presenter"],
+                        kind=after["kind"],
+                        text=new.text,
+                    )
+                )
+                added += 1
+                changes.append(
+                    {
+                        "number": new.number,
+                        "title": after["title"],
+                        "change": "added",
+                        "before": None,
+                        "after": after,
+                        "decided": False,
+                    }
+                )
+                continue
+            before = _snapshot(old)
+            before["number"] = before_numbers[old.pk]
+            content = _row(0, new.title, new.presenter, new.kind, new.text) != _row(
+                0, old.title, old.presenter, old.kind, old.text
+            )
+            if not content and before["number"] == new.number:
+                continue
+            decided = old.status != AgendaItemStatus.PENDING
+            changes.append(
+                {
+                    "number": new.number,
+                    "title": after["title"],
+                    "change": "changed" if content else "renumbered",
+                    "before": before,
+                    "after": after,
+                    "decided": decided,
+                }
+            )
+            fields = ["number", "updated_at"]
+            old.number = new.number
+            if content:
+                changed += 1
+                old.revised_at = now
+                fields.append("revised_at")
+                meaning = (_norm(old.title), _norm(old.text)) != (
+                    _norm(after["title"]),
+                    _norm(new.text),
+                )
+                if not decided:
+                    old.title = after["title"]
+                    old.presenter = after["presenter"]
+                    old.kind = after["kind"]
+                    old.text = new.text
+                    fields += ["title", "presenter", "kind", "text"]
+                    if meaning:
+                        if old.strength != Strength.UNJUDGED:
+                            old.strength, old.reason, old.related_matter = (
+                                Strength.UNJUDGED,
+                                "",
+                                None,
+                            )
+                            fields += ["strength", "reason", "related_matter"]
+                        fresh.append(old)
+            old.save(update_fields=fields)
+        revision = GovernmentAgendaRevision.objects.create(
+            agenda=locked,
+            previous_fingerprint=locked.source_fingerprint,
+            fingerprint=new_print,
+            published_at=_published(found),
+            added=added,
+            changed=changed,
+            removed=len(removed),
+            changes=changes,
+        )
+        locked.source_fingerprint = new_print
+        locked.revised_at = now
+        update = ["source_fingerprint", "revised_at", "updated_at"]
+        if fresh:
+            # New or changed text is worth one fresh answer, with its own attempts.
+            locked.judged_at = None
+            locked.ai_attempts = 0
+            update += ["judged_at", "ai_attempts"]
+        locked.save(update_fields=update)
+    logger.info(
+        "government agenda %s revised: +%d ~%d -%d",
+        locked.session_date,
+        added,
+        changed,
+        len(removed),
+    )
+    return Revised(revision=revision, fresh=fresh)
+
+
+def _reread(agenda: GovernmentAgenda) -> valitsus.Agenda:
+    """The stored agenda's page read again, as that session's agenda, or `FetchError`."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(agenda.url)
+    if parts.hostname != valitsus.HOST or not parts.path.startswith("/"):
+        raise valitsus.FetchError(f"{agenda.url[:120]} ei ole {valitsus.HOST} aadress")
+    found = valitsus.parse(agenda.url, valitsus.get_text(valitsus.HOST, parts.path))
+    if found.session_date != agenda.session_date:
+        raise valitsus.FetchError(
+            f"{valitsus.HOST}{parts.path} on teise istungi päevakord ({found.session_date})"
+        )
+    return found
+
+
 @dataclass
 class Outcome:
     stored: list[GovernmentAgenda]
     judged: int
     usage: candidates_ai.Usage
-    #: Genuine failures only: refused access, 429/5xx/timeouts, unreadable pages.
+    #: Genuine failures only: refused access, 429/5xx/timeouts, unreadable pages, and
+    #: discovery pages that could not be read — even in a run that stored an agenda.
     errors: list[str]
     #: Every week's verdict for this run, one ledger row each (r95).
     checks: list[GovernmentAgendaCheck] = field(default_factory=list)
+    #: Revisions of stored agendas found this run.
+    revised: list[GovernmentAgendaRevision] = field(default_factory=list)
+    #: The site's listings were needed and could not be read (`valitsus.Discovery.ok`).
+    discovery_failed: bool = False
 
     def count(self, *states: str) -> int:
         return sum(1 for check in self.checks if check.state in states)
@@ -138,7 +394,11 @@ class Outcome:
     def note(self) -> str:
         """The evidence of the newest week without an agenda: session day and status."""
         for check in self.checks:
-            if check.state not in (AgendaCheckState.STORED, AgendaCheckState.ALREADY_STORED):
+            if check.state not in (
+                AgendaCheckState.STORED,
+                AgendaCheckState.ALREADY_STORED,
+                AgendaCheckState.REVISED,
+            ):
                 day = check.session_date.isoformat() if check.session_date else str(check.week)
                 status = f", HTTP {check.http_status}" if check.http_status else ""
                 return f"{day}{status}"
@@ -155,18 +415,19 @@ _WEEK_ORDER = (
     valitsus.NOT_PUBLISHED,
     valitsus.NOT_FOUND,
 )
-_FAILURES = frozenset({valitsus.SOURCE_ERROR, valitsus.PARSE_ERROR, valitsus.ACCESS_REFUSED})
 
 
-def _control_path() -> str | None:
-    """The newest stored agenda's address on valitsus.ee: the page `look` asks to tell
-    an unpublished page from a refusal."""
+def _control() -> tuple[str, dt.date] | None:
+    """The newest stored agenda's address on valitsus.ee and its session day: the page
+    `look` asks to tell an unpublished page from a refusal (`valitsus.site_answers`)."""
     from urllib.parse import urlsplit
 
-    for url in GovernmentAgenda.objects.order_by("-session_date").values_list("url", flat=True)[:1]:
+    for url, session in GovernmentAgenda.objects.order_by("-session_date").values_list(
+        "url", "session_date"
+    )[:1]:
         parts = urlsplit(url)
         if parts.hostname == valitsus.HOST and parts.path.startswith("/"):
-            return parts.path
+            return parts.path, session
     return None
 
 
@@ -175,13 +436,27 @@ def _last_attempt(monday: dt.date, today: dt.date) -> bool:
     return today >= monday + dt.timedelta(days=LAST_CYCLE_WEEKDAY)
 
 
+def _add_usage(total: candidates_ai.Usage, part: candidates_ai.Usage) -> None:
+    total.calls += part.calls
+    total.input_tokens += part.input_tokens
+    total.output_tokens += part.output_tokens
+    total.judged += part.judged
+    total.failures += part.failures
+    total.letters_left_out += part.letters_left_out
+    total.topics_left_out = max(total.topics_left_out, part.topics_left_out)
+    total.model = part.model or total.model
+    total.last_failure = part.last_failure or total.last_failure
+
+
 def run(
     *, today: dt.date | None = None, weeks: int = 1, use_ai: bool = True, ai_client: Any = None
 ) -> Outcome:
     """Look for the agendas of this week (and ``weeks - 1`` before it); store, judge, tell.
 
-    A week already stored is not read again. A failure to read one day is written down
-    and the other days are still tried.
+    A week already stored is not looked for again; until its last cycle the stored
+    page is re-read once for revisions. A failure to read one day is written down
+    and the other days are still tried; a failure never hides behind a stored
+    agenda (`Outcome.errors`, `GovernmentAgendaCheck.source_failures`).
     """
     from app.register_watch import candidate_notices
 
@@ -191,71 +466,167 @@ def run(
     errors: list[str] = []
     verdicts: list[dict[str, Any]] = []
     control_answer: list[bool | None] = []
+    discovered: list[valitsus.Discovery] = []
+    revisions: list[Revised] = []
 
     def control() -> bool | None:
         # One control read per run, and only when a 403 needs telling apart.
         if not control_answer:
-            path = _control_path()
-            control_answer.append(valitsus.site_answers(path) if path else None)
+            known = _control()
+            control_answer.append(valitsus.site_answers(*known) if known else None)
         return control_answer[0]
+
+    def discovery() -> valitsus.Discovery:
+        # The site's listings are read once per run, and only when a week needs them.
+        if not discovered:
+            found = valitsus.discover()
+            discovered.append(found)
+            for path, error in found.failures:
+                errors.append(f"{valitsus.HOST}{path}: {str(error)[:200]}")
+        return discovered[0]
 
     for back in range(weeks):
         monday = week_monday(today) - dt.timedelta(days=7 * back)
-        if agenda_of_week(monday) is not None:
-            verdicts.append({"week": monday, "state": AgendaCheckState.ALREADY_STORED})
+        known = agenda_of_week(monday)
+        if known is not None:
+            verdict: dict[str, Any] = {
+                "week": monday,
+                "state": AgendaCheckState.ALREADY_STORED,
+                "session_date": known.session_date,
+                "url": known.url[:500],
+                "agenda": known,
+            }
+            if back == 0 and not _last_attempt(monday, today - dt.timedelta(days=1)):
+                # The week is still being read (through Friday's cycle): the
+                # Government may still change its agenda.
+                try:
+                    changed = revise(known, _reread(known))
+                except valitsus.FetchError as error:
+                    detail = f"{valitsus.HOST}: muudatuste kontroll: {str(error)[:200]}"
+                    errors.append(detail)
+                    verdict.update(detail=detail[:300], http_status=error.status, source_failures=1)
+                else:
+                    if changed is not None:
+                        revisions.append(changed)
+                        r = changed.revision
+                        verdict.update(
+                            state=AgendaCheckState.REVISED,
+                            detail=f"lisandus {r.added}, muutus {r.changed}, eemaldati {r.removed}",
+                        )
+            verdicts.append(verdict)
             continue
+        found = discovery()
         looks: list[valitsus.Lookup] = []
         week_agenda: GovernmentAgenda | None = None
         for day in session_days(monday):
             if day > today + dt.timedelta(days=1):
                 continue
-            found = valitsus.look(day, today=today, control=control)
-            looks.append(found)
-            if found.state in _FAILURES:
-                errors.append(found.detail[:300])
-            if found.agenda is not None:
-                week_agenda = store(found.agenda)
+            look = valitsus.look(day, today=today, discovery=found, control=control)
+            looks.append(look)
+            # Every failure on the way, even when the agenda is found in the end; a
+            # source or parse failure is among them already, a refusal is not.
+            errors.extend(problem[:300] for problem in look.problems)
+            if look.state == valitsus.ACCESS_REFUSED:
+                errors.append(look.detail[:300])
+            if look.agenda is not None:
+                week_agenda = store(look.agenda)
                 stored.append(week_agenda)
                 break
-        verdicts.append(_week_verdict(monday, today, looks, week_agenda))
+        verdict = _week_verdict(monday, today, looks, week_agenda)
+        verdict.update(
+            discovery_ok=found.ok,
+            discovery=found.summary(),
+            source_failures=min(
+                len(found.failures) + sum(len(look.problems) for look in looks), 32767
+            ),
+        )
+        verdicts.append(verdict)
     judged = 0
     # Agendas the model gave verdicts in this run: a retry's proposals reach their
     # owners too, not only a newly stored agenda's (audit HR-02 review).
     answered: list[GovernmentAgenda] = []
+    #: The model's use per week, written on that week's row only (r95: a multi-week
+    #: run no longer repeats the run's total on every week).
+    per_week: dict[dt.date, candidates_ai.Usage] = {}
     if use_ai:
         # Only an agenda no answer was read for, and only `MAX_ATTEMPTS` times: a
-        # failing model is not asked about the same week every half hour forever.
+        # failing model is not asked about the same week every night forever.
         for agenda in GovernmentAgenda.objects.filter(
             judged_at__isnull=True, ai_attempts__lt=MAX_ATTEMPTS
         ).order_by("session_date"):
-            count = judge(agenda, usage, client=ai_client)
+            part = candidates_ai.Usage()
+            count = judge(agenda, part, client=ai_client)
+            _add_usage(usage, part)
+            if not (part.calls or part.failures):
+                continue  # the model was off or had nothing to be asked
+            week = week_monday(agenda.session_date)
+            _add_usage(per_week.setdefault(week, candidates_ai.Usage()), part)
+            if not any(v["week"] == week for v in verdicts):
+                # A retry for a week this run did not look at gets its own row.
+                verdicts.append(
+                    {
+                        "week": week,
+                        "state": AgendaCheckState.ALREADY_STORED,
+                        "session_date": agenda.session_date,
+                        "url": agenda.url[:500],
+                        "agenda": agenda,
+                    }
+                )
             judged += count
             if count:
                 answered.append(agenda)
     for agenda in stored:
         agenda.refresh_from_db()
+    fresh_pks = {item.pk for revised in revisions for item in revised.fresh}
+    revised_agendas = {revised.revision.agenda_id for revised in revisions}
     # Tell when an item may matter — or when the model could not say yet: off,
-    # failed, or an answer that left items «Hindamata» (ADR 0219 §5).
-    worth = [
-        a
-        for a in stored
-        if a.items.filter(strength__in=SHOWN).exists()
-        or a.items.filter(status=AgendaItemStatus.PENDING, strength=Strength.UNJUDGED).exists()
-    ]
+    # failed, or an answer that left items «Hindamata» (ADR 0219 §5). A revised
+    # agenda counts only for its new or changed items.
+    worth = sum(1 for a in stored if a.items.filter(_shown_or_waiting()).exists())
+    worth += sum(
+        1
+        for pk in revised_agendas
+        if AgendaItem.objects.filter(pk__in=fresh_pks, agenda_id=pk)
+        .filter(_shown_or_waiting())
+        .exists()
+    )
     if worth:
         with transaction.atomic():
-            candidate_notices.notify_agendas(len(worth))
-    told = {a.pk: a for a in (*stored, *answered)}
-    if told:
-        with transaction.atomic():
+            candidate_notices.notify_agendas(worth)
+    told = {a.pk: a for a in (*stored, *answered) if a.pk not in revised_agendas}
+    with transaction.atomic():
+        if told:
             tell_owners(list(told.values()))
-    checks = [
-        GovernmentAgendaCheck.objects.create(
-            **verdict, ai_calls=min(usage.calls, 32767), ai_failures=min(usage.failures, 32767)
+        if fresh_pks:
+            tell_owners(
+                list(GovernmentAgenda.objects.filter(pk__in=revised_agendas)), only=fresh_pks
+            )
+    checks = []
+    for verdict in verdicts:
+        used = per_week.get(verdict["week"])
+        checks.append(
+            GovernmentAgendaCheck.objects.create(
+                **verdict,
+                ai_calls=min(used.calls, 32767) if used else 0,
+                ai_failures=min(used.failures, 32767) if used else 0,
+            )
         )
-        for verdict in verdicts
-    ]
-    return Outcome(stored=stored, judged=judged, usage=usage, errors=errors, checks=checks)
+    return Outcome(
+        stored=stored,
+        judged=judged,
+        usage=usage,
+        errors=errors,
+        checks=checks,
+        revised=[revised.revision for revised in revisions],
+        discovery_failed=bool(discovered) and not discovered[0].ok,
+    )
+
+
+def _shown_or_waiting() -> Any:
+    """An item worth telling about: judged to matter, or not judged yet."""
+    from django.db.models import Q
+
+    return Q(strength__in=SHOWN) | Q(status=AgendaItemStatus.PENDING, strength=Strength.UNJUDGED)
 
 
 def _week_verdict(
@@ -434,7 +805,13 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
     """
     if not ai_enabled():
         return 0
-    items = list(agenda.items.filter(status=AgendaItemStatus.PENDING, strength=Strength.UNJUDGED))
+    items = list(
+        agenda.items.filter(
+            status=AgendaItemStatus.PENDING,
+            strength=Strength.UNJUDGED,
+            source_removed_at__isnull=True,
+        )
+    )
     if not items:
         # Nothing left to ask: every item is judged or decided by a person.
         if agenda.judged_at is None:
@@ -470,6 +847,7 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
             pk__in=[item.pk for item in items],
             status=AgendaItemStatus.PENDING,
             strength=Strength.UNJUDGED,
+            source_removed_at__isnull=True,
         )
         for item in still_open:
             row = answers.get(item.number)
@@ -520,6 +898,8 @@ def proposals() -> Any:
         related_matter__isnull=False,
         related_matter__data_class=MatterDataClass.REAL,
         status=AgendaItemStatus.PENDING,
+        # An item the Government took off its agenda is kept, but proposes nothing.
+        source_removed_at__isnull=True,
         strength__in=PROPOSED,
     )
 
@@ -612,16 +992,20 @@ def dismiss(item: AgendaItem, *, actor: Any) -> AgendaItem:
     return locked
 
 
-def tell_owners(agendas: list[GovernmentAgenda]) -> int:
-    """The owner's bell («Registris uus dokument») for each Teema a new agenda's items tie to."""
+def tell_owners(agendas: list[GovernmentAgenda], *, only: set[Any] | None = None) -> int:
+    """The owner's bell («Registris uus dokument») for each Teema a new agenda's items tie to.
+
+    ``only`` limits it to those items: a revised agenda tells about its new or changed
+    items, never again about the ones already told (r95)."""
     from collections import Counter
 
     from app.matters.models import Matter
     from app.register_watch import notices
 
-    counts = Counter(
-        proposals().filter(agenda__in=agendas).values_list("related_matter_id", flat=True)
-    )
+    waiting = proposals().filter(agenda__in=agendas)
+    if only is not None:
+        waiting = waiting.filter(pk__in=only)
+    counts = Counter(waiting.values_list("related_matter_id", flat=True))
     told = 0
     # Never a TEST Teema's owner, even for a proposal stored before the model was
     # kept from naming one (audit HR-09).

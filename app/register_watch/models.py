@@ -399,6 +399,15 @@ class GovernmentAgenda(BaseModel):
         db_default=0,
         verbose_name="hindamiskatseid",
     )
+    #: Fingerprint of the items as last read from the source (r95, `agenda.fingerprint`).
+    #: A later read of the same page that gives another one is a revision
+    #: (`GovernmentAgendaRevision`); empty for an agenda stored before r95 until its
+    #: first re-read sets it.
+    source_fingerprint = models.CharField(
+        max_length=64, blank=True, default="", db_default="", verbose_name="allika sõrmejälg"
+    )
+    #: When the Government last changed the published agenda, as this app saw it.
+    revised_at = models.DateTimeField(null=True, blank=True, verbose_name="muudetud")
 
     class Meta:
         verbose_name = "valitsuse päevakord"
@@ -414,8 +423,9 @@ class AgendaCheckState(models.TextChoices):
 
     STORED = "STORED", "Päevakord loetud"
     ALREADY_STORED = "ALREADY_STORED", "Nädala päevakord juba olemas"
-    NOT_FOUND = "NOT_FOUND", "Päevakorra lehte veel ei ole"
-    NOT_PUBLISHED = "NOT_PUBLISHED", "Päevakord on olemas, kuid veel avaldamata"
+    REVISED = "REVISED", "Päevakorda muudeti"
+    NOT_FOUND = "NOT_FOUND", "Päevakorda veel ei leitud"
+    NOT_PUBLISHED = "NOT_PUBLISHED", "Tõenäoliselt veel avaldamata"
     INACCESSIBLE = "INACCESSIBLE", "Oodatud aadress ajutiselt kättesaamatu"
     UNCONFIRMED = "UNCONFIRMED", "Avaldamine kinnitamata"
     ACCESS_REFUSED = "ACCESS_REFUSED", "Juurdepääs keelatud"
@@ -442,6 +452,16 @@ class GovernmentAgendaCheck(BaseModel):
     missing = models.BooleanField(default=False, verbose_name="nädala päevakord puudub")
     ai_calls = models.PositiveSmallIntegerField(default=0, verbose_name="mudeli päringuid")
     ai_failures = models.PositiveSmallIntegerField(default=0, verbose_name="mudeli vigu")
+    #: Whether the site's own listings (`valitsus.discover`) were read this run: None
+    #: when the run had no need to read them (r95).
+    discovery_ok = models.BooleanField(null=True, blank=True, verbose_name="loendid loetud")
+    discovery = models.CharField(
+        max_length=200, blank=True, default="", db_default="", verbose_name="loendid"
+    )
+    #: Other source failures of the same run, counted even when the agenda was stored.
+    source_failures = models.PositiveSmallIntegerField(
+        default=0, db_default=0, verbose_name="muid lugemisvigu"
+    )
     agenda = models.ForeignKey(
         GovernmentAgenda,
         null=True,
@@ -508,6 +528,13 @@ class AgendaItem(BaseModel):
         verbose_name="otsustas",
     )
     decided_at = models.DateTimeField(null=True, blank=True, verbose_name="otsustatud")
+    #: The source changed this item after it was stored (`agenda.revise`, r95). A
+    #: decided item keeps what the person saw; the new text is in the revision.
+    revised_at = models.DateTimeField(null=True, blank=True, verbose_name="allikas muudetud")
+    #: The item is gone from the published agenda. Kept as evidence, never deleted.
+    source_removed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="allikast eemaldatud"
+    )
     development = models.ForeignKey(
         "matters.MatterProceduralDevelopment",
         on_delete=models.SET_NULL,
@@ -522,8 +549,12 @@ class AgendaItem(BaseModel):
         verbose_name_plural = "päevakorrapunktid"
         ordering = ["number"]
         constraints = [
+            # One live item per number; an item the Government removed keeps its
+            # number as evidence (r95 revisions).
             models.UniqueConstraint(
-                fields=["agenda", "number"], name="register_watch_agenda_item_once"
+                fields=["agenda", "number"],
+                condition=models.Q(source_removed_at__isnull=True),
+                name="register_watch_agenda_item_live_once",
             ),
             models.CheckConstraint(
                 condition=models.Q(strength__in=[s.value for s in Strength]),
@@ -537,6 +568,37 @@ class AgendaItem(BaseModel):
     @property
     def text_paragraphs(self) -> list[str]:
         return [part for part in self.text.split(chr(10) * 2) if part.strip()]
+
+
+class GovernmentAgendaRevision(BaseModel):
+    """One change the Government made to an agenda already stored (r95).
+
+    Written once when a re-read gives a new `GovernmentAgenda.source_fingerprint`:
+    what was added, changed, renumbered or removed, with the earlier text, so the
+    publication history survives the update of the items."""
+
+    agenda = models.ForeignKey(
+        GovernmentAgenda,
+        on_delete=models.CASCADE,
+        related_name="revisions",
+        verbose_name="päevakord",
+    )
+    previous_fingerprint = models.CharField(max_length=64, blank=True, default="")
+    fingerprint = models.CharField(max_length=64)
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="avaldatud")
+    added = models.PositiveSmallIntegerField(default=0, verbose_name="lisandus")
+    changed = models.PositiveSmallIntegerField(default=0, verbose_name="muutus")
+    removed = models.PositiveSmallIntegerField(default=0, verbose_name="eemaldati")
+    #: ``[{"number", "title", "change", "before", "after", "decided"}, …]``.
+    changes = models.JSONField(default=list, blank=True, verbose_name="muudatused")
+
+    class Meta:
+        verbose_name = "päevakorra muudatus"
+        verbose_name_plural = "päevakorra muudatused"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.agenda.session_date} +{self.added} ~{self.changed} -{self.removed}"
 
 
 class CandidateNotice(BaseModel):

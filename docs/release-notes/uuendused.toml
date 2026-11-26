@@ -7,15 +7,16 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
-# r95 kandidaat (hoolduskorraldus, valitsuse päevakorra 403; ADR 0219 muudatus 26.11.2026). Kuupäev on
-# ajutine: pane siia paigalduspäev (README: üks kirje päevas, kuupäev = paigalduspäev).
+# r95 — paigaldatud 26.11.2026 (omaniku otsus 26.11): valitsuse päevakorra leidmine ja 403 (#730, #732;
+# ADR 0219 muudatused 26.11.2026), seire andmebaasi roll (#730).
 [[day]]
 date = 2026-11-26
 basis = "deployment"
-prs = [730]
+prs = [730, 732]
 changes = [
-  "Valitsuse päevakorra öine lugemine ei loe enam veaks päevakorda, mis on valitsus.ee-s juba olemas, kuid veel avaldamata: öö lõpeb siis tavapäraselt ja päevakord loetakse järgmisel ööl, kui see on avaldatud. Kui valitsus.ee keelab ligipääsu ka juba avaldatud päevakorrale või kui reede öösel pole nädala päevakorda ikka leitud, märgitakse see endiselt probleemiks.",
-  "Halduse «Registrite jälgimine» all on uus plokk «Valitsuse päevakord»: iga öö kohta on näha, kas päevakord loeti, oli veel avaldamata või ei õnnestunud seda lugeda, koos istungi kuupäeva ja valitsus.ee vastusega.",
+  "Valitsuse päevakord leitakse nüüd valitsus.ee enda avalehe ja sisukaardi linkide järgi, mitte ainult aadressi ära arvates. Nii loetakse ka päevakord, mille aadressi lõpus on «-0» (nagu 26.11.2026 istungi oma). Kui valitsus.ee loendeid ei saa lugeda, märgitakse avaldamine kinnitamata, mitte «veel avaldamata».",
+  "Kui valitsus muudab juba loetud päevakorda, loetakse muudatus järgmisel ööl: uued ja muutunud punktid hinnatakse uuesti, varasem tekst jääb alles ja juba tehtud otsuseid ei muudeta.",
+  "Halduse «Registrite jälgimine» all on uus plokk «Valitsuse päevakord»: iga öö kohta on näha, kas päevakord loeti, oli tõenäoliselt veel avaldamata või ei õnnestunud seda lugeda, koos istungi kuupäeva, valitsus.ee vastuse ja loendite lugemisega.",
 ]
 
 # r94 — samal päeval paigaldatud (omaniku otsus 25.11.2026): Riigikogu protokolli juurdepääs (#728,

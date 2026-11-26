@@ -61,22 +61,28 @@
 
   <section class="panel" aria-labelledby="regwatchlog-agenda">
     <h2 class="acctsection__title" id="regwatchlog-agenda">Valitsuse päevakord</h2>
-    {% comment %}r95: one row per night and week (GovernmentAgendaCheck). A page that exists but is not yet published answers 403; it is «veel avaldamata», not an error, once a published agenda is readable at the same time. Friday's cycle is the week's last reading.{% endcomment %}
-    <p class="regwatch__meta">Loetakse öise tsükli osana alates kella 01:00. Enne avaldamist vastab valitsus.ee päevakorra aadressile 403; kui samal ajal saab lugeda avaldatud päevakorda, on see «veel avaldamata», mitte viga. Nädala viimane katse on reede öösel.</p>
+    {% comment %}r95: one row per night and week (GovernmentAgendaCheck). The agenda is found through the site's own listings (homepage, sitemap); a 403 at a guessed address proves nothing on its own. Friday's cycle is the week's last reading.{% endcomment %}
+    <p class="regwatch__meta">Loetakse öise tsükli osana alates kella 01:00; päevakord leitakse valitsus.ee avalehe ja sisukaardi linkide järgi. Nädala viimane katse on reede öösel.</p>
+    <dl class="regwatchlog__facts">
+      <div><dt>Loendid viimati loetud</dt><dd>{% if agenda_summary.discovered %}{{ agenda_summary.discovered.created_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd></div>
+      <div><dt>Viimane päevakord</dt><dd>{% if agenda_summary.latest %}istung {{ agenda_summary.latest.session_date|date:"j.n.Y" }} · avaldatud {{ agenda_summary.latest.published_at|date:"j.n.Y H:i"|default:"—" }} · loetud {{ agenda_summary.latest.created_at|date:"j.n.Y H:i" }}{% if agenda_summary.latest.revised_at %} · muudetud {{ agenda_summary.latest.revised_at|date:"j.n.Y H:i" }}{% endif %}{% else %}—{% endif %}</dd></div>
+    </dl>
     {% if agenda_checks %}
       <div class="accttable">
         <table class="data-table">
           <thead>
-            <tr><th scope="col">Kontrollitud</th><th scope="col">Nädal</th><th scope="col">Seis</th><th scope="col">Istung</th><th scope="col">HTTP</th></tr>
+            <tr><th scope="col">Kontrollitud</th><th scope="col">Nädal</th><th scope="col">Seis</th><th scope="col">Istung</th><th scope="col">HTTP</th><th scope="col">Loendid</th><th scope="col">Mudel</th></tr>
           </thead>
           <tbody>
             {% for row in agenda_checks %}
               <tr>
                 <td class="regwatchlog__nowrap">{{ row.check.created_at|date:"j.n.Y H:i" }}</td>
                 <td class="regwatchlog__nowrap">{{ row.check.week|date:"j.n" }}</td>
-                <td>{% if row.problem %}<span class="statechip statechip--problem">{{ row.check.get_state_display }}{% if row.check.missing %} · nädala päevakord puudub{% endif %}</span>{% elif row.check.state == "STORED" or row.check.state == "ALREADY_STORED" %}<span class="statechip statechip--ok">{{ row.check.get_state_display }}</span>{% else %}<span class="statechip">{{ row.check.get_state_display }}</span>{% endif %}{% if row.check.detail %}<br><span class="regwatch__meta">{{ row.check.detail }}</span>{% endif %}</td>
+                <td>{% if row.problem %}<span class="statechip statechip--problem">{{ row.check.get_state_display }}{% if row.check.missing %} · nädala päevakord puudub{% endif %}</span>{% elif row.check.state == "STORED" or row.check.state == "ALREADY_STORED" or row.check.state == "REVISED" %}<span class="statechip statechip--ok">{{ row.check.get_state_display }}</span>{% else %}<span class="statechip">{{ row.check.get_state_display }}</span>{% endif %}{% if row.check.source_failures %} <span class="statechip statechip--problem">{{ row.check.source_failures }} lugemisviga</span>{% endif %}{% if row.check.detail %}<br><span class="regwatch__meta">{{ row.check.detail }}</span>{% endif %}</td>
                 <td class="regwatchlog__nowrap">{{ row.check.session_date|date:"j.n.Y"|default:"—" }}</td>
                 <td>{{ row.check.http_status|default:"—" }}</td>
+                <td>{% if row.check.discovery_ok is None %}—{% elif row.check.discovery_ok %}loetud{% else %}<span class="statechip statechip--problem">lugemata</span>{% endif %}{% if row.check.discovery %}<br><span class="regwatch__meta">{{ row.check.discovery }}</span>{% endif %}</td>
+                <td>{% if row.check.ai_failures %}<span class="statechip statechip--problem">{{ row.check.ai_failures }} viga</span>{% elif row.check.ai_calls %}{{ row.check.ai_calls }}{% else %}—{% endif %}</td>
               </tr>
             {% endfor %}
           </tbody>

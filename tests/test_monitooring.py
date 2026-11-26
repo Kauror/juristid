@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 from django.core.management import call_command
@@ -116,10 +117,14 @@ def test_a_page_that_is_not_an_agenda_is_refused():
         valitsus.parse("https://valitsus.ee/x", "<h1>Pressiteade</h1><p>tekst</p>")
 
 
-def test_both_address_shapes_are_tried():
+def test_the_fallback_addresses_are_three_date_shapes_with_drupal_suffixes():
+    # Only a fallback after the site's own listings (BUG-001, r95): the plain address,
+    # the zero-padded one seen on 02.07.26, the long form; each plain, -0 and -1.
+    base = "/uudised/valitsuse-{}-istungi-kommenteeritud-paevakord"
     assert valitsus.candidate_paths(dt.date(2026, 10, 1)) == [
-        "/uudised/valitsuse-11026-istungi-kommenteeritud-paevakord",
-        "/uudised/valitsuse-1-oktoober-2026-istungi-kommenteeritud-paevakord",
+        base.format(token) + suffix
+        for token in ("11026", "011026", "1-oktoober-2026")
+        for suffix in ("", "-0", "-1")
     ]
 
 
@@ -153,10 +158,12 @@ def test_a_run_stores_the_week_once_and_the_model_judges_it(site, department_hea
     assert item.url == AGENDAS
     assert item.note == "valitsuse päevakord"
 
-    # The same week again reads nothing and tells nobody again.
+    # The same week again stores nothing and tells nobody again; it only re-reads the
+    # stored page once, for a revision (r95), and finds none.
     asked = len(site.asked)
     again = agenda.run(today=SESSION, ai_client=client)
-    assert again.stored == [] and len(site.asked) == asked
+    assert again.stored == [] and again.revised == []
+    assert site.asked[asked:] == [urlsplit(stored.url).path]
     assert CandidateNotice.objects.get(recipient=department_head).agendas == 1
 
 
@@ -230,6 +237,8 @@ def test_the_command_ends_with_a_machine_line_when_asked(monkeypatch):
         "not_published": 0,
         "note": "",
         "unconfirmed": 0,
+        "revised": 0,
+        "discovery_failed": 0,
     }
 
 
