@@ -174,6 +174,25 @@ def test_the_sign_in_surfaces_take_no_large_multipart_body_from_anybody(
     assert parses == []
 
 
+def test_the_administrators_sign_in_behind_the_gate_still_takes_its_small_form(
+    behind_the_gate, parses
+):
+    """r96 integration: the administrator's own sign-in (docs/adr/0185) is reached
+    by a gate-passed visitor with no persona. It is a sign-in surface: a small
+    multipart form is read (and answered by the page), a large one refused unread."""
+    small = behind_the_gate.post(
+        reverse("haldus:sign_in"), {"email": "keegi@koda.ee", "password": "vale"}
+    )
+    assert small.status_code not in (401, 413)
+    assert "parse" in parses
+
+    parses.clear()
+    for route in ("haldus:sign_in", "haldus:sign_in_code", "haldus:enrol"):
+        large = _unread_multipart(behind_the_gate, reverse(route), "65537")
+        assert large.status_code == 413, route
+    assert parses == []
+
+
 @pytest.mark.parametrize("encoding", ["urlencoded", "multipart"])
 def test_the_gate_still_takes_its_small_form(client, gate, encoding):
     """A browser sends the password urlencoded; a small multipart form (Django's
@@ -251,7 +270,7 @@ def test_cloudflare_access_needs_an_assertion_naming_the_same_person(
     from app.accounts import cloudflare_access
 
     settings.AUTH_MODE = AuthMode.CLOUDFLARE_ACCESS
-    user = factories.UserFactory(upn="jurist@koda.example")
+    user = factories.UserFactory(upn="jurist@koda.example", is_synthetic=False)
     client.force_login(user)
 
     def nobody(meta):
@@ -266,10 +285,79 @@ def test_cloudflare_access_needs_an_assertion_naming_the_same_person(
     assert client.post(SAABUNUD, {"failid": [pdf()]}).status_code == 403
     assert parses == []
 
+    # A session Access itself established for this person (SEC-012's marker) is one.
+    claims = {"sub": "cf-subject", "exp": int(timezone.now().timestamp()) + 3600}
     monkeypatch.setattr(
-        cloudflare_access, "identity_from_request", lambda meta: ("jurist@koda.example", {})
+        cloudflare_access, "identity_from_request", lambda meta: ("jurist@koda.example", claims)
     )
-    assert multipart_boundary.signed_in_for_files(client.post(SAABUNUD, {"x": "1"}).wsgi_request)
+    session = client.session
+    cloudflare_access.mark_session(session, user, email="jurist@koda.example", claims=claims)
+    session.save()
+    request = client.post(SAABUNUD, {"x": "1"}).wsgi_request
+    assert multipart_boundary.signed_in_for_files(request)
+
+
+def test_cloudflare_access_takes_no_file_from_a_session_another_mode_made(
+    client, settings, monkeypatch, parses
+):
+    """r96 integration (SEC-012 x SEC-013): the boundary asks what the mode's fast path
+    asks. A session another mode made, whose account carries the asserted address,
+    holds no Access provenance, so its multipart body is refused unread; so is an
+    Access session past its assertion's lifetime, and a synthetic account's."""
+    from app.accounts import cloudflare_access
+
+    settings.AUTH_MODE = AuthMode.CLOUDFLARE_ACCESS
+    user = factories.UserFactory(upn="jurist@koda.example", is_synthetic=False)
+    claims = {"sub": "cf-subject", "exp": int(timezone.now().timestamp()) + 3600}
+    monkeypatch.setattr(
+        cloudflare_access, "identity_from_request", lambda meta: ("jurist@koda.example", claims)
+    )
+
+    def upload_refused() -> None:
+        response = client.post(SAABUNUD, {"failid": [pdf()]})
+        assert response.status_code == 403
+        assert parses == []
+
+    # Same person, same address, but the session came from another mode: no marker.
+    client.force_login(user)
+    upload_refused()
+
+    # A marker whose assertion has expired holds nothing either.
+    session = client.session
+    cloudflare_access.mark_session(
+        session, user, email="jurist@koda.example", claims={**claims, "exp": 1}
+    )
+    session.save()
+    upload_refused()
+
+    # A marker for another account (the session changed hands) holds nothing.
+    other = factories.UserFactory(upn="teine@koda.example", is_synthetic=False)
+    session = client.session
+    cloudflare_access.mark_session(session, other, email="jurist@koda.example", claims=claims)
+    session.save()
+    upload_refused()
+
+    # A synthetic account is never one Access signs in, marker or not.
+    synthetic = factories.UserFactory(upn="robot@koda.example", is_synthetic=True)
+    monkeypatch.setattr(
+        cloudflare_access, "identity_from_request", lambda meta: ("robot@koda.example", claims)
+    )
+    client.force_login(synthetic)
+    session = client.session
+    cloudflare_access.mark_session(session, synthetic, email="robot@koda.example", claims=claims)
+    session.save()
+    upload_refused()
+
+    # The control: the same person with the session Access established is let through.
+    monkeypatch.setattr(
+        cloudflare_access, "identity_from_request", lambda meta: ("jurist@koda.example", claims)
+    )
+    client.force_login(user)
+    session = client.session
+    cloudflare_access.mark_session(session, user, email="jurist@koda.example", claims=claims)
+    session.save()
+    client.post(SAABUNUD, {"failid": [pdf()]})
+    assert "parse" in parses
 
 
 # -- where it stands ---------------------------------------------------------------------

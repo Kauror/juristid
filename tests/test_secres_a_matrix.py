@@ -20,6 +20,7 @@ Actors
 from __future__ import annotations
 
 from collections.abc import Callable
+from urllib.parse import urlencode
 
 import pytest
 from django.test import Client
@@ -353,7 +354,19 @@ def test_matrix(world, method, path, data, actor, want):
     client = ACTORS[actor](world)
     target = path(world) if callable(path) else path
     payload = {k: (v(world) if callable(v) else v) for k, v in data.items()}
-    response = client.post(target, payload) if method == "POST" else client.get(target)
+    if method == "POST":
+        # As a browser sends these forms (none of them takes a file): urlencoded.
+        # Django's test client would send multipart, which the SEC-013 boundary
+        # (docs/adr/0233) answers for a persona-less session before any route is
+        # resolved — its own refusal, tested in tests/test_sec013_multipart_boundary.py.
+        # The matrix pins what each route answers (r96 integration).
+        response = client.post(
+            target,
+            urlencode(payload, doseq=True),
+            content_type="application/x-www-form-urlencoded",
+        )
+    else:
+        response = client.get(target)
     if isinstance(want, tuple):
         status, prefix = want[0], want[1]
         assert response.status_code == status, (actor, method, target, response.status_code)

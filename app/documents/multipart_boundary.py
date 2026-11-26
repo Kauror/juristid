@@ -74,6 +74,13 @@ PUBLIC_AUTH_ROUTES = (
     "accounts:reset_password",
     "accounts:reauthenticate",
     "admin:login",
+    # The administrator's own sign-in under the shared gate (docs/adr/0185): a
+    # gate-passed visitor with no persona reaches these (r96 integration).
+    "haldus:sign_in",
+    "haldus:sign_in_code",
+    "haldus:enrol",
+    "haldus:reauthenticate",
+    "haldus:sign_out",
     "mcp_access:authorize",
     "mcp_access:token",
     "mcp_access:revoke",
@@ -121,10 +128,16 @@ def signed_in_for_files(request: HttpRequest) -> bool:
         return local_auth.is_local_session(request) and not local_auth.expiry_reason(request)
     if mode == AuthMode.CLOUDFLARE_ACCESS:
         try:
-            email, _claims = cloudflare_access.identity_from_request(request.META)
+            email, claims = cloudflare_access.identity_from_request(request.META)
         except cloudflare_access.AccessDenied:
             return False
-        return (getattr(user, "upn", "") or "").lower() == email
+        # The same test the mode's fast path applies (SEC-012, docs/adr/0232): a
+        # session Access itself established for this identity, still inside its
+        # assertion, for an active, non-synthetic account. A session from the
+        # shared gate, `none` or `local_password` whose account merely carries the
+        # same address is not one — its multipart body waits until Access signs
+        # the person in afresh (r96 integration).
+        return cloudflare_access.session_holds(request.session, user, email=email, claims=claims)
     return mode == AuthMode.NONE
 
 
