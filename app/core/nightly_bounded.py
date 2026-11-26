@@ -218,6 +218,10 @@ def run(step: str, seconds: float, grace: float, kill_after: float, command: lis
             result = "stopped" if asked else "timeout"
             break
         time.sleep(POLL_SECONDS)
+    if asked:
+        # Stopped from outside (`stop`, or the host): the step may have ended from
+        # the same SIGTERM before this loop saw the request. Not its own ending.
+        result = "stopped"
     gone = terminate(record, kill_after, reap=child)
     with contextlib.suppress(subprocess.TimeoutExpired):
         child.wait(timeout=1)

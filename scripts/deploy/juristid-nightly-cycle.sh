@@ -65,33 +65,14 @@
 # halfway is reported by the daily monitor (juristid-monitor.sh) and recovered
 # by a person (--manual), never re-run blindly. last-cycle.txt is the newest summary.
 #
-# Execution budgets (ADR 0234). Every in-container step runs through
-# `python -m app.core.nightly_bounded run --step S --seconds B` inside the web
-# container: the step's own process group, a soft deadline B - GRACE handed to
-# every register call and model request (JURISTID_STEP_DEADLINE), and at B the
-# group is terminated (SIGTERM, KILL_AFTER s later SIGKILL) and verified gone
-# before the supervisor answers. Killing the host's `docker exec` would not stop
-# the work inside the container, so the host never relies on it: after every step
-# it asks the container (`nightly_bounded status`) whether anything of the step is
-# still alive, stops it (`nightly_bounded stop`) if so, and does not go on - and
-# never releases the cycle lock - until that is verified. A container that is not
-# running runs nothing. A group that cannot be verified gone is STUCK: the night's
-# $NIGHTLY_DIR/state/D.stuck says so, and the cycle keeps its lock and keeps
-# checking. Budgets (`step_budget`, = app.core.nightly_schedule.EXECUTION_BUDGET):
-# register-watch 68 min, riigikogu 98 min (its own 90-minute limit inside), the
-# sweep 38 min, the agenda 38 min - each inside its finish-by (nightly_schedule).
-# The host's own `timeout` around `docker exec` (budget + OUTER_SLACK) only ends a
-# hung docker client; the status/stop check after it is what makes it safe.
-#
 # Pause the whole cycle: touch $NIGHTLY_DIR/PAUSED. One step: touch
 # $NIGHTLY_DIR/PAUSED-<step>. Both are deliberate (SKIPPED_DELIBERATE).
 #
 # Test seams (tests/test_nightly_cycle_script.py runs this against a fake docker
 # and flock): JURISTID_NIGHTLY_APPDATA, JURISTID_NIGHTLY_NOW (epoch seconds),
 # JURISTID_CYCLE_LOCK, JURISTID_SYNC_LOCK, JURISTID_HOST_LOCK,
-# JURISTID_NIGHTLY_LOCK_WAIT_SECONDS, JURISTID_NIGHTLY_LOCK_RETRY_SECONDS,
-# JURISTID_NIGHTLY_BUDGET_SCALE (every budget and the grace are divided by it)
-# and JURISTID_NIGHTLY_STUCK_RETRY_SECONDS. Cron sets none of them. Never `set -x`.
+# JURISTID_NIGHTLY_LOCK_WAIT_SECONDS and JURISTID_NIGHTLY_LOCK_RETRY_SECONDS.
+# Cron sets none of them. Never `set -x`.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -111,13 +92,6 @@ SYNC_LOCK=${JURISTID_SYNC_LOCK:-/tmp/juristid-lovable-sync.lock}
 HOST_LOCK=${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}
 LOCK_WAIT=${JURISTID_NIGHTLY_LOCK_WAIT_SECONDS:-1200}
 LOCK_RETRY=${JURISTID_NIGHTLY_LOCK_RETRY_SECONDS:-30}
-# ADR 0234: the soft deadline is the budget less GRACE; SIGKILL KILL_AFTER s after
-# SIGTERM; the host's own timeout around `docker exec` is the budget plus OUTER_SLACK.
-GRACE=300
-KILL_AFTER=30
-OUTER_SLACK=180
-BUDGET_SCALE=${JURISTID_NIGHTLY_BUDGET_SCALE:-1}
-STUCK_RETRY=${JURISTID_NIGHTLY_STUCK_RETRY_SECONDS:-60}
 
 usage() {
   echo "Usage: juristid-nightly-cycle.sh [--plan [--at ISO-UTC]] [--manual] [--with-riigikogu]"
@@ -157,24 +131,11 @@ fi
 # name|lane|hard need|soft order|what it runs (for the plan)
 STEPS=(
   "lovable|first|-|-|bash $REPO/scripts/deploy/juristid-lovable-sync.sh$SYNC_SUFFIX"
-  "register-watch|registers|-|after lovable|docker exec --env-file $WATCH_ENV $WEB python -m app.core.nightly_bounded run --step register-watch --seconds 4080 -- watch_registers >> $APPDATA/register-watch.log"
-  "riigikogu|registers|-|after register-watch|docker exec --env-file $WATCH_ENV $WEB python -m app.core.nightly_bounded run --step riigikogu --seconds 5880 -- watch_riigikogu >> $APPDATA/riigikogu.log"
-  "register-sweep|registers|register-watch|after riigikogu|docker exec --env-file $WATCH_ENV $WEB python -m app.core.nightly_bounded run --step register-sweep --seconds 2280 -- sweep_registers >> $APPDATA/register-sweep.log"
-  "government-agenda|agenda|-|after lovable|docker exec --env-file $WATCH_ENV $WEB python -m app.core.nightly_bounded run --step government-agenda --seconds 2280 -- watch_government_agenda --outcome-json >> $APPDATA/government-agenda.log"
+  "register-watch|registers|-|after lovable|docker exec --env-file $WATCH_ENV $WEB python manage.py watch_registers >> $APPDATA/register-watch.log"
+  "riigikogu|registers|-|after register-watch|docker exec --env-file $WATCH_ENV $WEB python manage.py watch_riigikogu >> $APPDATA/riigikogu.log"
+  "register-sweep|registers|register-watch|after riigikogu|docker exec --env-file $WATCH_ENV $WEB python manage.py sweep_registers >> $APPDATA/register-sweep.log"
+  "government-agenda|agenda|-|after lovable|docker exec --env-file $WATCH_ENV $WEB python manage.py watch_government_agenda --outcome-json >> $APPDATA/government-agenda.log"
 )
-
-# The step's execution budget in seconds (ADR 0234; app.core.nightly_schedule.EXECUTION_BUDGET).
-step_budget() {
-  local seconds
-  case "$1" in
-    register-watch) seconds=4080 ;;
-    riigikogu) seconds=5880 ;;
-    register-sweep) seconds=2280 ;;
-    government-agenda) seconds=2280 ;;
-    *) seconds=0 ;;
-  esac
-  echo $((seconds / BUDGET_SCALE))
-}
 
 # The reason a firing does nothing, or "" when it is the night's cycle.
 not_due_reason() {
@@ -271,11 +232,10 @@ host_lock_holder() {
   done
 }
 
-# classify NAME RC SECONDS [REPORTED] — `nightly_outcome` reads the step's own
-# record, and keeps the verdict for Haldus (--record, ADR 0234).
+# classify NAME RC [REPORTED] — `nightly_outcome` reads the step's own record.
 classify() {
-  local name=$1 rc=$2 seconds=$3 reported=${4:-} out line args
-  args=(--step "$name" --since "$SINCE" --rc "$rc" --record --seconds "$seconds" --night "$RUN_NAME")
+  local name=$1 rc=$2 reported=${3:-} out line args
+  args=(--step "$name" --since "$SINCE" --rc "$rc")
   if [ -n "$reported" ]; then args+=(--reported "$reported"); fi
   # A recovery's Lovable run is recorded MANUAL, not SCHEDULED.
   if [ "$MANUAL" = 1 ] && [ "$name" = lovable ]; then args+=(--manual); fi
@@ -290,61 +250,16 @@ classify() {
     "$(printf '%s' "$line" | sed -nE 's/.*"reason": "([^"]*)".*/\1/p')"
 }
 
-# bounded NAME COMMAND [ARGS...] - one in-container step under its budget (ADR 0234).
-# The supervisor's exit code is the step's: its own, 124 TIMEOUT, 75 BUSY, 70 STUCK.
-bounded() {
-  local name=$1 budget
-  shift
-  budget="$(step_budget "$name")"
-  timeout --kill-after=30 "$((budget + OUTER_SLACK))" \
-    docker exec --env-file "$WATCH_ENV" "$WEB" python -m app.core.nightly_bounded run \
-    --step "$name" --seconds "$budget" --grace "$((GRACE / BUDGET_SCALE))" \
-    --kill-after "$KILL_AFTER" -- "$@" </dev/null
-}
-
 run_manage() {
-  local name=$1 log=$2
+  local command=$1 log=$2
   shift 2
-  bounded "$name" "$@" >>"$APPDATA/$log" 2>&1
-}
-
-# ensure_gone NAME - returns only once nothing of the step is alive in the
-# container (ADR 0234). Until then the cycle holds its lock: a release or a
-# restore must not meet a step still writing. A container that is not running runs
-# nothing. While it cannot be verified, $STATE_DIR/$RUN_NAME.stuck says so.
-ensure_gone() {
-  local name=$1 rc noted=0 running
-  while :; do
-    rc=0
-    docker exec "$WEB" python -m app.core.nightly_bounded status --step "$name" \
-      </dev/null >>"$LOG" 2>&1 || rc=$?
-    if [ "$rc" = 0 ]; then break; fi
-    if [ "$rc" = 3 ]; then
-      say "STOP $name: still running in the container after its step ended; stopping it"
-      rc=0
-      docker exec "$WEB" python -m app.core.nightly_bounded stop --step "$name" \
-        --kill-after "$KILL_AFTER" </dev/null >>"$LOG" 2>&1 || rc=$?
-      if [ "$rc" = 0 ]; then continue; fi
-    fi
-    running="$(docker inspect -f '{{.State.Running}}' "$WEB" 2>/dev/null || true)"
-    if [ "$running" = false ]; then break; fi
-    if [ "$noted" = 0 ]; then
-      say "STUCK $name: not verified gone (status/stop rc=$rc); the cycle keeps its lock"
-      printf 'stuck %s step=%s rc=%s\n' "$(date -u +%FT%TZ)" "$name" "$rc" \
-        >>"$STATE_DIR/$RUN_NAME.stuck"
-      noted=1
-    fi
-    sleep "$STUCK_RETRY"
-  done
-  if [ "$noted" = 1 ]; then
-    printf 'cleared %s step=%s\n' "$(date -u +%FT%TZ)" "$name" >>"$STATE_DIR/$RUN_NAME.stuck"
-    say "CLEARED $name: verified gone"
-  fi
+  docker exec --env-file "$WATCH_ENV" "$WEB" python manage.py "$command" "$@" \
+    </dev/null >>"$APPDATA/$log" 2>&1
 }
 
 # run_step NAME NEED — the gates every step shares, the step, its outcome.
 run_step() {
-  local name=$1 need=$2 holder rc started verdict reported="" tmp need_outcome sync_args seconds
+  local name=$1 need=$2 holder rc started verdict reported="" tmp need_outcome sync_args
   if [ -e "$NIGHTLY_DIR/PAUSED-$name" ]; then
     record "$name" SKIPPED_DELIBERATE - 0 "PAUSED ($NIGHTLY_DIR/PAUSED-$name)"
     return 0
@@ -412,24 +327,19 @@ run_step() {
       flock -u 5 || true
       exec 5>&-
       ;;
-    register-watch) run_manage register-watch register-watch.log watch_registers || rc=$? ;;
-    riigikogu) run_manage riigikogu riigikogu.log watch_riigikogu || rc=$? ;;
-    register-sweep) run_manage register-sweep register-sweep.log sweep_registers || rc=$? ;;
+    register-watch) run_manage watch_registers register-watch.log || rc=$? ;;
+    riigikogu) run_manage watch_riigikogu riigikogu.log || rc=$? ;;
+    register-sweep) run_manage sweep_registers register-sweep.log || rc=$? ;;
     government-agenda)
       tmp="$STATUS_DIR/agenda.out"
-      bounded government-agenda watch_government_agenda --outcome-json >"$tmp" 2>&1 || rc=$?
+      docker exec --env-file "$WATCH_ENV" "$WEB" python manage.py watch_government_agenda \
+        --outcome-json </dev/null >"$tmp" 2>&1 || rc=$?
       cat "$tmp" >>"$APPDATA/government-agenda.log"
       reported="$(grep '^OUTCOME-JSON ' "$tmp" | tail -n 1 | cut -d' ' -f2- || true)"
       ;;
   esac
-  if [ "$name" != lovable ]; then
-    ensure_gone "$name"
-    # The host's own timeout ended a hung docker client: the step did not finish.
-    if [ "$rc" = 137 ]; then rc=124; fi
-  fi
-  seconds=$(($(date -u +%s) - started))
-  verdict="$(classify "$name" "$rc" "$seconds" "$reported")"
-  record "$name" "${verdict%% *}" "$rc" "$seconds" "${verdict#* }"
+  verdict="$(classify "$name" "$rc" "$reported")"
+  record "$name" "${verdict%% *}" "$rc" "$(($(date -u +%s) - started))" "${verdict#* }"
 }
 
 # Every step in an `||` context: `set -e` never ends the cycle inside one.
@@ -457,23 +367,6 @@ if [ "$MANUAL" = 0 ]; then
   say "LANES start (not before $(date -u -d "@$lanes_at" +%FT%TZ))"
 fi
 
-# Stopped from outside (TERM, INT, HUP): nothing of a step may go on in the
-# container once the cycle's lock is gone, so every step is stopped and verified
-# gone first (ADR 0234). The lanes' subshells end with the cycle.
-BOUNDED_STEPS=(register-watch riigikogu register-sweep government-agenda)
-registers_lane=""
-agenda_lane=""
-on_stop() {
-  trap - TERM INT HUP
-  say "STOPPED from outside: stopping every step in the container before the lock is released"
-  # The lanes first, so no further step starts; then whatever they had started.
-  for lane in $registers_lane $agenda_lane; do kill "$lane" 2>/dev/null || true; done
-  sleep 1
-  for step in "${BOUNDED_STEPS[@]}"; do ensure_gone "$step"; done
-  exit 143
-}
-trap on_stop TERM INT HUP
-
 # The two lanes, side by side; each step inside a lane in order.
 (
   run_step register-watch - || true
@@ -485,10 +378,6 @@ registers_lane=$!
 agenda_lane=$!
 wait "$registers_lane" || true
 wait "$agenda_lane" || true
-# A lane that died before its own check leaves nothing running either (ADR 0234):
-# the cycle's lock is released only after this.
-for step in "${BOUNDED_STEPS[@]}"; do ensure_gone "$step"; done
-trap - TERM INT HUP
 
 # -- the night's summary ---------------------------------------------------------------
 
