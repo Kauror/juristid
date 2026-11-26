@@ -188,6 +188,14 @@ redisplayed), an empty state, and a rail with three blocks kept apart:
 same window, `#tehtud`), «Hetktõmmiste võrdlus», and «Mida see ei näita»
 (coverage). Existing components and tokens only.
 
+> **Amended 2026-11-26 (owner, UX-004 / BUG-003).** «Mida see ei näita» is
+> removed from the rail with every sentence and count in it; the rail keeps
+> «Tehtud samal perioodil» and «Hetktõmmiste võrdlus». `DepartmentChanges.coverage`,
+> `unrecorded` and `partial_coverage` are still computed and still drive the
+> «—» counts and «Ei ole teada.»; only the panel that printed them is gone.
+> «Vastutajate kaupa»'s row headers and «Kokku» row take a body cell's padding
+> and height, and the total row a `--border-strong` rule above it.
+
 > **Amended 2026-10-13 (visual QA).** A window that ends before the first
 > recorded change is **unknown, not empty**: its counts read «—», the heading
 > «Muudatuste arv teadmata», and the coverage note says the whole window lies

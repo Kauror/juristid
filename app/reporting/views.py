@@ -16,6 +16,7 @@ to assert it without a browser.
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from datetime import date
 from typing import Any
@@ -36,7 +37,7 @@ from app.reporting import metric_catalogue as metric_keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import CATALOGUE, DEFERRED_METRICS, definition
 from app.reporting.metric_types import MetricResult
-from app.reporting.selectors import documents, historical, management, quality
+from app.reporting.selectors import archive, documents, historical, management, quality
 from app.reporting.selectors import submissions as submission_selectors
 from app.workflow.dates import year_from
 
@@ -326,6 +327,19 @@ def historical_materials(request: HttpRequest) -> HttpResponse:
     )
 
 
+#: Card notes Andmekvaliteet does not print (UX-002, 2026-11-26). The metrics
+#: still carry them — on the other tabs and in the CSV — so this is the page
+#: leaving two sentences out, not the measurement changing.
+QUALITY_PAGE_OMITTED_NOTES = frozenset({archive.NOT_A_SUBMISSION_NOTE, archive.EMPTY_NOTE})
+
+
+def _without_notes(results: list[MetricResult], omitted: frozenset[str]) -> list[MetricResult]:
+    return [
+        dataclasses.replace(result, notes=tuple(n for n in result.notes if n not in omitted))
+        for result in results
+    ]
+
+
 @login_required
 def data_quality(request: HttpRequest) -> HttpResponse:
     context = reporting_context.from_request(request)
@@ -336,7 +350,7 @@ def data_quality(request: HttpRequest) -> HttpResponse:
         "reporting/quality.html",
         {
             **_shell(request, context, "andmekvaliteet"),
-            "cards": page.cards,
+            "cards": _without_notes(page.cards, QUALITY_PAGE_OMITTED_NOTES),
             "compositions": _bars(page.charts),
             "extraction": page.tables,
             "extraction_states": charts.bars(
