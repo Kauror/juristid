@@ -1,4 +1,4 @@
-"""The one door the register watch uses to the outside (ADR 0217 §5, ADR 0234).
+"""The one door the register watch uses to the outside (ADR 0217 §5, ADR 0231).
 
 `https`, a fixed list of hosts, no redirects, a timeout, a size cap, and a
 spacing between calls to one host. **Every call has a whole-call deadline** (a
@@ -90,7 +90,7 @@ class FetchError(Exception):
 
 
 class DeadlineExceeded(FetchError):
-    """The call's whole-call deadline, or the run's, passed (ADR 0234).
+    """The call's whole-call deadline, or the run's, passed (ADR 0231).
 
     Raised before anything is opened once the run's time is spent, and when a
     call is cut off part-way (a slow name lookup, a dripping handshake, headers

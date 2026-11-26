@@ -25,7 +25,7 @@ release lock before every step, 20 for the Lovable runner's lock):
   and the sweep (≈ 1 min; 40 min allowed).
 
 Each in-container step also has a hard **execution budget** (`EXECUTION_BUDGET`,
-ADR 0234), enforced inside the container by `app.core.nightly_bounded`: register
+ADR 0231), enforced inside the container by `app.core.nightly_bounded`: register
 watch 68 min, Riigikogu 98 min (its own 90-minute limit inside), the sweep and the
 agenda 38 min each. At the budget less `GRACE` every register call and model
 request stops (the run closes as partial); at the budget the step's process group
@@ -68,7 +68,7 @@ FINISH_BY: dict[str, dt.timedelta] = {
     "register-sweep": dt.timedelta(hours=6),
 }
 #: Each in-container step's hard execution budget (the cycle script's `step_budget`,
-#: ADR 0234), and the soft deadline's lead: every external call stops `GRACE`
+#: ADR 0231), and the soft deadline's lead: every external call stops `GRACE`
 #: before the budget, so the run can close its record as partial first.
 EXECUTION_BUDGET: dict[str, dt.timedelta] = {
     "register-watch": dt.timedelta(minutes=68),

@@ -93,7 +93,7 @@ def runs(request: HttpRequest) -> HttpResponse:
             # «Valitsuse päevakord» (r95): each night's verdict for its week, so a
             # page not yet published reads differently from a failure.
             agenda_checks=_agenda_checks(),
-            # The nightly cycle's last verdict per step (ADR 0234): a step stopped
+            # The nightly cycle's last verdict per step (ADR 0231): a step stopped
             # at its execution budget shows here even when it left no record.
             nightly_steps=_nightly_steps(),
             waiting=WatchFinding.objects.filter(

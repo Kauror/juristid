@@ -551,7 +551,7 @@ its log, recover it by hand: `juristid-nightly-cycle.sh --manual`. Pause it with
 end; a release or a restore takes the same lock first and refuses while the
 cycle runs, and the cycle refuses to start under them.
 
-**Execution budgets (ADR 0234).** Every in-container step runs under
+**Execution budgets (ADR 0231).** Every in-container step runs under
 `python -m app.core.nightly_bounded`: register watch 68 min, Riigikogu 98 min, the
 sweep and the agenda 38 min each; every register call and model request stops five
 minutes before that, and at the budget the step's processes are terminated and

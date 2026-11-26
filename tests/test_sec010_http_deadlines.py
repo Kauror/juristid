@@ -6,7 +6,7 @@ whole-call deadline only when a caller passed one (a person's «Lisa märkena»,
 a Riigikogu stage). The nightly register watch, the sweep, the ADR forms and the
 Government agenda passed none: a server that dripped its answer a byte at a
 time, a stalled name lookup or a rate-limit wait could hold a night step for as
-long as it liked (docs/adr/0234). These tests hold the fix:
+long as it liked (docs/adr/0231). These tests hold the fix:
 
 * the run's deadline (`run_deadline`, or the nightly step's
   ``JURISTID_STEP_DEADLINE``) and `CALL_SECONDS` bound a call nobody passed a

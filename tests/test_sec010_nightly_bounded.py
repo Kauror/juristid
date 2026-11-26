@@ -1,4 +1,4 @@
-"""SEC-010: a nightly step inside the container really stops at its budget (ADR 0234).
+"""SEC-010: a nightly step inside the container really stops at its budget (ADR 0231).
 
 `app.core.nightly_bounded` runs for real here, as a process tree on this machine,
 with Django's own ``shell -c`` as the step: no database, no register, no Docker.

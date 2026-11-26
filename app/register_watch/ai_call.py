@@ -21,7 +21,7 @@ from app.register_watch import house_style
 
 DEFAULT_MODEL = "claude-opus-5-5"
 UNREADABLE = "vastus ei olnud loetav"
-#: The `Failure` reason when the run's time was spent before the request (ADR 0234).
+#: The `Failure` reason when the run's time was spent before the request (ADR 0231).
 OUT_OF_TIME = "ajapiir täis"
 #: Client timeouts, kept as they were: the watch (ADR 0217) 120 s; the new-drafts
 #: sweep and the Government agenda 180 s since ADR 0218.
@@ -83,7 +83,7 @@ def call_items(
 
     left = http.remaining()
     if left is not None and left <= 0:
-        # The nightly step's time is spent (ADR 0234): no request is started.
+        # The nightly step's time is spent (ADR 0231): no request is started.
         return Failure("request", OUT_OF_TIME)
     try:
         client = client or make_client(timeout)
@@ -117,7 +117,7 @@ def call_items(
 
 def _within(client: Any, timeout: float, left: float) -> Any:
     """The client bounded by the run's time left: its timeout no longer than what is
-    left, and no retries a second try could not finish in (ADR 0234). The SDK's
+    left, and no retries a second try could not finish in (ADR 0231). The SDK's
     timeout bounds each phase of a request, not the whole of it; the nightly
     step's hard limit (`app.core.nightly_bounded`) is what ends a response that
     trickles past it."""

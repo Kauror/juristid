@@ -7,7 +7,7 @@ It reads run records and settings and prints one line,
 ``NIGHTLY-OUTCOME {"step": …, "outcome": …, "reason": …, "counts": {…}}``
 (`app.core.nightly_outcome`). The host's nightly cycle calls it after each step.
 With ``--record`` it also keeps that verdict in the database cache for Haldus
-(ADR 0234); it writes nothing else. Exit 0 whenever it could answer.
+(ADR 0231); it writes nothing else. Exit 0 whenever it could answer.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--record",
             action="store_true",
-            help="also keep the verdict for Haldus (the database cache; ADR 0234)",
+            help="also keep the verdict for Haldus (the database cache; ADR 0231)",
         )
         parser.add_argument("--seconds", type=int, default=None, help="how long the step ran")
         parser.add_argument("--night", default="", help="the cycle's run name")

@@ -531,10 +531,10 @@ check_nightly() {
     report nightly ok "the nightly cycle is paused on purpose ($MONITOR_NIGHTLY_DIR/PAUSED)."
     return 0
   fi
-  # ADR 0234: a step whose processes could not be verified gone keeps the cycle's
+  # ADR 0231: a step whose processes could not be verified gone keeps the cycle's
   # lock until they are; said first, whatever else the night says.
   if [ -f "$state/$night.stuck" ] && ! grep -q '^cleared ' "$state/$night.stuck"; then
-    report nightly WARN "night $night: STUCK - a step's processes in the container could not be verified gone ($(head -n 1 "$state/$night.stuck" | cut -c1-120)); the cycle holds its lock. See docs/adr/0234."
+    report nightly WARN "night $night: STUCK - a step's processes in the container could not be verified gone ($(head -n 1 "$state/$night.stuck" | cut -c1-120)); the cycle holds its lock. See docs/adr/0231."
     return 0
   fi
   for verdict in "$state/$night.recovered" "$state/$night.completed"; do
@@ -544,7 +544,7 @@ check_nightly() {
       return 0
     fi
     # A step stopped at its execution budget, not started (busy) or not verified
-    # gone is named as such (ADR 0234).
+    # gone is named as such (ADR 0231).
     bad="$(awk '$2 ~ /^(PARTIAL|FAILED|INTERRUPTED|SKIPPED_UNEXPECTED)$/ { tag = ""; if ($0 ~ / TIMEOUT:/) tag = " (TIMEOUT)"; else if ($0 ~ / BUSY:/) tag = " (BUSY)"; else if ($0 ~ / STUCK:/) tag = " (STUCK)"; printf "%s%s %s%s", sep, $1, $2, tag; sep = ", " }' "$verdict")"
     if [ -n "$bad" ]; then
       report nightly WARN "night $night: $bad. Read $MONITOR_NIGHTLY_DIR/last-cycle.txt and the night's log."

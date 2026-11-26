@@ -331,7 +331,7 @@ def sweep(*, use_ai: bool = True, ai_client: Any = None, today: dt.date | None =
             marks = _watched_marks()
             for source, read in _sources(since):
                 if http.out_of_time():
-                    # The nightly step's time is spent (ADR 0234): one line, and
+                    # The nightly step's time is spent (ADR 0231): one line, and
                     # the rest is read next night.
                     record.errors.append(
                         {"viga": f"Otsing peatus: {http.OUT_OF_TIME}", "ajapiir": True}

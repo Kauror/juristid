@@ -9,7 +9,7 @@ answers before any view (docs/adr/0182) — and after it `RefuseNulMiddleware` a
 decided whether the request may go anywhere at all. So anybody who could reach
 the tunnel could make a web worker receive, parse and spool up to
 ``UPLOAD_MAX_REQUEST_BYTES`` (512 MiB) of files, once per request, with no
-session; the gate refused them only afterwards (docs/adr/0235).
+session; the gate refused them only afterwards (docs/adr/0233).
 
 `MultipartAuthBoundaryMiddleware` sits before every middleware that reads the
 body and decides from the **session and the headers alone** — never the body —

@@ -1,4 +1,4 @@
-"""One nightly step, run inside the web container under a hard execution budget (ADR 0234).
+"""One nightly step, run inside the web container under a hard execution budget (ADR 0231).
 
     python -m app.core.nightly_bounded run --step register-watch --seconds 4200 \
         --grace 300 -- watch_registers

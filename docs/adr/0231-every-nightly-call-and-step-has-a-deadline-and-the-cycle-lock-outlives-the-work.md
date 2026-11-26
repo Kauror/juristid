@@ -1,4 +1,4 @@
-# 0234 — Every nightly call and step has a deadline, and the cycle lock outlives the work
+# 0231 — Every nightly call and step has a deadline, and the cycle lock outlives the work
 
 Date: 2026-11-26 · Status: proposed (security round 26.11.2026, SEC-010; prepared and tested only — no production schedule, host script or configuration changed, nothing merged or deployed)
 

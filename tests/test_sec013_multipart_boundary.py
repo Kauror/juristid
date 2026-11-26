@@ -1,4 +1,4 @@
-"""SEC-013: nobody makes the server parse a multipart body before signing in (ADR 0235).
+"""SEC-013: nobody makes the server parse a multipart body before signing in (ADR 0233).
 
 Before `MultipartAuthBoundaryMiddleware`, `UploadLimitMiddleware` — and after it the
 NUL check and the upload titles — read ``request.POST`` before

@@ -65,7 +65,7 @@
 # halfway is reported by the daily monitor (juristid-monitor.sh) and recovered
 # by a person (--manual), never re-run blindly. last-cycle.txt is the newest summary.
 #
-# Execution budgets (ADR 0234). Every in-container step runs through
+# Execution budgets (ADR 0231). Every in-container step runs through
 # `python -m app.core.nightly_bounded run --step S --seconds B` inside the web
 # container: the step's own process group, a soft deadline B - GRACE handed to
 # every register call and model request (JURISTID_STEP_DEADLINE), and at B the
@@ -111,7 +111,7 @@ SYNC_LOCK=${JURISTID_SYNC_LOCK:-/tmp/juristid-lovable-sync.lock}
 HOST_LOCK=${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}
 LOCK_WAIT=${JURISTID_NIGHTLY_LOCK_WAIT_SECONDS:-1200}
 LOCK_RETRY=${JURISTID_NIGHTLY_LOCK_RETRY_SECONDS:-30}
-# ADR 0234: the soft deadline is the budget less GRACE; SIGKILL KILL_AFTER s after
+# ADR 0231: the soft deadline is the budget less GRACE; SIGKILL KILL_AFTER s after
 # SIGTERM; the host's own timeout around `docker exec` is the budget plus OUTER_SLACK.
 GRACE=300
 KILL_AFTER=30
@@ -163,7 +163,7 @@ STEPS=(
   "government-agenda|agenda|-|after lovable|docker exec --env-file $WATCH_ENV $WEB python -m app.core.nightly_bounded run --step government-agenda --seconds 2280 -- watch_government_agenda --outcome-json >> $APPDATA/government-agenda.log"
 )
 
-# The step's execution budget in seconds (ADR 0234; app.core.nightly_schedule.EXECUTION_BUDGET).
+# The step's execution budget in seconds (ADR 0231; app.core.nightly_schedule.EXECUTION_BUDGET).
 step_budget() {
   local seconds
   case "$1" in
@@ -272,7 +272,7 @@ host_lock_holder() {
 }
 
 # classify NAME RC SECONDS [REPORTED] — `nightly_outcome` reads the step's own
-# record, and keeps the verdict for Haldus (--record, ADR 0234).
+# record, and keeps the verdict for Haldus (--record, ADR 0231).
 classify() {
   local name=$1 rc=$2 seconds=$3 reported=${4:-} out line args
   args=(--step "$name" --since "$SINCE" --rc "$rc" --record --seconds "$seconds" --night "$RUN_NAME")
@@ -290,7 +290,7 @@ classify() {
     "$(printf '%s' "$line" | sed -nE 's/.*"reason": "([^"]*)".*/\1/p')"
 }
 
-# bounded NAME COMMAND [ARGS...] - one in-container step under its budget (ADR 0234).
+# bounded NAME COMMAND [ARGS...] - one in-container step under its budget (ADR 0231).
 # The supervisor's exit code is the step's: its own, 124 TIMEOUT, 75 BUSY, 70 STUCK.
 bounded() {
   local name=$1 budget
@@ -309,7 +309,7 @@ run_manage() {
 }
 
 # ensure_gone NAME - returns only once nothing of the step is alive in the
-# container (ADR 0234). Until then the cycle holds its lock: a release or a
+# container (ADR 0231). Until then the cycle holds its lock: a release or a
 # restore must not meet a step still writing. A container that is not running runs
 # nothing. While it cannot be verified, $STATE_DIR/$RUN_NAME.stuck says so.
 ensure_gone() {
@@ -459,7 +459,7 @@ fi
 
 # Stopped from outside (TERM, INT, HUP): nothing of a step may go on in the
 # container once the cycle's lock is gone, so every step is stopped and verified
-# gone first (ADR 0234). The lanes' subshells end with the cycle.
+# gone first (ADR 0231). The lanes' subshells end with the cycle.
 BOUNDED_STEPS=(register-watch riigikogu register-sweep government-agenda)
 registers_lane=""
 agenda_lane=""
@@ -485,7 +485,7 @@ registers_lane=$!
 agenda_lane=$!
 wait "$registers_lane" || true
 wait "$agenda_lane" || true
-# A lane that died before its own check leaves nothing running either (ADR 0234):
+# A lane that died before its own check leaves nothing running either (ADR 0231):
 # the cycle's lock is released only after this.
 for step in "${BOUNDED_STEPS[@]}"; do ensure_gone "$step"; done
 trap - TERM INT HUP

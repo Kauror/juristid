@@ -1,4 +1,4 @@
-# 0235 — A multipart body is parsed only for a signed-in session
+# 0233 — A multipart body is parsed only for a signed-in session
 
 Date: 2026-11-26 · Status: proposed (security round 26.11.2026, SEC-013; prepared and tested only — nothing merged or deployed, no ingress or gunicorn setting changed)
 

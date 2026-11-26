@@ -1261,7 +1261,7 @@ def test_an_answer_over_the_cap_is_refused_unread(door):
         http.get_json("api.riigikogu.ee", "/api/volumes/drafts")
     with pytest.raises(FetchError, match="liiga suur"):
         http.get_text("adr.rik.ee", "/ram/")
-    # Read in pieces against the clock (ADR 0234), never past the cap plus one byte.
+    # Read in pieces against the clock (ADR 0231), never past the cap plus one byte.
     assert sum(big.outcome.asked) == 2 * (http.MAX_BYTES + 1)
     assert max(big.outcome.asked) <= http.CHUNK_BYTES
 

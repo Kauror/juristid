@@ -57,7 +57,7 @@ ABANDONED_AFTER = dt.timedelta(hours=3)
 #: The machine line's prefix, for the host script.
 PREFIX = "NIGHTLY-OUTCOME "
 
-#: The supervisor's exit codes (`app.core.nightly_bounded`, ADR 0234): the step was
+#: The supervisor's exit codes (`app.core.nightly_bounded`, ADR 0231): the step was
 #: stopped at its execution budget; its previous run was still alive, so it was not
 #: started; its process group could not be verified gone.
 RC_TIMEOUT = 124
@@ -95,7 +95,7 @@ def classify(
     """``manual``: the cycle was a person's recovery run (`--manual`), whose Lovable
     synchronisation is recorded with trigger MANUAL, not SCHEDULED.
 
-    The supervisor's own exit codes (ADR 0234) decide before the step's record:
+    The supervisor's own exit codes (ADR 0231) decide before the step's record:
     a step stopped at its budget is FAILED (TIMEOUT) even when its record looks
     tidy — it did not finish its night — and a step not started because its
     previous run was still alive is SKIPPED_UNEXPECTED (BUSY). The record's counts
@@ -241,7 +241,7 @@ def _ledger(
         why = "read no source before its time limit" if out_of_time else "read no source"
         return StepOutcome(step, FAILED, why, counts)
     if out_of_time:
-        # ADR 0234: what was read is kept; the rest is read next night.
+        # ADR 0231: what was read is kept; the rest is read next night.
         return StepOutcome(step, PARTIAL, "stopped at its time limit; the rest next night", counts)
     if errors or counts["ai_failures"]:
         return StepOutcome(step, PARTIAL, "source errors or model failures", counts)
@@ -423,7 +423,7 @@ def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
 
 #: One cache entry per step (the database cache, `core_cache`): the host's cycle
 #: records each verdict as it is given, so Haldus shows a timed-out, busy or stuck
-#: step that left no run record of its own (ADR 0234). The host's state files stay
+#: step that left no run record of its own (ADR 0231). The host's state files stay
 #: the cycle's own ledger; this is the application's view of the last night.
 CACHE_KEY = "nightly-step:{step}"
 REMEMBER_SECONDS = 14 * 24 * 3600

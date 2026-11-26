@@ -107,7 +107,7 @@ CAPTURE_SOURCE=${JURISTID_SYNC_CAPTURE_SOURCE:-/mnt/user/juristid-main/source}
 SYNC_LOCK=${JURISTID_SYNC_LOCK:-/tmp/juristid-lovable-sync.lock}
 HOST_LOCK=${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}
 ONENOTE_TIMEOUT=3600
-# ADR 0234: a docker client `timeout` gave up on is itself killed this long after.
+# ADR 0231: a docker client `timeout` gave up on is itself killed this long after.
 KILL_AFTER=60
 
 TRIGGER=scheduled
@@ -136,7 +136,7 @@ exec >>"$LOG" 2>&1
 say() { echo "$(date -u +%FT%TZ) $*"; }
 
 # leftover_gone NAME RC - after a `timeout` (RC 124, or 137 once the client was
-# killed), the container must not outlive it (ADR 0234). Every one-off container
+# killed), the container must not outlive it (ADR 0231). Every one-off container
 # here runs with --init, so the SIGTERM docker forwards reaches python (which, as
 # PID 1, ignored it: the timeout never ended a run before) and the container ends
 # with its client. One still there is killed and waited for: this run keeps the

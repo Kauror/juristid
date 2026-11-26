@@ -132,7 +132,7 @@ def _listing(net, names: list[str]) -> list[str]:
 
 
 def test_without_a_deadline_the_door_still_bounds_the_whole_call(net):
-    """SEC-010 (ADR 0234): no caller's deadline is no longer «no deadline» — the call's
+    """SEC-010 (ADR 0231): no caller's deadline is no longer «no deadline» — the call's
     own ceiling (`CALL_SECONDS`) still bounds it, read in pieces against the clock."""
     answer = _Slow(net.clock, [PDF], per_read=0)
     net.network.routes["https://adr.envir.ee/x"] = answer

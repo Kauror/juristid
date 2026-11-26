@@ -1,5 +1,5 @@
 # ruff: noqa: F811 - the register fixtures are imported by name and used as parameters
-"""SEC-010: a run that reaches its deadline says so, and the night's verdict shows (ADR 0234).
+"""SEC-010: a run that reaches its deadline says so, and the night's verdict shows (ADR 0231).
 
 The register watch and the sweep stop starting new work once the run's time is
 spent and close their record with one ``ajapiir`` line — what was read is kept,

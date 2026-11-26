@@ -210,7 +210,7 @@ def _watch_matter(
         return
     for target in targets:
         if http.out_of_time():
-            # The nightly step's time is spent (ADR 0234): the rest is read next
+            # The nightly step's time is spent (ADR 0231): the rest is read next
             # night; `run` writes the one line that says so.
             return
         try:
@@ -307,7 +307,7 @@ def run(
 
 
 def _stopped_at_the_deadline() -> dict[str, Any]:
-    """The run's one line when its time ran out (ADR 0234): not a stop (``katkes``)
+    """The run's one line when its time ran out (ADR 0231): not a stop (``katkes``)
     — what was read is kept and recorded — but not a whole night either."""
     return {"viga": f"Kontroll peatus: {http.OUT_OF_TIME}", "ajapiir": True}
 

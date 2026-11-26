@@ -33,7 +33,7 @@ BASH = shutil.which("bash") or "bash"
 TALLINN = ZoneInfo("Europe/Tallinn")
 
 # `docker exec … manage.py <command>` and `docker exec … python -m
-# app.core.nightly_bounded run --step S --seconds B … -- <command>` (ADR 0234):
+# app.core.nightly_bounded run --step S --seconds B … -- <command>` (ADR 0231):
 # recorded, answered with `rc-<command>`; the supervisor's line goes to `runs`.
 # `nightly_bounded status --step S` answers 3 (alive) while `alive-<S>` exists;
 # `stop` removes it, or answers 70 (stuck) while `stuck-<S>` exists; both are
@@ -809,7 +809,7 @@ def test_a_manual_recovery_does_not_wait_for_one_oclock(host) -> None:
     assert "WAIT the other lanes" not in log and "LANES start" not in log
 
 
-# -- execution budgets: the work in the container is gone before the lock (ADR 0234) --
+# -- execution budgets: the work in the container is gone before the lock (ADR 0231) --
 
 
 def _runs(host: dict[str, Path]) -> dict[str, str]:
