@@ -1,24 +1,24 @@
-"""The writer role's write allow-list is what the canonical services actually write.
+"""The canonical services an MCP change runs can no longer run as the gateway's role (r96).
 
-`app.mcp_writes.db_role.WRITE_ALLOWLIST` is not a guess. Every canonical
-service an approved MCP operation calls (CONTRACT §4: `create_matter`,
-`set_matter_title`, `set_brief_summary`, `assign_matter`, `add_matter_other`,
-`add_matter_meeting`, `record_procedural_link`, `set_next_action`,
-`change_current_action`, `complete_current_action`, `request_response_deadline`,
+Until r94 `app.mcp_writes.db_role.WRITE_ALLOWLIST` was exactly what the
+canonical services of the approved operations write, because the gateway
+executed them. Since format 2 (SEC-009, docs/adr/0234) the approval page on
+`web` executes them, and those tables are `FORMER_BUSINESS_WRITES` — never
+writable by the gateway. Every canonical service an approved MCP operation
+calls (CONTRACT §4: `create_matter`, `set_matter_title`, `set_brief_summary`,
+`assign_matter`, `add_matter_other`, `add_matter_meeting`,
+`record_procedural_link`, `set_next_action`, `change_current_action`,
+`complete_current_action`, `request_response_deadline`,
 `change_response_deadline`, `add_important_date`) is run here twice:
 
 1. **Under the writer role itself.** The test transaction creates the role with
    `role_sql` (roles are transactional in PostgreSQL, so it is rolled back with
    everything else and never exists outside this test), `SET ROLE`s to it, and
-   runs the service — `on_commit` callbacks included, which is where the
-   search-freshness and notice work lands. PostgreSQL refuses any INSERT,
-   UPDATE, DELETE or row lock the allow-list does not grant, so a service that
-   writes a table nobody listed fails here, with the table's name.
+   runs the service. PostgreSQL must refuse it.
 2. **Under a statement recorder**, which notes every table each service
-   inserts into, updates, deletes from or locks. The union must be the
-   allow-list (minus the gateway's own tables, which the services never touch),
-   so an entry no service needs is noticed and removed rather than kept "just
-   in case".
+   inserts into, updates, deletes from or locks. Every one must be on the
+   never-writable list, and every table on that list must be one some service
+   writes — so the list neither misses a business table nor names a stale one.
 
 Synthetic data only, one database transaction per test, no committed role.
 """
@@ -33,7 +33,7 @@ from contextlib import contextmanager
 from typing import Any
 
 import pytest
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
 
 from app.mcp_writes import db_role
@@ -88,8 +88,13 @@ def as_writer_role(allowlist: dict[str, tuple[str, ...]] | None = None) -> Itera
     try:
         yield role
     finally:
-        with connection.cursor() as cursor:
-            cursor.execute("RESET ROLE")
+        # After a refused statement the (sub)transaction is aborted; its
+        # rollback restores the role and RESET has nothing to do.
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET ROLE")
+        except DatabaseError:
+            pass
 
 
 def _day(offset: int) -> dt.date:
@@ -363,67 +368,56 @@ def _record(scenario: str, django_capture_on_commit_callbacks: Any) -> dict[str,
 
 
 @pytest.mark.parametrize("scenario", sorted(SCENARIOS))
-def test_the_operation_runs_under_the_writer_role(scenario, django_capture_on_commit_callbacks):
-    """PostgreSQL itself is the judge: a write the allow-list does not grant is refused."""
+def test_no_canonical_service_runs_under_the_writer_role(
+    scenario, django_capture_on_commit_callbacks
+):
+    """PostgreSQL itself is the judge: the gateway's role cannot make the business write."""
     run = SCENARIOS[scenario]()
-    with as_writer_role(), django_capture_on_commit_callbacks(execute=True):
-        run()
+    with pytest.raises(DatabaseError, match="permission denied for table"):
+        with transaction.atomic():
+            with as_writer_role(), django_capture_on_commit_callbacks(execute=True):
+                run()
 
 
 @pytest.mark.parametrize("scenario", sorted(SCENARIOS))
-def test_every_table_the_operation_writes_is_allow_listed_for_that_privilege(
+def test_every_table_a_canonical_service_writes_is_never_writable_by_the_gateway(
     scenario, django_capture_on_commit_callbacks
 ):
     seen = _record(scenario, django_capture_on_commit_callbacks)
     assert seen, "the recorder saw no write at all, so it proves nothing"
-    for table, verbs in seen.items():
-        granted = set(db_role.WRITE_ALLOWLIST.get(table, ()))
-        assert verbs <= granted, f"{scenario} needs {sorted(verbs - granted)} on {table}"
+    for table in seen:
+        assert table not in db_role.WRITE_ALLOWLIST, f"{scenario} writes {table}"
+        assert table in db_role.FORMER_BUSINESS_WRITES, f"{scenario}: {table} is not listed"
+        assert db_role.is_denied(table)
 
 
-def test_the_allowlist_holds_nothing_the_operations_do_not_need(
+def test_the_never_writable_list_names_only_tables_the_services_write(
     django_capture_on_commit_callbacks,
 ):
-    """Least privilege in the other direction: every grant is used by some operation."""
-    used: dict[str, set[str]] = {}
+    used: set[str] = set(PROVEN_BY_THE_OPERATION_SUITES)
     for scenario in SCENARIOS:
-        for table, verbs in _record(scenario, django_capture_on_commit_callbacks).items():
-            used.setdefault(table, set()).update(verbs)
-    for table, verbs in {**db_role.GATEWAY_WRITES, **PROVEN_BY_THE_OPERATION_SUITES}.items():
-        used.setdefault(table, set()).update(verbs)
-    for table, granted in db_role.WRITE_ALLOWLIST.items():
-        unused = set(granted) - used.get(table, set())
-        assert not unused, f"{table}: {sorted(unused)} granted but no operation uses it"
+        used.update(_record(scenario, django_capture_on_commit_callbacks))
+    assert set(db_role.FORMER_BUSINESS_WRITES) == used
 
 
-#: Grants whose proof is the operations' own suites rather than a scenario
+#: Tables whose proof is the operations' own suites rather than a scenario
 #: here: the plan the operation seeds beside `create_matter`, a plan-derived
 #: step and an opinion follow-up check completed by `complete_action`. Agent B's
-#: tests record them (`WRITE_TABLES`) and
-#: tests/test_mcp_writer_role_runs_operations.py runs those tests as the role.
+#: tests record them (`WRITE_TABLES`).
 PROVEN_BY_THE_OPERATION_SUITES: dict[str, tuple[str, ...]] = {
     "workflow_matterplanstep": ("INSERT", "UPDATE"),
     "workflow_opinionfollowup": ("UPDATE",),
 }
 
 
-def test_the_grants_proven_elsewhere_are_recorded_by_the_operation_suites():
+def test_the_tables_proven_elsewhere_are_recorded_by_the_operation_suites():
     support = pytest.importorskip(
         "tests.test_mcp_write_operations_support",
         reason="INTEGRATION: agent B's operation suites are not on this branch",
     )
     recorded = set().union(*support.WRITE_TABLES.values())
     assert set(PROVEN_BY_THE_OPERATION_SUITES) <= recorded
-    granted = set(db_role.WRITE_ALLOWLIST) | {"audit_changeevent"}
-    assert recorded <= granted, sorted(recorded - granted)
-
-
-def test_the_role_run_bites_when_a_grant_is_missing(django_capture_on_commit_callbacks):
-    """The control: without `matters_entry`, a note is refused by PostgreSQL itself."""
-    from django.db.utils import ProgrammingError
-
-    narrowed = {k: v for k, v in db_role.WRITE_ALLOWLIST.items() if k != "matters_entry"}
-    run = SCENARIOS["add_matter_note"]()
-    with pytest.raises(ProgrammingError, match="permission denied for table matters_entry"):
-        with as_writer_role(narrowed), django_capture_on_commit_callbacks(execute=True):
-            run()
+    assert recorded <= set(db_role.FORMER_BUSINESS_WRITES), sorted(
+        recorded - set(db_role.FORMER_BUSINESS_WRITES)
+    )
+    assert not recorded & set(db_role.WRITE_ALLOWLIST)

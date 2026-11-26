@@ -1,10 +1,23 @@
-"""The approval page: the one place an AI-prepared change becomes an approved one (docs/adr/0189).
+"""The approval page: the trusted component where an AI-prepared change is approved and saved.
 
 ``/mcp-ligipaas/muudatus/<proposal uuid>/`` on `web`, behind the shared gate
-and the persona like every page. A model's tool call alone never changes a
-record: its `prepare` stores a proposal, and only its own person, here, with
-their own MCP authenticator, approves it. The write gateway commits it
-afterwards — and only an approved one.
+and the persona like every page (docs/adr/0189, amended by docs/adr/0234). A
+model's tool call alone never changes a record: its `prepare` stores a
+proposal, and only its own person, here, with their own MCP authenticator,
+approves it — and the approval *is* the save.
+
+**Nothing the write gateway stored is trusted (SEC-009).** The gateway is
+reachable from the AI client's side, so its proposal row — canonical
+arguments, state, preview — is writer-controlled. This page derives the change
+again from the proposal's validated arguments with the operation's own code
+(`app.mcp_writes.review.derive`), shows *that* preview, and refuses a proposal
+whose stored canonical arguments or target differ from what the arguments
+resolve to now (``mismatch``) or whose state moved on (``stale``). The form
+carries the **binding digest** of everything shown (`review.binding_digest`);
+«Kinnita» is accepted only with the same digest, computed again under the
+proposal's row lock and the operation's canonical locks, so any change between
+display, submission and execution means «look again», never «approve
+something else».
 
 Who sees what:
 
@@ -12,14 +25,14 @@ Who sees what:
   pending business: no such proposal, somebody else's proposal, a grant that
   is not ACTIVE, an account that may not write through it (`may_write`). The
   page does not say which, so a guessed or forwarded link teaches nothing.
-* Its own person sees the stored preview — autoescaped, every value as it was
-  prepared — with the operation, the target and its link, each change
-  current → proposed, the consequences, what does not change, the warnings and
-  the expiry. Before showing «Kinnita» the page recomputes the operation's
-  `state` and compares it with the stored one: a record that moved on since
-  the proposal was prepared is **stale**, and there is no approve button.
+* Its own person sees the derived preview — autoescaped — with the operation,
+  the target and its link, each change current → proposed, the consequences,
+  what does not change, the warnings and the expiry. A stale, mismatched,
+  format-1 proposal, or one whose ChatGPT connection (token family) is no
+  longer live, gets no approve button.
 
-Approving is one explicit POST for one proposal, CSRF-protected, with either
+Approving is one explicit POST for one proposal, CSRF-protected, with the
+binding digest and either
 
 * the grant's current authenticator code, checked by
   `app.mcp_access.services.confirm_write_code` — the same single-use step,
@@ -27,22 +40,23 @@ Approving is one explicit POST for one proposal, CSRF-protected, with either
   `/oauth/authorize`; or
 * a code this same gate session typed less than `MCP_WRITE_REVERIFY_SECONDS`
   ago, kept in the session as a keyed binding of the grant, the account, its
-  `security_epoch` and the gate pass — a persona change, a new gate pass, an
-  epoch bump or another grant makes it worthless. With
-  ``MCP_WRITE_REVERIFY_SECONDS=0`` (production, owner's decision 2026-10-29)
-  there is no such window: nothing is remembered and every approval asks for
-  its own fresh code.
+  `security_epoch` and the gate pass. With ``MCP_WRITE_REVERIFY_SECONDS=0``
+  (production, owner's decision 2026-10-29) there is no such window.
 
-Every check that needs no code — still pending, not expired, the arguments
-digest, the grant's write right, not stale — is made **before** the code is
-spent, so a proposal that cannot be approved never consumes a valid code; they
-are all made again under the proposal's lock afterwards. A code is remembered
-for the window only after an approval actually succeeded.
-
-The approval row (`McpWriteApproval`) records the user, the grant and the
-arguments digest the person saw, the method and the address; the proposal
-becomes APPROVED and an `APPROVED` event is written, in one transaction, under
-the proposal's lock, after every check has been made again.
+Every check that needs no code — pending, unexpired, write right, live
+connection, derivation and binding — is made **before** the code is spent, so
+a proposal that cannot be approved never consumes a valid code. After the code,
+in **one transaction**: the proposal row is locked, the operation's canonical
+locks are taken, everything is checked and derived again and the binding must
+still match; then the approval row (`McpWriteApproval`, format 2, with the
+binding digest and copies of the canonical arguments, state and preview the
+person approved) is written, and the operation's canonical service runs in a
+savepoint under the MCP audit provenance (the person as principal, the
+proposal's correlation id). The proposal becomes EXECUTED with its receipt,
+and `APPROVED` and `COMMITTED` events are written. A domain refusal at that
+point leaves the approval, a FAILED proposal and its event, and nothing of the
+business change; an unexpected error rolls the whole approval back (the
+proposal stays PENDING, the person may try again).
 
 Every response is no-store, may not be framed, and carries the application's
 CSP. With MCP writes off every route is a 404 for every method.
@@ -53,6 +67,7 @@ from __future__ import annotations
 import functools
 import hmac
 import json
+import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
@@ -71,21 +86,21 @@ from django.views.decorators.http import require_http_methods
 from app.accounts import shared_gate
 from app.core.browser_policy import CONTENT_SECURITY_POLICY
 from app.core.client_ip import client_ip
-from app.core.errors import DomainError
 from app.mcp_access import config as access_config
 from app.mcp_access import services as access_services
 from app.mcp_access.models import GrantStatus, McpAccessGrant
-from app.mcp_writes import access, operations
+from app.mcp_writes import access, approval, operations, review
 from app.mcp_writes.models import (
+    CURRENT_FORMAT,
     ApprovalMethod,
     McpWriteApproval,
     McpWriteEventType,
     McpWriteProposal,
     ProposalStatus,
 )
-from app.mcp_writes.operations.base import OperationRefused
-from app.mcp_writes.proposals import digest_of, record
-from app.mcp_writes.refusals import jsonable
+from app.mcp_writes.proposals import record
+
+logger = logging.getLogger("app.mcp_writes")
 
 #: A code this gate session typed for an approval, and when (see the module docstring).
 SESSION_RECENT = "mcp_writes:recent_verification"
@@ -104,25 +119,37 @@ SUSPENDED = (
     "Selle avab uuesti Juristidi haldaja."
 )
 CHOOSE = "Vali «Kinnita» või «Lükka tagasi»."
-DONE = (
-    "Kinnitatud — mine tagasi ChatGPT-sse; muudatus salvestatakse, kui ChatGPT selle "
-    "kinnitab (commit_prepared_action)."
+DONE = "Kinnitatud ja salvestatud. ChatGPT saab tulemuse, kui küsib seda uuesti."
+CHANGED = (
+    "Muudatus või kirje on vahepeal muutunud. Vaata allolev eelvaade uuesti üle ja kinnita "
+    "siis, kui see on endiselt õige."
 )
+MISMATCH = (
+    "Seda muudatust ei saa kinnitada, sest see ei vasta enam sellele, mida ChatGPT ette "
+    "valmistas. Palu ChatGPT-l muudatus uuesti ette valmistada."
+)
+DISCONNECTED = (
+    "ChatGPT ühendus, mis selle muudatuse ette valmistas, ei kehti enam. Ühenda Juristid "
+    "ChatGPT-s uuesti ja palu muudatus uuesti ette valmistada."
+)
+RETRY = "Muudatust ei õnnestunud salvestada. Midagi ei muudetud; proovi uuesti."
+FAILED_TEXT = "Seda muudatust ei õnnestunud salvestada. Midagi ei muudetud."
 DECLINED = "Lükkasid selle muudatuse tagasi. Midagi ei salvestatud."
 STALE = (
     "Kirje on pärast selle muudatuse ettevalmistamist muutunud, seega seda ei saa enam "
     "kinnitada. Palu ChatGPT-l muudatus uuesti ette valmistada."
 )
-WITHDRAWN = "Tühistasid kinnituse. Muudatust ei salvestata."
 EXPIRED = "Selle muudatuse kinnitamise aeg on läbi. Palu ChatGPT-l see uuesti ette valmistada."
 
 #: What a proposal that is no longer waiting says to its own person.
 STATUS_TEXT: dict[str, str] = {
-    ProposalStatus.APPROVED: DONE,
-    ProposalStatus.EXECUTED: "See muudatus on juba kinnitatud ja salvestatud.",
+    # An older release's approval waiting for its commit; migration 0002
+    # retires every one, so this is only ever a rolled-back release's.
+    ProposalStatus.APPROVED: EXPIRED,
+    ProposalStatus.EXECUTED: "See muudatus on kinnitatud ja salvestatud.",
     ProposalStatus.DECLINED: DECLINED,
     ProposalStatus.EXPIRED: EXPIRED,
-    ProposalStatus.FAILED: "Seda muudatust ei õnnestunud salvestada. Midagi ei muudetud.",
+    ProposalStatus.FAILED: FAILED_TEXT,
     ProposalStatus.STALE: STALE,
 }
 
@@ -189,8 +216,12 @@ def _strings(value: Any) -> list[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
-def _preview_context(proposal: McpWriteProposal) -> dict[str, Any]:
-    preview = proposal.preview if isinstance(proposal.preview, dict) else {}
+def _preview_context(preview: Any) -> dict[str, Any] | None:
+    """The template's view of a preview *the page derived* (or an approval row recorded).
+
+    Never called with `McpWriteProposal.preview`: that is the gateway's copy."""
+    if not isinstance(preview, dict) or not preview:
+        return None
     target = preview.get("target") if isinstance(preview.get("target"), dict) else None
     changes = [
         {
@@ -220,11 +251,20 @@ def _preview_context(proposal: McpWriteProposal) -> dict[str, Any]:
     }
 
 
+def _approved_preview(proposal: McpWriteProposal) -> Any:
+    """What the person approved, from the approval row `web` wrote (format 2), or None."""
+    approval = McpWriteApproval.objects.filter(proposal=proposal).first()
+    if approval is None or approval.format_version != CURRENT_FORMAT:
+        return None
+    return approval.preview
+
+
 def _page(
     request: HttpRequest,
     proposal: McpWriteProposal,
     *,
     can_approve: bool,
+    reviewed: review.Reviewed | None = None,
     notice: str = "",
     error: str = "",
     done: str = "",
@@ -233,14 +273,21 @@ def _page(
     op = operations.get(proposal.operation)
     user: Any = request.user
     grant = proposal.grant
+    if reviewed is not None and not reviewed.problem:
+        preview = _preview_context(reviewed.preview)
+    elif proposal.status == ProposalStatus.EXECUTED or proposal.status == ProposalStatus.FAILED:
+        preview = _preview_context(_approved_preview(proposal))
+    else:
+        preview = None
+    can_approve = can_approve and reviewed is not None and not reviewed.problem
     context = {
         "proposal": proposal,
         "operation_label": str(op.label) if op is not None else proposal.operation,
-        "preview": _preview_context(proposal),
+        "preview": preview,
+        "binding": reviewed.binding if can_approve and reviewed is not None else "",
         "persona": user,
         "can_approve": can_approve,
         "can_decline": proposal.status == ProposalStatus.PENDING and not done,
-        "can_withdraw": proposal.status == ProposalStatus.APPROVED,
         "recent": can_approve and _recent_holds(request, user, grant),
         "notice": notice,
         "error": error,
@@ -321,26 +368,6 @@ def _throttle_keys(request: HttpRequest, ip: str | None) -> list[access_services
 # -- the checks -------------------------------------------------------------------
 
 
-def is_stale(proposal: McpWriteProposal, user: Any) -> bool:
-    """Recompute the operation's state and compare it with the stored one.
-
-    Inside a savepoint that is rolled back, so a state read can leave nothing
-    behind. No canonical lock is taken here: the approval writes no business
-    row, and the commit takes the locks and compares the state again under
-    them.
-    """
-    op = operations.get(proposal.operation)
-    if op is None:
-        return True
-    try:
-        with transaction.atomic():
-            current = jsonable(op.state(user=user, canonical=proposal.canonical_arguments))
-            transaction.set_rollback(True)
-    except (OperationRefused, DomainError):
-        return True
-    return bool(current != proposal.state)
-
-
 def _owned(request: HttpRequest, proposal_id: Any) -> McpWriteProposal | None:
     """This persona's proposal through a grant that may still write, or None."""
     user: Any = request.user
@@ -351,6 +378,19 @@ def _owned(request: HttpRequest, proposal_id: Any) -> McpWriteProposal | None:
     if grant.status != GrantStatus.ACTIVE or not access.may_write(user, grant):
         return None
     return proposal
+
+
+#: What a review problem says on the page.
+_PROBLEM_TEXT = {
+    "stale": STALE,
+    "mismatch": MISMATCH,
+    "format": EXPIRED,
+    "unknown_operation": MISMATCH,
+}
+
+
+def _notice(reviewed: review.Reviewed) -> str:
+    return _PROBLEM_TEXT.get(reviewed.problem, GENERIC_REFUSAL)
 
 
 # -- the view ---------------------------------------------------------------------
@@ -391,22 +431,22 @@ def approve(request: HttpRequest, proposal_id: Any) -> HttpResponse:
                 record(McpWriteEventType.EXPIRED, succeeded=False, proposal=locked, code="expired")
         proposal.refresh_from_db()
 
-    if request.method == "POST" and request.POST.get("otsus", "") == "tuhista":
-        return _withdraw(request, proposal)
     if proposal.status != ProposalStatus.PENDING:
         return _page(request, proposal, can_approve=False, done=STATUS_TEXT[proposal.status])
 
-    stale = is_stale(proposal, user)
-    if request.method == "GET":
-        return _page(request, proposal, can_approve=not stale, notice=STALE if stale else "")
-
-    decision = request.POST.get("otsus", "")
+    decision = request.POST.get("otsus", "") if request.method == "POST" else ""
     if decision == "keeldu":
         return _decline(request, proposal)
+
+    reviewed = review.derive(proposal, user)
+    live = access.family_live(proposal)
+    if request.method == "GET":
+        notice = _notice(reviewed) if reviewed.problem else ("" if live else DISCONNECTED)
+        return _page(request, proposal, can_approve=live, reviewed=reviewed, notice=notice)
     if decision != "kinnita":
-        return _page(request, proposal, can_approve=not stale, error=CHOOSE, status=400)
-    if stale:
-        return _page(request, proposal, can_approve=False, notice=STALE, status=409)
+        return _page(
+            request, proposal, can_approve=live, reviewed=reviewed, error=CHOOSE, status=400
+        )
     return _approve(request, proposal)
 
 
@@ -427,40 +467,11 @@ def _decline(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
     return _page(request, locked, can_approve=False, done=STATUS_TEXT[locked.status])
 
 
-def _withdraw(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
-    """«Tühista kinnitus»: an APPROVED proposal not yet committed is declined after all.
-
-    No code is asked: withdrawing makes nothing happen. Under the proposal's
-    row lock, which the commit takes first, so a withdrawal and a commit take
-    turns — the commit then answers ``declined``, or the withdrawal finds the
-    change already saved and says so. The approval row stays as it was
-    (append-only); the proposal's status is what the commit reads.
-    """
-    with transaction.atomic():
-        locked = McpWriteProposal.objects.select_for_update().get(pk=proposal.pk)
-        if locked.status == ProposalStatus.APPROVED:
-            locked.status = ProposalStatus.DECLINED
-            locked.failure_code = "withdrawn"
-            locked.save(update_fields=["status", "failure_code", "updated_at"])
-            record(
-                McpWriteEventType.DECLINED,
-                succeeded=False,
-                proposal=locked,
-                reason="approval_withdrawn",
-            )
-            withdrawn = True
-        else:
-            withdrawn = False
-    locked.refresh_from_db()
-    if withdrawn:
-        return _page(request, locked, can_approve=False, done=WITHDRAWN)
-    if locked.status == ProposalStatus.PENDING:
-        return _page(request, locked, can_approve=False, error=CHOOSE, status=400)
-    return _page(request, locked, can_approve=False, done=STATUS_TEXT[locked.status], status=409)
-
-
 def _code_refused(
-    request: HttpRequest, proposal: McpWriteProposal, outcome: access_services.AuthorizationOutcome
+    request: HttpRequest,
+    proposal: McpWriteProposal,
+    reviewed: review.Reviewed,
+    outcome: access_services.AuthorizationOutcome,
 ) -> HttpResponse:
     record(
         McpWriteEventType.APPROVAL_REFUSED,
@@ -481,44 +492,20 @@ def _code_refused(
     else:
         # A wrong code, no grant, an unreadable authenticator: one answer.
         error, status = BAD_CODE, 400
-    return _page(request, proposal, can_approve=True, error=error, status=status)
+    return _page(request, proposal, can_approve=True, reviewed=reviewed, error=error, status=status)
 
 
-def _problem(proposal: McpWriteProposal, user: Any, now: datetime) -> str:
-    """Why this proposal may not be approved now, or "" — none of it needs a code."""
-    if proposal.status != ProposalStatus.PENDING:
-        return "not_pending"
-    if proposal.is_expired_at(now):
-        return "expired"
-    if digest_of(proposal) != proposal.arguments_digest:
-        return "digest"
-    if proposal.grant.status != GrantStatus.ACTIVE or not access.may_write(user, proposal.grant):
-        return "no_write_right"
-    if is_stale(proposal, user):
-        return "stale"
-    return ""
-
-
-def _settle(locked: McpWriteProposal, problem: str) -> None:
-    """Under the proposal's lock: the final status a problem leaves, and its event."""
-    final = {
-        "expired": ProposalStatus.EXPIRED,
-        "digest": ProposalStatus.FAILED,
-        "stale": ProposalStatus.STALE,
-    }.get(problem)
-    if final is not None:
-        locked.status = final
-        locked.failure_code = "approval_mismatch" if problem == "digest" else problem
-        locked.save(update_fields=["status", "failure_code", "updated_at"])
-    record(McpWriteEventType.APPROVAL_REFUSED, succeeded=False, proposal=locked, code=problem)
-
-
-def _problem_page(request: HttpRequest, locked: McpWriteProposal, problem: str) -> HttpResponse:
+def _problem_page(
+    request: HttpRequest, locked: McpWriteProposal, problem: str, reviewed: review.Reviewed | None
+) -> HttpResponse:
     if problem == "no_write_right":
         return _refusal_page(request)
     locked.refresh_from_db()
     if locked.status == ProposalStatus.PENDING:
-        return _page(request, locked, can_approve=False, notice=GENERIC_REFUSAL, status=409)
+        notice = DISCONNECTED if problem == "disconnected" else GENERIC_REFUSAL
+        return _page(
+            request, locked, can_approve=False, reviewed=reviewed, notice=notice, status=409
+        )
     return _page(request, locked, can_approve=False, done=STATUS_TEXT[locked.status])
 
 
@@ -526,18 +513,28 @@ def _approve(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
     user: Any = request.user
     grant = proposal.grant
     ip = client_ip(request)
+    submitted = str(request.POST.get("sidumine", "") or "")[:64]
 
     # Before the code: a proposal that cannot be approved spends nothing and
-    # opens no window (audit 2026-10-28 C-03).
+    # opens no window (audit 2026-10-28 C-03); nor does one whose preview
+    # changed since the page was shown.
     with transaction.atomic():
-        locked = (
-            McpWriteProposal.objects.select_for_update().select_related("grant").get(pk=proposal.pk)
+        checked = approval.check(proposal.pk, user, canonical_locks=False)
+        if checked.problem:
+            approval.settle(checked)
+    locked, reviewed = checked.proposal, checked.reviewed
+    if checked.problem or reviewed is None:
+        return _problem_page(request, locked, checked.problem or "stale", reviewed)
+    if not hmac.compare_digest(submitted, reviewed.binding):
+        record(
+            McpWriteEventType.APPROVAL_REFUSED,
+            succeeded=False,
+            proposal=locked,
+            code="binding_changed",
         )
-        problem = _problem(locked, user, timezone.now())
-        if problem:
-            _settle(locked, problem)
-    if problem:
-        return _problem_page(request, locked, problem)
+        return _page(
+            request, locked, can_approve=True, reviewed=reviewed, notice=CHANGED, status=409
+        )
 
     typed = False
     if _recent_holds(request, user, grant):
@@ -551,36 +548,50 @@ def _approve(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
             throttle=_throttle_keys(request, ip),
         )
         if outcome.status != "ok":
-            return _code_refused(request, proposal, outcome)
+            return _code_refused(request, locked, reviewed, outcome)
         method, typed = ApprovalMethod.TOTP, True
 
-    with transaction.atomic():
-        locked = (
-            McpWriteProposal.objects.select_for_update().select_related("grant").get(pk=proposal.pk)
+    try:
+        outcome_of = approval.approve_and_save(
+            proposal_id=proposal.pk, user=user, binding=submitted, method=method, ip=ip
         )
-        now = timezone.now()
-        # Everything again, under the lock: the proposal may have moved on
-        # while the code was being checked.
-        problem = _problem(locked, user, now)
-        if problem:
-            _settle(locked, problem)
-        else:
-            McpWriteApproval.objects.create(
-                proposal=locked,
-                user=user,
-                grant=locked.grant,
-                arguments_digest=locked.arguments_digest,
-                approved_at=now,
-                expires_at=now + timedelta(seconds=int(settings.MCP_WRITE_APPROVAL_SECONDS)),
-                method=method,
-                ip_address=ip,
-            )
-            locked.status = ProposalStatus.APPROVED
-            locked.save(update_fields=["status", "updated_at"])
-            record(McpWriteEventType.APPROVED, proposal=locked, method=str(method))
-    if problem:
-        return _problem_page(request, locked, problem)
+    except Exception as error:
+        # Not the person's decision and not the proposal's fault: the whole
+        # approval rolled back, nothing was saved, the proposal is still
+        # PENDING. The class only — a message could quote data.
+        logger.error(
+            "MCP approval of %s (%s) failed: %s",
+            proposal.pk,
+            proposal.operation,
+            type(error).__name__,
+        )
+        record(
+            McpWriteEventType.FAILED,
+            succeeded=False,
+            proposal=proposal,
+            code="internal_error",
+            retryable=True,
+            error=type(error).__name__,
+        )
+        proposal.refresh_from_db()
+        return _page(
+            request,
+            proposal,
+            can_approve=False,
+            reviewed=review.derive(proposal, user),
+            error=RETRY,
+            status=500,
+        )
+    locked = outcome_of.proposal
+    if outcome_of.problem == "binding_changed":
+        locked.refresh_from_db()
+        fresh = review.derive(locked, user)
+        return _page(request, locked, can_approve=True, reviewed=fresh, notice=CHANGED, status=409)
+    if outcome_of.problem:
+        return _problem_page(request, locked, outcome_of.problem, outcome_of.reviewed)
     if typed:
         # Only a code that approved something opens the window (none at 0).
-        _remember(request, user, locked.grant)
+        _remember(request, user, grant)
+    if locked.status == ProposalStatus.FAILED:
+        return _page(request, locked, can_approve=False, done=FAILED_TEXT, status=409)
     return _page(request, locked, can_approve=False, done=DONE)

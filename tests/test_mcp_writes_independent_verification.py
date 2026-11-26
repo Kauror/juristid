@@ -6,10 +6,12 @@ commit and the approval page. This file closes the gaps an independent review
 found, with **real** grants, authenticators, tokens and the real
 `add_matter_note` operation — nothing about who may write is faked:
 
-* a token that expired, was revoked, or was refreshed into a read-only token of
-  the same family after ``revoke-write`` cannot commit an approved proposal,
-  and neither can a family begun before a later ``grant-write`` — while a new
-  connection after that ``grant-write`` is told the old proposal does not exist;
+* since docs/adr/0234 approving *is* saving, so what changes between prepare
+  and approval is what matters: a connection that was revoked, or a grant whose
+  write was revoked (and re-granted), approves nothing it prepared; a token
+  that expired, was revoked or was refreshed into a read-only one is told
+  nothing by ``commit`` — while a new connection after a later
+  ``grant-write`` is told the old proposal does not exist;
 * the approval page refuses a proposal of the person's *earlier* grant, even
   with a right code for the current one;
 * a lock or suspension of the grant that begins after a code was typed ends the
@@ -102,21 +104,17 @@ def _prepare_note(user: Any, access: Any, matter: Matter) -> McpWriteProposal:
     return McpWriteProposal.objects.get(pk=answer["proposal"]["id"])
 
 
-def _approve_row(proposal: McpWriteProposal) -> McpWriteProposal:
-    """What the approval page writes once the person's code was accepted."""
-    now = timezone.now()
-    McpWriteApproval.objects.create(
-        proposal=proposal,
+def _approve_and_save(proposal: McpWriteProposal) -> str:
+    """What the approval page does once the person's code was accepted; the problem or ""."""
+    from app.mcp_writes import approval, review
+
+    return approval.approve_and_save(
+        proposal_id=proposal.pk,
         user=proposal.user,
-        grant=proposal.grant,
-        arguments_digest=proposal.arguments_digest,
-        approved_at=now,
-        expires_at=now + timedelta(minutes=10),
+        binding=review.derive(proposal, proposal.user).binding,
         method=ApprovalMethod.TOTP,
-    )
-    McpWriteProposal.objects.filter(pk=proposal.pk).update(status=ProposalStatus.APPROVED)
-    proposal.refresh_from_db()
-    return proposal
+        ip=None,
+    ).problem
 
 
 def _notes(matter: Matter) -> int:
@@ -129,7 +127,7 @@ def world(moment):
     matter = factories.MatterFactory(owner=user)
     grant, secret, issued = _connect(user, moment)
     access = _access(issued.access_token)
-    proposal = _approve_row(_prepare_note(user, access, matter))
+    proposal = _prepare_note(user, access, matter)
     return {
         "user": user,
         "matter": matter,
@@ -151,11 +149,12 @@ def _refused_with(answer: Any, code: str) -> None:
     assert answer.code == code
 
 
-# -- credentials between approval and commit ---------------------------------------------
+# -- credentials between prepare and approval, and the commit's report ---------------------
 
 
-def test_the_real_chain_commits_once_when_nothing_changed(world):
-    """The control for the refusals below: the same world, untouched, commits."""
+def test_the_real_chain_saves_once_when_nothing_changed(world):
+    """The control for the refusals below: the same world, untouched, approves and reports."""
+    assert _approve_and_save(world["proposal"]) == ""
     first = _commit_with(world, world["access"])
     assert first["status"] == "executed" and first["replayed"] is False
     again = _commit_with(world, world["access"])
@@ -163,28 +162,33 @@ def test_the_real_chain_commits_once_when_nothing_changed(world):
     assert _notes(world["matter"]) == world["notes"] + 1
 
 
-def test_an_access_token_that_expired_after_approval_cannot_commit(world):
+def test_an_expired_access_token_reports_nothing_but_the_connection_still_approves(world):
+    """The family's refresh token is live: the person's approval stands; the expired
+    access token itself is answered `forbidden` by the commit."""
     McpToken.objects.filter(pk=world["access"].token_id).update(
         expires_at=timezone.now() - timedelta(seconds=1)
     )
     _refused_with(_commit_with(world, world["access"]), "forbidden")
     assert verify_access_token(world["issued"].access_token) is None
-    assert _notes(world["matter"]) == world["notes"]
-    world["proposal"].refresh_from_db()
-    assert world["proposal"].status == ProposalStatus.APPROVED
+    assert _approve_and_save(world["proposal"]) == ""
+    assert _notes(world["matter"]) == world["notes"] + 1
 
 
-def test_an_access_token_revoked_after_approval_cannot_commit(world):
+def test_a_revoked_connection_approves_nothing_it_prepared(world):
     assert services.revoke_token(
         client_id=support.PUBLIC_CLIENT, token=world["issued"].refresh_token, ip_address=None
     )
     _refused_with(_commit_with(world, world["access"]), "forbidden")
+    assert _approve_and_save(world["proposal"]) == "disconnected"
     assert _notes(world["matter"]) == world["notes"]
+    world["proposal"].refresh_from_db()
+    assert world["proposal"].status == ProposalStatus.PENDING
 
 
-def test_a_refreshed_token_after_revoke_write_is_read_only_and_cannot_commit(world):
+def test_after_revoke_write_nothing_is_approved_and_a_read_only_refresh_reports_nothing(world):
     """Same person, grant, client and family — but the refresh dropped the write scope."""
     services.revoke_write(user=world["user"], reason="test", provenance=support.OPERATOR)
+    assert _approve_and_save(world["proposal"]) == "no_write_right"
     refreshed = services.refresh(
         client_id=support.PUBLIC_CLIENT,
         refresh_token=world["issued"].refresh_token,
@@ -201,6 +205,7 @@ def test_a_refreshed_token_after_revoke_write_is_read_only_and_cannot_commit(wor
     # A later grant-write does not bring this family's write back.
     services.grant_write(user=world["user"], provenance=support.OPERATOR)
     _refused_with(_commit_with(world, narrowed), "forbidden")
+    assert _approve_and_save(world["proposal"]) == "disconnected"
     assert _notes(world["matter"]) == world["notes"]
 
 
@@ -209,9 +214,11 @@ def test_a_new_write_enablement_ends_the_old_family_and_the_new_one_sees_no_prop
     services.grant_write(user=world["user"], provenance=support.OPERATOR)
 
     # The old connection still carries juristid.write, but its family began
-    # under the earlier enablement.
+    # under the earlier enablement: it reports nothing and its proposal is not
+    # approvable.
     assert McpToken.objects.get(pk=world["access"].token_id).scope_set >= {"juristid.write"}
     _refused_with(_commit_with(world, world["access"]), "forbidden")
+    assert _approve_and_save(world["proposal"]) == "disconnected"
 
     # Connecting again gives a writer — of a new family, to which the old
     # proposal does not belong.
@@ -233,6 +240,16 @@ def _as(client: Client, user: Any) -> None:
 
 def _page(proposal: McpWriteProposal) -> str:
     return f"/mcp-ligipaas/muudatus/{proposal.pk}/"
+
+
+def _shown(client: Client, proposal: McpWriteProposal) -> str:
+    """The binding the page puts in its form (docs/adr/0234), or "" when it offers none."""
+    import re
+
+    found = re.search(
+        r'name="sidumine" value="([0-9a-f]{64})"', client.get(_page(proposal)).content.decode()
+    )
+    return found.group(1) if found else ""
 
 
 @pytest.fixture
@@ -275,7 +292,12 @@ def test_a_lock_after_the_code_was_typed_ends_the_recent_code_shortcut(gated, mo
     _as(client, user)
 
     approved = client.post(
-        _page(first), {"otsus": "kinnita", "kood": support.code_at(secret, moment, 1)}
+        _page(first),
+        {
+            "otsus": "kinnita",
+            "sidumine": _shown(client, first),
+            "kood": support.code_at(secret, moment, 1),
+        },
     )
     assert approved.status_code == 200 and "Kinnitatud" in approved.content.decode()
 
@@ -288,7 +310,7 @@ def test_a_lock_after_the_code_was_typed_ends_the_recent_code_shortcut(gated, mo
     else:
         McpAccessGrant.objects.filter(pk=grant.pk).update(suspended_at=timezone.now())
 
-    refused = client.post(_page(second), {"otsus": "kinnita"})
+    refused = client.post(_page(second), {"otsus": "kinnita", "sidumine": _shown(client, second)})
     assert refused.status_code != 200 or "Kinnitatud" not in refused.content.decode()
     assert not McpWriteApproval.objects.filter(proposal=second).exists()
     second.refresh_from_db()

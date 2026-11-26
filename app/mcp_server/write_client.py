@@ -95,6 +95,10 @@ REFUSAL_TEXT: dict[str, str] = {
     "approval_mismatch": "This proposal's approval does not match it. Nothing was saved.",
     "already_failed": "This proposal already failed and cannot be committed. Nothing was saved.",
     "too_large": "The change is too large for Juristid to accept. Nothing was saved.",
+    "rate_limited": (
+        "Juristid's limit for requests through ChatGPT was reached. Nothing was saved or "
+        "changed. Wait as the message says before trying again; do not retry at once."
+    ),
     "method_not_allowed": "Juristid's change service refused the request. Nothing was saved.",
 }
 
@@ -115,7 +119,7 @@ COMMIT_UNKNOWN_TEXT = (
 )
 PREPARE_UNKNOWN_TEXT = (
     "Juristid did not confirm the proposal. A proposal may exist, but nothing in Juristid "
-    "changes until the user approves it in Juristid and commit_prepared_action saves it. "
+    "changes until the user approves it on the Juristid approval page. "
     "Ask the user before preparing the change again."
 )
 

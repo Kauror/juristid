@@ -13,20 +13,16 @@ import asyncio
 import io
 import json
 import logging
-from datetime import timedelta
 from typing import Any
 
 import httpx2
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.utils import timezone
 
 from app.mcp_server.runtime import ReaderRuntime
 from app.mcp_writes import gateway
 from app.mcp_writes.models import (
-    ApprovalMethod,
-    McpWriteApproval,
     McpWriteProposal,
     ProposalStatus,
 )
@@ -181,18 +177,8 @@ def chain(monkeypatch):
 
 
 def _approve(proposal_id: str) -> None:
-    proposal = McpWriteProposal.objects.get(pk=proposal_id)
-    now = timezone.now()
-    McpWriteApproval.objects.create(
-        proposal=proposal,
-        user=proposal.user,
-        grant=proposal.grant,
-        arguments_digest=proposal.arguments_digest,
-        approved_at=now,
-        expires_at=now + timedelta(minutes=10),
-        method=ApprovalMethod.TOTP,
-    )
-    McpWriteProposal.objects.filter(pk=proposal.pk).update(status=ProposalStatus.APPROVED)
+    """The approval page approves and saves (docs/adr/0234)."""
+    support.approve_and_save(McpWriteProposal.objects.get(pk=proposal_id))
 
 
 @transactional
@@ -397,7 +383,9 @@ def test_a_valid_correlation_id_follows_the_proposal_through_commit(chain, caplo
     assert str(events[McpWriteEventType.PREPARED].correlation_id) == first
     committed = events[McpWriteEventType.COMMITTED]
     assert str(committed.correlation_id) == first
-    assert committed.detail["call_correlation_id"] == second
+    delivered = events[McpWriteEventType.RECEIPT_DELIVERED]
+    assert str(delivered.correlation_id) == first
+    assert delivered.detail["call_correlation_id"] == second
     lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("mcp-writer ")]
     assert f"corr={first}" in lines[0] and f"corr={second}" in lines[1]
     assert "(replaced)" not in "\n".join(lines)

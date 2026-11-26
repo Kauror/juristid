@@ -142,7 +142,7 @@ def refusal(name: str, user: Any, **arguments: Any) -> OperationRefused:
 def commit(
     name: str, user: Any, prepared: Prepared, *, once_token: uuid.UUID | None = None
 ) -> Executed:
-    """The gateway's commit: lock, state (must be unchanged), execute — one transaction."""
+    """The approval page's save (docs/adr/0234): lock, state (must be unchanged), execute."""
     operation = get(name)
     assert operation is not None
     with transaction.atomic():

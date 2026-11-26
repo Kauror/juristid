@@ -36,6 +36,7 @@ STATUS: dict[str, int] = {
     "approval_mismatch": 409,
     "already_failed": 409,
     "too_large": 413,
+    "rate_limited": 429,
     "method_not_allowed": 405,
     "internal_error": 500,
     "timeout": 504,
@@ -63,6 +64,10 @@ MESSAGES: dict[str, str] = {
     ),
     "already_failed": "This prepared change already failed. Nothing was saved; prepare it again.",
     "too_large": "The request is too large.",
+    "rate_limited": (
+        "Too many requests through the AI connection. Nothing was saved or changed; "
+        "try again later."
+    ),
     "method_not_allowed": "Method not allowed.",
     "internal_error": "Juristid could not complete this call. Try again.",
     "timeout": "Juristid took too long to answer. Try again.",

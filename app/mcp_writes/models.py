@@ -68,6 +68,25 @@ class McpWriteEventType(models.TextChoices):
     COMMIT_REFUSED = "COMMIT_REFUSED", "Salvestamisest keelduti"
     FAILED = "FAILED", "Salvestamine ebaõnnestus"
     EXPIRED = "EXPIRED", "Aegunud"
+    #: The client fetched the receipt of a change the approval page saved
+    #: (format 2): the first fetch. Later ones are COMMIT_REPLAYED.
+    RECEIPT_DELIVERED = "RECEIPT_DELIVERED", "Tulemus edastatud kliendile"
+    #: An outstanding proposal of an earlier approval format, retired by a
+    #: migration rather than ever approved or executed under new rules.
+    FORMAT_RETIRED = "FORMAT_RETIRED", "Vananenud vorming, aegunud"
+
+
+#: The approval/binding format this code writes and accepts (SEC-009, ADR 0230).
+#:
+#: * 1 — r94 and earlier: the gateway executed at ``commit`` once an approval
+#:   row matched SHA-256(operation, canonical arguments, user, grant). Never
+#:   approved, executed or reinterpreted by format-2 code: migration
+#:   ``0002`` retires every outstanding format-1 proposal.
+#: * 2 — the approval page re-derives the change from the stored arguments with
+#:   trusted code, shows *that* preview, binds the approval to the binding
+#:   digest of everything shown and checked, and executes it in the same
+#:   transaction. The gateway only prepares and reports.
+CURRENT_FORMAT = 2
 
 
 class McpWriteProposal(BaseModel):
@@ -87,6 +106,10 @@ class McpWriteProposal(BaseModel):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    #: `CURRENT_FORMAT` for a proposal this code prepared. The column default
+    #: is 1 on purpose: a row an older release (or a rolled-back one) writes
+    #: without naming a format is format 1, which this code never approves.
+    format_version = models.PositiveSmallIntegerField(default=1, verbose_name="vorming")
     user = models.ForeignKey(
         "accounts.User", on_delete=models.PROTECT, related_name="+", verbose_name="kasutaja"
     )
@@ -101,6 +124,10 @@ class McpWriteProposal(BaseModel):
     token_family_id = models.UUIDField(null=True, blank=True, verbose_name="võtmepere")
     client_id = models.CharField(max_length=500, verbose_name="klient")
     operation = models.CharField(max_length=64, verbose_name="toiming")
+    #: The client's arguments as the operation's model validated them (format
+    #: 2). The approval page derives the change from these again with trusted
+    #: code; it never shows ``preview`` or trusts ``canonical_arguments``.
+    arguments = models.JSONField(default=dict, verbose_name="argumendid")
     canonical_arguments = models.JSONField(default=dict, verbose_name="kanoonilised argumendid")
     arguments_digest = models.CharField(max_length=64, verbose_name="argumentide räsi")
     target_matter_id = models.UUIDField(null=True, blank=True, db_index=True, verbose_name="teema")
@@ -167,6 +194,20 @@ class McpWriteApproval(AppendOnlyModel):
         verbose_name="MCP ligipääs",
     )
     arguments_digest = models.CharField(max_length=64, verbose_name="argumentide räsi")
+    #: Format 2 (SEC-009): what the person saw and approved, as the approval
+    #: page derived it — written by `web` only, so it is evidence the gateway
+    #: cannot rewrite. ``binding_digest`` is `review.binding_digest` over the
+    #: proposal's identity, operation, arguments, canonical arguments, target,
+    #: user, grant, client, token family, state, preview and expiry.
+    format_version = models.PositiveSmallIntegerField(default=1, verbose_name="vorming")
+    binding_digest = models.CharField(
+        max_length=64, blank=True, default="", verbose_name="sidumise räsi"
+    )
+    canonical_arguments = models.JSONField(
+        default=dict, blank=True, verbose_name="kinnitatud kanoonilised argumendid"
+    )
+    state = models.JSONField(default=dict, blank=True, verbose_name="kinnitatud olek")
+    preview = models.JSONField(default=dict, blank=True, verbose_name="kinnitatud eelvaade")
     approved_at = models.DateTimeField(verbose_name="kinnitatud")
     expires_at = models.DateTimeField(verbose_name="kehtib kuni")
     method = models.CharField(max_length=16, choices=ApprovalMethod.choices, verbose_name="viis")
@@ -227,3 +268,46 @@ class McpWriteEvent(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.event_type} {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class McpWriteCounter(models.Model):
+    """One fixed-window counter of the write gateway's budgets (SEC-014, ADR 0230).
+
+    ``principal`` is a stable key — ``user:<id>``, ``grant:<id>``,
+    ``family:<id>``, ``client:<sha-256 prefix of the client id>`` or
+    ``global`` — never a token, so a refreshed token counts against the same
+    rows. ``bucket`` names what is counted: ``prepare``, ``commit``,
+    ``refused``, ``stored_bytes``, or ``event:<type>:<code>:<reason>`` for the
+    aggregation of repeated identical refusals. ``period`` is ``10m`` or ``1d``
+    and ``period_start`` the window's start. Incremented with one
+    ``INSERT … ON CONFLICT DO UPDATE … RETURNING`` (`app.mcp_writes.budgets`),
+    so concurrent calls never lose a count.
+
+    Not an audit table: it is the operational tally beside the append-only
+    events, and how an aggregated refusal stays observable after its first
+    `MCP_WRITE_EVENTS_PER_WINDOW` occurrences were written as events.
+    """
+
+    #: A uuid, not a serial: the gateway's role is granted no sequence.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    principal = models.CharField(max_length=100, verbose_name="tegutseja võti")
+    bucket = models.CharField(max_length=120, verbose_name="mõõdetav")
+    period = models.CharField(max_length=8, verbose_name="aken")
+    period_start = models.DateTimeField(verbose_name="akna algus")
+    count = models.BigIntegerField(default=0, verbose_name="arv")
+    first_at = models.DateTimeField(verbose_name="esimene")
+    last_at = models.DateTimeField(verbose_name="viimane")
+
+    class Meta:
+        verbose_name = "MCP muudatuste loendur"
+        verbose_name_plural = "MCP muudatuste loendurid"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["principal", "bucket", "period", "period_start"],
+                name="mcp_write_counter_one_window",
+            )
+        ]
+        indexes = [models.Index(fields=["period_start"], name="mcp_write_counter_start")]
+
+    def __str__(self) -> str:
+        return f"{self.principal} {self.bucket} {self.period}@{self.period_start:%Y-%m-%d %H:%M}"
