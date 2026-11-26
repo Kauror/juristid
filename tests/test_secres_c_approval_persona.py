@@ -10,10 +10,16 @@ committed yet — both answered as the owner's own decision, with the owner's
 persona in the event, and with no way for the owner or the operator to tell
 the two apart afterwards.
 
-Every test PASSES on main 359e34bf: this is the design, not a defect. It is
+Every test PASSED on main 359e34bf: this is the design, not a defect. It is
 listed as owner question Q-3 in WS1C-FINDINGS.md (whether declining and
 withdrawing should also ask for the code, or whether the audit event should at
 least carry the gate session so two persona choices can be told apart).
+
+**Since r96 (SEC-009, docs/adr/0234)** «Kinnita» carries the binding the page
+showed and approves *and saves* in one step, so there is no approved-but-unsaved
+proposal left to withdraw: the withdraw half of Q-3 is gone, and the last test
+now records that a colleague's «tuhista» changes nothing. Declining without a
+code is unchanged (still Q-3).
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ from app.mcp_writes.models import (
 )
 from tests import factories
 from tests import test_mcp_write_proposals_support as support
+from tests.test_mcp_write_approval import binding_on
 from tests.gate import PASSWORD, apply_shared_gate
 
 pytestmark = pytest.mark.django_db
@@ -82,7 +89,11 @@ def another_browser_as(user) -> Client:
 def test_a_second_gate_session_in_the_owners_persona_cannot_approve_without_the_code(world):
     proposal = prepared(world)
     stranger = another_browser_as(world["user"])
-    response = stranger.post(url(proposal), {"otsus": "kinnita", "kood": "000000"})
+    # The binding the page shows the stranger too (format 2): only the code is missing.
+    response = stranger.post(
+        url(proposal),
+        {"otsus": "kinnita", "sidumine": binding_on(stranger, proposal), "kood": "000000"},
+    )
     assert response.status_code == 400
     proposal.refresh_from_db()
     assert proposal.status == ProposalStatus.PENDING
@@ -102,16 +113,19 @@ def test_a_second_gate_session_in_the_owners_persona_declines_with_no_code_q3(wo
     assert "session" not in event.detail and "gate" not in event.detail
 
 
-def test_a_second_gate_session_in_the_owners_persona_withdraws_an_approval_q3(world):
+def test_a_second_gate_session_in_the_owners_persona_cannot_withdraw_a_saved_approval_q3(world):
     proposal = prepared(world)
     owner = another_browser_as(world["user"])
-    approved = owner.post(url(proposal), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    approved = owner.post(
+        url(proposal),
+        {"otsus": "kinnita", "sidumine": binding_on(owner, proposal), "kood": support.GOOD_CODE},
+    )
     assert approved.status_code == 200, approved.content.decode()[:300]
     proposal.refresh_from_db()
-    assert proposal.status == ProposalStatus.APPROVED
+    # Format 2: approving is saving — nothing waits to be withdrawn.
+    assert proposal.status == ProposalStatus.EXECUTED
     stranger = another_browser_as(world["user"])
-    withdrawn = stranger.post(url(proposal), {"otsus": "tuhista"})
-    assert withdrawn.status_code == 200
+    stranger.post(url(proposal), {"otsus": "tuhista"})
     proposal.refresh_from_db()
-    assert proposal.status == ProposalStatus.DECLINED
-    assert proposal.failure_code == "withdrawn"
+    assert proposal.status == ProposalStatus.EXECUTED
+    assert proposal.failure_code != "withdrawn"
