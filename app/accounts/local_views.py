@@ -75,18 +75,23 @@ def local_mode_or_administrator_link[R: HttpResponseBase](
 
 
 def no_referrer[R: HttpResponseBase](view: Callable[..., R]) -> Callable[..., R]:
-    """Send no Referer from a one-time link page, whatever the site-wide policy.
+    """Send no Referer from the arriving one-time link, whatever the site-wide policy.
 
-    The site says `same-origin`, which would hand this page's address to the
-    next page of the site. The `?kood=` is gone from the address by the time
-    anything renders, so this is belt and braces: nothing a link page loads or
-    leads to learns where the browser came from.
+    Only the answer to a request that carries the `?kood=` — the redirect that
+    takes it off the address bar — says `no-referrer`. The page rendered after
+    it keeps the site's `same-origin`: its address holds no secret, and a page
+    whose policy is `no-referrer` makes a browser send `Origin: null` with the
+    form it posts, which Django's CSRF check refuses («Leht on aegunud») — the
+    password could never be set from a real browser (r96 integration; the test
+    client sends no Origin, so only the browser suite saw it). Cross-origin, a
+    `same-origin` page sends no Referer at all.
     """
 
     @functools.wraps(view)
     def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R:
         response = view(request, *args, **kwargs)
-        response["Referrer-Policy"] = "no-referrer"
+        if mail.LINK_PARAMETER in request.GET:
+            response["Referrer-Policy"] = "no-referrer"
         return response
 
     return wrapper

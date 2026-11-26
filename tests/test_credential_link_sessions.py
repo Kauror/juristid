@@ -324,15 +324,19 @@ def test_the_link_pages_send_no_referrer_and_the_secret_appears_nowhere(local, c
     page = client.get(reverse(ACTIVATE))
     done = client.post(reverse(ACTIVATE), {"password": PASSWORD, "password_again": PASSWORD})
 
-    for response in (landing, page):
-        assert response["Referrer-Policy"] == "no-referrer"
+    # The arriving link (its `?kood=` in the address) is answered with no-referrer.
+    assert landing["Referrer-Policy"] == "no-referrer"
+    # The page the browser then renders posts its form: under `no-referrer` a
+    # browser sends `Origin: null` and CSRF refuses it, so it keeps the site's
+    # `same-origin` (no secret is in its address; nothing goes cross-origin).
+    assert page.get("Referrer-Policy", "same-origin") == "same-origin"
     for response in (landing, page, done):
         assert verifier not in response.get("Location", "")
         assert verifier not in response.content.decode()
     assert verifier not in caplog.text and selector not in caplog.text
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_two_browsers_holding_one_link_set_one_password(local):
     """Concurrent use: the link is spent once, under its row lock."""
     user = _invited()
@@ -478,3 +482,31 @@ def test_the_persona_chosen_behind_the_gate_survives_the_rotation(gate):
     _open(client, ACTIVATE, _issue(user))
 
     assert client.get(reverse(ACTIVATE)).wsgi_request.user.pk == persona.pk
+
+
+@pytest.mark.django_db
+def test_a_real_browser_can_post_the_link_page_under_csrf(local):
+    """r96 integration: the browser suite's first administrator could not set a
+    password («Leht on aegunud»). A browser posts with the Origin its page's
+    referrer policy allows — `null` under `no-referrer`, which Django's CSRF check
+    refuses. With the page's policy as served, the form must go through."""
+    user = _invited()
+    token = _issue(user)
+    client = Client(enforce_csrf_checks=True)
+
+    _open(client, ACTIVATE, token)
+    page = client.get(reverse(ACTIVATE))
+    policy = page.get("Referrer-Policy", "same-origin")
+    origin = "null" if policy == "no-referrer" else "http://testserver"
+    done = client.post(
+        reverse(ACTIVATE),
+        {
+            "password": PASSWORD,
+            "password_again": PASSWORD,
+            "csrfmiddlewaretoken": page.context["csrf_token"],
+        },
+        HTTP_ORIGIN=origin,
+    )
+    assert done.status_code == 302, done.status_code
+    user.refresh_from_db()
+    assert user.has_usable_password()

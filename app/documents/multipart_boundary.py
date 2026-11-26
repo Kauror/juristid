@@ -49,7 +49,7 @@ import logging
 from typing import Any
 from urllib.parse import urlencode
 
-from django.contrib.auth import get_user
+from django.contrib.auth.middleware import get_user  # caches on the request (_cached_user)
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.urls import NoReverseMatch, reverse
@@ -81,6 +81,9 @@ PUBLIC_AUTH_ROUTES = (
     "haldus:enrol",
     "haldus:reauthenticate",
     "haldus:sign_out",
+    # OAuth discovery for MCP clients: answered before anybody signs in (r96
+    # integration; a small form there is read and refused by the route itself).
+    "mcp_access:authorization_server_metadata",
     "mcp_access:authorize",
     "mcp_access:token",
     "mcp_access:revoke",
@@ -115,13 +118,21 @@ def is_multipart(request: HttpRequest) -> bool:
 def signed_in_for_files(request: HttpRequest) -> bool:
     """Whether this request's session already carries a signed-in person who passes
     the mode's own test. Reads the session and the headers, never the body."""
-    from app.accounts import cloudflare_access, local_auth, shared_gate
+    from app.accounts import admin_session, cloudflare_access, local_auth, shared_gate
 
     user = get_user(request)  # cached on the request: AuthenticationMiddleware reuses it
-    if user is None or not user.is_authenticated or not getattr(user, "is_active", False):
-        return False
-    request.user = user  # what the mode's helpers read; AuthenticationMiddleware sets it again
     mode = shared_gate.current_mode()
+    if user is None or not user.is_authenticated or not getattr(user, "is_active", False):
+        # The administrator's own verified session behind the gate, with no
+        # persona (docs/adr/0181, 0185): signed in by its own password and second
+        # factor, from session state alone (r96 integration). Asked only when
+        # there is no persona, so a lawyer's upload pays nothing for it.
+        return (
+            mode == AuthMode.SHARED_GATE
+            and shared_gate.has_passed(request)
+            and admin_session.verified_administrator(request) is not None
+        )
+    request.user = user  # what the mode's helpers read; AuthenticationMiddleware sets it again
     if mode == AuthMode.SHARED_GATE:
         return shared_gate.has_passed(request)
     if mode == AuthMode.LOCAL_PASSWORD:
