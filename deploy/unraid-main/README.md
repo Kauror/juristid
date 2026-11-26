@@ -176,7 +176,7 @@ Edit `JURISTID_SHARED_GATE_PASSWORD` in the host's environment file and
 **recreate** the application services with the running release's exports:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-parser batch-parser intake-reader searchindex intake-sweeper notifications
 ```
 
 Not `docker compose restart`: a restart keeps the container's original
@@ -1592,11 +1592,12 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 
 If it would recreate `db` or `tunnel`, name the services that run the release
 image instead — every one of them, read off `compose.yml` (today `web`,
-`intake-reader`, `searchindex`, `intake-sweeper` and `notifications`), so none is left on the
+`intake-parser`, `batch-parser`, `intake-reader`, `searchindex`, `intake-sweeper` and
+`notifications`), so none is left on the
 old image:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-parser batch-parser intake-reader searchindex intake-sweeper notifications
 ```
 
 `--no-build` is not decoration. `compose.yml` has a `build:` stanza, and a plain

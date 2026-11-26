@@ -88,6 +88,10 @@ x-parser-service: &parser-service
   network_mode: none
   read_only: true
   environment:
+    # A deployed stack says so (see `web`): `config/test_safety.py` refuses to
+    # run the test suite in any environment carrying this marker. The parser
+    # child never sees it (its environment is allow-listed, docs/adr/0230).
+    JURISTID_RUNTIME: deployed
     JURISTID_PARSER_SCRATCH: /scratch
     # Per-file ceilings; a caller may ask for less, never more. The memory
     # ceiling is RLIMIT_AS for the child and everything it starts; mem_limit
