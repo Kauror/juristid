@@ -44,7 +44,10 @@ def main(argv: list[str]) -> int:
         _run(Path(argv[1])) if len(argv) == 2 else {"status": "error", "type": "Usage"}
     )
     # The child's own peak address space, for sizing RLIMIT_AS (a number only).
-    verdict["vm_peak_bytes"] = _vm_peak_bytes()
+    verdict["vm_peak_bytes"] = _status_bytes("VmPeak:")
+    # Peak resident set after exec. ru_maxrss from wait4 also counts the
+    # parent's pages the fork briefly shared, so this is the honest figure.
+    verdict["vm_hwm_bytes"] = _status_bytes("VmHWM:")
     answer.write(json.dumps(verdict, ensure_ascii=False).encode("utf-8"))
     answer.flush()
     return 0
@@ -101,10 +104,10 @@ def _run(job: Path) -> dict[str, Any]:
     return {"status": "done", "parser": parser.name, "result": encoded}
 
 
-def _vm_peak_bytes() -> int:
+def _status_bytes(field: str) -> int:
     try:
         for line in Path("/proc/self/status").read_text().splitlines():
-            if line.startswith("VmPeak:"):
+            if line.startswith(field):
                 return int(line.split()[1]) * 1024
     except (OSError, ValueError, IndexError):
         pass

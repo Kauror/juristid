@@ -557,7 +557,7 @@ def test_a_memory_hoard_is_stopped_at_the_address_space_limit(tmp_path):
 
 
 @linux_only
-def test_a_child_finds_no_secret_in_its_environment_or_its_parents(tmp_path, monkeypatch):
+def test_a_child_finds_no_secret_in_its_environment_or_its_parents(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("POSTGRES_PASSWORD", "never-in-a-child")
     monkeypatch.setenv("DJANGO_SECRET_KEY", "never-in-a-child")
     header = {
@@ -575,7 +575,8 @@ def test_a_child_finds_no_secret_in_its_environment_or_its_parents(tmp_path, mon
     assert found["parent_environ_readable"] is False
     # Recorded, not asserted: a subprocess cannot take the network away. That
     # is the service's job (network_mode: none), and the reason it exists.
-    print(f"subprocess-mode child network reachable: {found['network']}")
+    with capsys.disabled():
+        print(f"\nSUBPROCESS-MODE child network reachable: {found['network']}")
 
 
 @linux_only
@@ -660,6 +661,33 @@ def test_the_service_strips_a_callers_attempt_to_switch_test_hooks_on(tmp_path):
 # -- sizing: what each fixture class actually costs -------------------------
 
 
+def _large_docx(paragraphs: int = 4000) -> bytes:
+    import io
+
+    from docx import Document
+
+    document = Document()
+    for n in range(paragraphs):
+        document.add_paragraph(f"Lõik {n}: " + "Seletuskirja tekst eelnõu kohta. " * 8)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def _large_xlsx(rows: int = 20000) -> bytes:
+    import io
+
+    import openpyxl
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    for n in range(rows):
+        sheet.append([f"Rida {n}", n, n * 1.5, "Märkus eelnõu kohta"])
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
 def _sizing_fixtures() -> list[tuple[str, str, bytes]]:
     pages = [f"Lehekülg {n}: " + "Eelnõu seletuskiri. " * 120 for n in range(1, 401)]
     return [
@@ -669,7 +697,9 @@ def _sizing_fixtures() -> list[tuple[str, str, bytes]]:
         ("scanned pdf (OCR)", PDF, corpus.scanned_pdf()),
         ("scanned png (OCR)", "image/png", corpus.scanned_png()),
         ("docx", DOCX, corpus.draft_docx()),
+        ("large docx (4000 par.)", DOCX, _large_docx()),
         ("xlsx", XLSX, corpus.annex_xlsx()),
+        ("large xlsx (20000 rows)", XLSX, _large_xlsx()),
         ("eml with attachments", EML, corpus.consultation_eml()),
         ("msg with attachment", MSG, corpus.outlook_msg()),
         ("malformed pdf", PDF, corpus.corrupt_pdf()),
@@ -708,10 +738,11 @@ def test_sizing_measurements_per_fixture_class(tmp_path, capsys):
         if (run.verdict or {}).get("status") == "failed":
             status += f":{run.verdict.get('code')}"
         vm_peak = int((run.verdict or {}).get("vm_peak_bytes") or 0)
+        hwm = int((run.verdict or {}).get("vm_hwm_bytes") or 0)
         rows.append(
             f"SIZING {label:<24} in={len(content) / 1024:>8.1f}KiB "
             f"wall={run.usage.seconds:>6.2f}s cpu={run.usage.cpu_seconds:>6.2f}s "
-            f"peak_rss={run.usage.peak_rss_bytes / 1024**2:>7.1f}MiB "
+            f"rss_hwm={hwm / 1024**2:>7.1f}MiB "
             f"vm_peak={vm_peak / 1024**2:>7.1f}MiB {status}"
         )
         assert run.failure_code not in {
