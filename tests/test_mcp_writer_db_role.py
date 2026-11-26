@@ -86,10 +86,6 @@ def test_the_grants_are_exactly_the_allow_list():
 
 
 def test_the_allow_list_never_names_a_denied_table_and_says_why_for_each():
-    import inspect
-
-    source = inspect.getsource(db_role)
-    block = source.split("WRITE_ALLOWLIST: dict[str, tuple[str, ...]] = {", 1)[1].split("\n}", 1)[0]
     for table, privileges in db_role.WRITE_ALLOWLIST.items():
         assert not db_role.is_denied(table), table
         assert privileges and set(privileges) <= {"INSERT", "UPDATE", "DELETE"}, table
@@ -100,7 +96,6 @@ def test_the_allow_list_never_names_a_denied_table_and_says_why_for_each():
     assert "UPDATE" not in db_role.WRITE_ALLOWLIST["mcp_writes_mcpwriteproposal"]
     for table in db_role.FORMER_BUSINESS_WRITES:
         assert db_role.is_denied(table), table
-    assert block is not None
     assert db_role.GATEWAY_WRITES == {
         "mcp_writes_mcpwriteproposal": ("INSERT", "UPDATE"),
         "mcp_writes_mcpwriteevent": ("INSERT",),

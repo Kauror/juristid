@@ -442,6 +442,7 @@ def gateway_chain(settings: Any, monkeypatch: Any) -> dict[str, Any]:
 GATEWAY_BOOKKEEPING = {
     "mcp_writes_mcpwriteproposal",
     "mcp_writes_mcpwriteevent",
+    "mcp_writes_mcpwritecounter",
     "audit_securityauditevent",
 }
 
@@ -496,11 +497,7 @@ def test_an_injected_instruction_cannot_commit_without_the_persons_approval(gate
     # Only the gateway's own bookkeeping moved: a proposal and its events.
     after = _row_counts()
     moved = {table for table in after if after[table] != before.get(table)}
-    assert moved <= {
-        "mcp_writes_mcpwriteproposal",
-        "mcp_writes_mcpwriteevent",
-        "audit_securityauditevent",
-    }, moved
+    assert moved <= GATEWAY_BOOKKEEPING, moved
     secret_values = (chain["token"], chain["support"].GATEWAY_KEY)
     for secret in secret_values:
         assert secret not in caplog.text

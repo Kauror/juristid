@@ -383,7 +383,9 @@ def test_a_valid_correlation_id_follows_the_proposal_through_commit(chain, caplo
     assert str(events[McpWriteEventType.PREPARED].correlation_id) == first
     committed = events[McpWriteEventType.COMMITTED]
     assert str(committed.correlation_id) == first
-    assert committed.detail["call_correlation_id"] == second
+    delivered = events[McpWriteEventType.RECEIPT_DELIVERED]
+    assert str(delivered.correlation_id) == first
+    assert delivered.detail["call_correlation_id"] == second
     lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("mcp-writer ")]
     assert f"corr={first}" in lines[0] and f"corr={second}" in lines[1]
     assert "(replaced)" not in "\n".join(lines)

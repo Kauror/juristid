@@ -98,7 +98,9 @@ def test_a_normal_session_is_never_limited_and_is_counted_per_principal(world):
         "global",
     }
     assert not any(access.client_id in key for key in keys)  # never the client id itself
-    row = McpWriteCounter.objects.get(principal=f"user:{world['user'].pk}", period="10m")
+    row = McpWriteCounter.objects.get(
+        principal=f"user:{world['user'].pk}", bucket="prepare", period="10m"
+    )
     assert row.count == 5
 
 
@@ -294,7 +296,10 @@ def test_two_prepares_at_once_cannot_both_take_the_last_slot(world, settings):
     assert sorted(isinstance(answer, dict) for answer in answers) == [False, True]
     assert McpWriteProposal.objects.count() == 1
     assert (
-        McpWriteCounter.objects.get(principal=f"user:{world['user'].pk}", period="10m").count == 2
+        McpWriteCounter.objects.get(
+            principal=f"user:{world['user'].pk}", bucket="prepare", period="10m"
+        ).count
+        == 2
     )
 
 
