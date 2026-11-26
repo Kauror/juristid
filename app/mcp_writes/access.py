@@ -90,3 +90,41 @@ def confirm_write_code(
     return (
         outcome if isinstance(outcome, access_services.AuthorizationOutcome) else _NO_CONFIRMATION
     )
+
+
+def family_live(proposal: Any) -> bool:
+    """Whether the connection that prepared ``proposal`` is still one the person has.
+
+    The approval page asks it before approving (SEC-009): a proposal is bound
+    to its token family, and a family that was revoked (a reused refresh
+    token, a disconnect, ``revoke-write``, an epoch bump) or has no unexpired
+    token left, or that began before the grant's current write enablement,
+    approves nothing it prepared. Pure reads.
+    """
+    from django.utils import timezone
+
+    from app.mcp_access.models import McpToken
+
+    family = getattr(proposal, "token_family_id", None)
+    grant = getattr(proposal, "grant", None)
+    if family is None or grant is None or not writes_enabled():
+        return False
+    now = timezone.now()
+    tokens = McpToken.objects.filter(
+        family_id=family,
+        grant_id=proposal.grant_id,
+        user_id=proposal.user_id,
+        client_id=proposal.client_id,
+        revoked_at__isnull=True,
+        expires_at__gt=now,
+    ).select_related("user")
+    covers = getattr(access_services, "write_enablement_covers", None)
+    for token in tokens:
+        if write_scope() not in token.scope_set:
+            continue
+        if int(token.user_epoch) != int(getattr(token.user, "security_epoch", 0) or 0):
+            continue
+        if covers is not None and not covers(grant, token.family_started_at or token.issued_at):
+            continue
+        return True
+    return False

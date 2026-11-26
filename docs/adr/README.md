@@ -237,6 +237,7 @@ consequences and reversibility.
 | [0227](0227-full-document-parliamentary-analysis-is-built-controlled-and-left-off.md) | Full-document parliamentary analysis is built, controlled, and left off (one cached, validated, quote-verified pipeline; deterministic version comparison; official evidence first; work-victory candidates only) | Accepted — code only; full-document processing not authorised |
 | [0228](0228-protocols-stenograms-and-answers-are-evidence-never-verdicts.md) | Protocols, stenograms and answers to invitations are evidence, never verdicts («vajab kontrollimist», never «ei vastanud»; deferred extensions listed) | Accepted |
 | [0229](0229-the-nightly-jobs-run-in-one-coordinated-cycle-at-midnight-in-tallinn.md) | The nightly jobs run in one coordinated cycle at midnight in Tallinn (one cron line fires 21:00 and 22:00 UTC, the script runs the 00:00 Tallinn one; Lovable first, then the registers lane and the agenda side by side; outcomes from run records; one cycle lock a release must take; prepared, not deployed) | Accepted |
+| [0234](0234-mcp-changes-are-approved-and-saved-on-juristids-own-page-and-the-gateway-is-budgeted.md) | MCP changes are approved and saved on Juristid's own page; the gateway is budgeted and cannot write business data (the page derives the change from the stored arguments, binds the approval to a digest of what it showed and saves under the locks; the writer role inserts proposals and events only; proposal integrity triggers; format 2, format-1 proposals retired; per-principal and deployment budgets, repeated refusals aggregated; amends 0189) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -245,6 +246,9 @@ requires every gap in the numbering to be named here:
   It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
   the architecture only on 2026-10-13, with activation not approved. The record
   lands with that PR.
+- 0230–0233 — left for packages A–D of the security round of 2026-11-26, which
+  are developed in parallel with 0234 (package E); the integration owner renumbers
+  if they land under other numbers.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated

@@ -4,6 +4,7 @@ The procedure around it is docs/mcp/APPROVAL-RUNBOOK.md.
 
     manage.py mcp_writes list [--user <upn>] [--status PENDING|…] [--limit 50]
     manage.py mcp_writes show <proposal id>
+    manage.py mcp_writes budgets [--limit 50]
 
 Read-only. Prints ids, the operation and its label, statuses, times, failure
 codes, the target Matter's id and reference, and each event's type, outcome
@@ -11,6 +12,11 @@ and codes — **never** the arguments, the preview's text, a receipt's saved
 values, a token or a code. To see what a change actually saved, open the
 record in Juristid (its history names «ChatGPT kaudu, isiklikult kinnitatud»)
 or look up the business audit rows by the correlation id printed here.
+
+``budgets`` prints the gateway's limits (SEC-014, docs/adr/0234), how many
+proposals wait for approval, and the busiest counters of the last day — by
+principal key (a user's or grant's id, a client's hash prefix), bucket and
+window — including refusals counted beyond the events written for them.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from app.accounts.models import User
-from app.mcp_writes import operations
+from app.mcp_writes import budgets, operations
 from app.mcp_writes.models import (
     McpWriteApproval,
     McpWriteEvent,
@@ -75,10 +81,14 @@ class Command(BaseCommand):
         listing.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
         show = sub.add_parser("show", help="One proposal and its events.")
         show.add_argument("proposal_id")
+        budget = sub.add_parser("budgets", help="The gateway's limits and current counters.")
+        budget.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
 
     def handle(self, *args: Any, **options: Any) -> None:
         if options["action"] == "list":
             self._list(options)
+        elif options["action"] == "budgets":
+            self._budgets(max(1, min(int(options["limit"]), 1000)))
         else:
             self._show(options["proposal_id"])
 
@@ -148,3 +158,25 @@ class Command(BaseCommand):
                 f"user={event.user_id or '-'} {_safe_detail(event.detail)}".rstrip()
             )
         self.stdout.write("\n".join(lines))
+
+    def _budgets(self, rows: int) -> None:
+        snapshot = budgets.snapshot(rows=rows)
+        lines = ["Limits:"]
+        lines += [f"  {name} = {value}" for name, value in snapshot["limits"].items()]
+        lines.append(f"Proposals waiting for approval: {snapshot['outstanding']}")
+        lines.append("Counters (last day, busiest first):")
+        if not snapshot["counters"]:
+            lines.append("  none")
+        for row in snapshot["counters"]:
+            lines.append(
+                f"  {row['principal']:<44} {row['bucket']:<48} {row['period']:<3} "
+                f"{_when(row['period_start'])}  {row['count']}"
+            )
+        if snapshot["aggregated"]:
+            lines.append(
+                "Repeated refusals counted beyond the "
+                f"{budgets.events_per_window() + 1} events written per window:"
+            )
+            for row in snapshot["aggregated"]:
+                lines.append(f"  {row['principal']} {row['bucket']} {row['count']}")
+        self.stdout.write(chr(10).join(lines))

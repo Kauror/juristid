@@ -1255,6 +1255,24 @@ MCP_WRITE_APPROVAL_SECONDS = env_int("MCP_WRITE_APPROVAL_SECONDS", 10 * 60)
 MCP_WRITE_REVERIFY_SECONDS = env_int("MCP_WRITE_REVERIFY_SECONDS", 5 * 60)
 # The longest free text one operation takes (a note, a meeting summary).
 MCP_WRITE_MAX_TEXT_CHARS = env_int("MCP_WRITE_MAX_TEXT_CHARS", 8000)
+# The write gateway's cumulative budgets (SEC-014, docs/adr/0234 §4): per user,
+# grant, token family and client, and for the deployment ("GLOBAL"), in fixed
+# 10-minute and one-day windows. 0 switches one budget off. The approval page
+# (where a change is saved) is never budgeted here.
+MCP_WRITE_PREPARE_PER_10M = env_int("MCP_WRITE_PREPARE_PER_10M", 30)
+MCP_WRITE_PREPARE_PER_DAY = env_int("MCP_WRITE_PREPARE_PER_DAY", 300)
+MCP_WRITE_PREPARE_GLOBAL_PER_10M = env_int("MCP_WRITE_PREPARE_GLOBAL_PER_10M", 150)
+MCP_WRITE_PREPARE_GLOBAL_PER_DAY = env_int("MCP_WRITE_PREPARE_GLOBAL_PER_DAY", 1500)
+MCP_WRITE_COMMIT_PER_10M = env_int("MCP_WRITE_COMMIT_PER_10M", 60)
+MCP_WRITE_COMMIT_PER_DAY = env_int("MCP_WRITE_COMMIT_PER_DAY", 600)
+MCP_WRITE_COMMIT_GLOBAL_PER_10M = env_int("MCP_WRITE_COMMIT_GLOBAL_PER_10M", 300)
+MCP_WRITE_REFUSED_PER_10M = env_int("MCP_WRITE_REFUSED_PER_10M", 30)
+MCP_WRITE_MAX_OUTSTANDING = env_int("MCP_WRITE_MAX_OUTSTANDING", 25)
+MCP_WRITE_STORED_BYTES_PER_DAY = env_int("MCP_WRITE_STORED_BYTES_PER_DAY", 8 * 1024 * 1024)
+MCP_WRITE_STORED_BYTES_GLOBAL_PER_DAY = env_int(
+    "MCP_WRITE_STORED_BYTES_GLOBAL_PER_DAY", 64 * 1024 * 1024
+)
+MCP_WRITE_EVENTS_PER_WINDOW = env_int("MCP_WRITE_EVENTS_PER_WINDOW", 5)
 
 # -- the `mcp` process's transport (workstream B, docs/adr/0185 §6) ----------
 #

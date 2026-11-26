@@ -4,23 +4,35 @@
 gateway, after the gateway has verified the bearer token and asked
 `app.mcp_access` that its account may write (`access.writer_for`). It
 
-1. finds the operation in `REGISTRY` (an unknown name is refused without
+1. charges the call to the principal's budgets (`app.mcp_writes.budgets`,
+   SEC-014): user, grant, token family, client and the deployment — a
+   ``rate_limited`` refusal with ``retry_after_seconds`` when one is spent;
+2. finds the operation in `REGISTRY` (an unknown name is refused without
    being repeated);
-2. validates the arguments with the operation's own pydantic model — a size
+3. validates the arguments with the operation's own pydantic model — a size
    bound first; a refusal names the fields and what is wrong with them, never
    a value;
-3. calls the operation's ``prepare`` inside a savepoint that is always rolled
+4. calls the operation's ``prepare`` inside a savepoint that is always rolled
    back, so whatever an operation might write while previewing (it must write
    nothing) cannot escape, `on_commit` callbacks included;
-4. stores the proposal — PENDING for `MCP_WRITE_PROPOSAL_SECONDS` — with the
-   canonical arguments, their digest, the state, the preview and the tool
+5. under a per-user advisory lock, checks the outstanding-proposal and daily
+   storage budgets, then stores the proposal — format `CURRENT_FORMAT`,
+   PENDING for `MCP_WRITE_PROPOSAL_SECONDS` — with the validated arguments,
+   the canonical arguments, their digest, the state, the preview and the tool
    call's correlation id (`X-Correlation-Id`, validated by the gateway; a
    fresh one when it is missing, malformed or already a proposal's), and one
    `PREPARED` event, in one transaction;
-5. answers the gateway's response, with the approval page's absolute address.
+6. answers the gateway's response, with the approval page's absolute address.
 
-A refused preparation stores no proposal and writes one `PREPARE_REFUSED`
-event naming the code (and, for invalid arguments, the field names).
+What is stored here is *writer-controlled*: the approval page never shows the
+stored preview or executes the stored canonical arguments — it derives both
+again from ``arguments`` with trusted code (`app.mcp_writes.review`, SEC-009).
+The gateway's database role may insert a proposal and nothing more; a
+database trigger keeps what a proposal proposes unchangeable by anyone.
+
+A refused preparation stores no proposal and writes a `PREPARE_REFUSED` event
+naming the code (and, for invalid arguments, the field names) — the first few
+identical ones per window in full, the rest counted (`record_refusal`).
 """
 
 from __future__ import annotations
@@ -44,9 +56,15 @@ from django.utils import timezone
 from pydantic import ValidationError
 
 from app.core.errors import DomainError
-from app.mcp_writes import operations
+from app.mcp_writes import budgets, operations
 from app.mcp_writes.access import family_id
-from app.mcp_writes.models import McpWriteEvent, McpWriteEventType, McpWriteProposal
+from app.mcp_writes.models import (
+    CURRENT_FORMAT,
+    McpWriteEvent,
+    McpWriteEventType,
+    McpWriteProposal,
+    ProposalStatus,
+)
 from app.mcp_writes.operations.base import OperationRefused, Preview
 from app.mcp_writes.refusals import Refusal, canonical_json, jsonable, refusal
 
@@ -166,6 +184,58 @@ def record(
     )
 
 
+def record_refusal(
+    event_type: str,
+    *,
+    succeeded: bool = False,
+    counts_as_refused: bool = True,
+    proposal: McpWriteProposal | None = None,
+    user: Any = None,
+    grant_id: Any = None,
+    client_id: str = "",
+    operation: str = "",
+    **detail: Any,
+) -> McpWriteEvent | None:
+    """Append a gateway refusal (or replay) — in full only the first few times (SEC-014).
+
+    Identical refusals are those of one principal (the user, else the client)
+    with the same event type, code and reason in one 10-minute window. The
+    first `budgets.events_per_window()` are appended as before; the next is
+    appended once more with ``aggregated`` set; every later one only counts
+    in `McpWriteCounter`, so the trail stays bounded and the total stays
+    observable. ``counts_as_refused`` charges the principal's refused-call
+    budget (a replayed receipt does not)."""
+    who = user if user is not None else (proposal.user if proposal is not None else None)
+    if who is not None:
+        principal = f"user:{who.pk}"
+    elif client_id:
+        principal = budgets.client_key(client_id)
+    else:
+        principal = "anonymous"
+    occurrence, write = budgets.note_refusal(
+        principal=principal,
+        event_type=event_type,
+        detail=detail,
+        counts_as_refused=counts_as_refused,
+    )
+    if not write:
+        return None
+    if occurrence > 1:
+        detail["occurrence"] = occurrence
+    if occurrence > budgets.events_per_window():
+        detail["aggregated"] = True
+    return record(
+        event_type,
+        succeeded=succeeded,
+        proposal=proposal,
+        user=user,
+        grant_id=grant_id,
+        client_id=client_id,
+        operation=operation,
+        **detail,
+    )
+
+
 # -- the shapes the gateway answers ---------------------------------------------
 
 
@@ -229,9 +299,9 @@ def _too_large(raw_arguments: Any) -> bool:
 
 
 def _refused(answer: Refusal, *, user: Any, access: Any, operation: str, **detail: Any) -> Refusal:
-    record(
+    record_refusal(
         McpWriteEventType.PREPARE_REFUSED,
-        succeeded=False,
+        counts_as_refused=answer.code != "rate_limited",
         user=user,
         grant_id=access.grant_id,
         client_id=access.client_id,
@@ -302,6 +372,16 @@ def prepare(
             )
 
 
+def _stored_size(*values: Any) -> int:
+    return sum(len(canonical_json(value).encode("utf-8")) for value in values)
+
+
+def _outstanding(user: Any, now: Any) -> int:
+    return McpWriteProposal.objects.filter(
+        user=user, status=ProposalStatus.PENDING, expires_at__gt=now
+    ).count()
+
+
 def _prepare(
     *,
     access: Any,
@@ -311,6 +391,15 @@ def _prepare(
     correlation_id: uuid.UUID | None = None,
 ) -> dict[str, Any] | Refusal:
     op = operations.get(operation_name) if isinstance(operation_name, str) else None
+    limited = budgets.admit("prepare", access=access, user=user)
+    if limited is not None:
+        return _refused(
+            limited,
+            user=user,
+            access=access,
+            operation=op.name if op is not None else "",
+            reason=str(limited.extra.get("budget", "")),
+        )
     if op is None:
         return _refused(
             refusal("invalid_argument", "Unknown operation."),
@@ -364,7 +453,23 @@ def _prepare(
         canonical = jsonable(prepared.canonical)
         state = jsonable(prepared.state)
         preview = preview_json(prepared.preview)
+        stored_arguments = jsonable(raw_arguments)
         now = timezone.now()
+        budgets.lock_user(user.pk)
+        kept = budgets.storage_refusal(
+            user_id=user.pk,
+            outstanding=_outstanding(user, now),
+            stored_bytes=_stored_size(stored_arguments, canonical, state, preview),
+            now=now,
+        )
+        if kept is not None:
+            return _refused(
+                kept,
+                user=user,
+                access=access,
+                operation=name,
+                reason=str(kept.extra.get("budget", "")),
+            )
         if (
             correlation_id is None
             or McpWriteProposal.objects.filter(correlation_id=correlation_id).exists()
@@ -373,11 +478,13 @@ def _prepare(
             correlation_id = uuid.uuid4()
         proposal = McpWriteProposal.objects.create(
             id=uuid.uuid4(),
+            format_version=CURRENT_FORMAT,
             user=user,
             grant_id=access.grant_id,
             token_family_id=family_id(access),
             client_id=(access.client_id or "")[:500],
             operation=name,
+            arguments=stored_arguments,
             canonical_arguments=canonical,
             arguments_digest=arguments_digest(
                 operation=name,

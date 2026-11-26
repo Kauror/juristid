@@ -62,6 +62,31 @@
     </dl>
   </section>
 
+  {% if mcp_writes %}
+  <section class="panel" aria-labelledby="mcp-muudatused">
+    <h2 class="acctsection__title" id="mcp-muudatused">ChatGPT kaudu tehtavad muudatused</h2>
+    {% if mcp_writes.unreadable %}
+      <p><span class="statechip statechip--problem">Ei õnnestunud lugeda</span></p>
+    {% else %}
+    <dl class="detailgrid">
+      <dt>Kinnitamist ootavad</dt>
+      <dd>{{ mcp_writes.outstanding }} (ühel kasutajal kuni {{ mcp_writes.max_outstanding }})</dd>
+      <dt>Ettevalmistusi täna</dt>
+      <dd>{{ mcp_writes.prepared_today }} (ühel kasutajal kuni {{ mcp_writes.prepare_per_10m }} 10 minutiga ja {{ mcp_writes.prepare_per_day }} päevas)</dd>
+      <dt>Tulemuse päringuid täna</dt>
+      <dd>{{ mcp_writes.commits_today }}</dd>
+      <dt>Keeldutud päringuid ööpäevas</dt>
+      <dd>{{ mcp_writes.refused_last_day }}</dd>
+      <dt>Piirangu tõttu keeldutud</dt>
+      <dd>{% if mcp_writes.rate_limited_last_day %}<span class="statechip statechip--waiting">{{ mcp_writes.rate_limited_last_day }}</span>{% else %}0{% endif %}</dd>
+      <dt>Korduvaid keeldumisi ainult loendatud</dt>
+      <dd>{{ mcp_writes.suppressed_last_day }}</dd>
+    </dl>
+    {% endif %}
+    <p class="acctnote">Täielik vastus: <span class="mono">manage.py mcp_writes budgets</span> serveris.</p>
+  </section>
+  {% endif %}
+
   <section class="panel" aria-labelledby="susteemi-jarjepidevus">
     <h2 class="acctsection__title" id="susteemi-jarjepidevus">Halduse järjepidevus</h2>
     <p>

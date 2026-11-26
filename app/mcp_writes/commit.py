@@ -1,42 +1,33 @@
-"""Commit: execute one approved proposal, once, through the canonical services (CONTRACT §5).
+"""Commit: report what became of one proposal to the client that prepared it (ADR 0234).
 
 `commit` is what `POST /v1/commit` runs, in a worker thread of the write
 gateway, after the gateway has verified the bearer token and asked
-`app.mcp_access` that its account may write. In **one transaction**:
+`app.mcp_access` that its account may write.
 
-1. the proposal row is locked (``SELECT … FOR UPDATE``) — two commits of one
-   proposal take turns, and the second sees what the first did;
+**Since format 2 (SEC-009) the gateway executes nothing.** A change is saved
+by Juristid's approval page (`app.mcp_writes.approval_views`), in the same
+transaction as the person's approval, from the change the page itself derived
+and showed (`app.mcp_writes.review`). The gateway's database role holds no
+write privilege on any business table and cannot update a proposal at all
+(`app.mcp_writes.db_role`), so nothing a compromised gateway does can turn an
+unapproved proposal into a saved change. What `commit_prepared_action` keeps
+is its interface and its answers:
+
+1. the principal's commit budget is charged (`app.mcp_writes.budgets`); a
+   call that finds the caller's own saved proposal is counted but never
+   refused — the receipt of a saved change is always available;
 2. **identity**: the token's user, grant, client and token family must be the
    proposal's. Anything else is answered exactly like a proposal that does not
    exist (``not_found``): nobody learns about somebody else's proposal;
-3. an EXECUTED proposal answers its stored receipt again (``replayed``,
-   `COMMIT_REPLAYED`) — the commit is idempotent and the change ran once;
+3. an EXECUTED proposal answers its stored receipt: the first time with
+   ``replayed`` false (`RECEIPT_DELIVERED`), afterwards with ``replayed`` true
+   (`COMMIT_REPLAYED`, aggregated) — the change ran once, at approval;
 4. a DECLINED / FAILED / STALE / EXPIRED one is refused with its code; a
-   PENDING one past its expiry becomes EXPIRED; a PENDING one inside it
-   answers ``awaiting_approval`` with the approval link;
-5. the **approval**: present, its user, grant and digest the proposal's, the
-   digest recomputed from the stored canonical arguments equal to both, and
-   the approval itself unexpired (`MCP_WRITE_APPROVAL_SECONDS`);
-6. the account is asked again (`writer_for`) inside the transaction, so a
-   revoke-write, a revoked grant or a switched-off account between the
-   approval and the commit is honoured;
-7. `op.lock`, then `op.state` under the lock, compared with the stored state —
-   a difference is STALE;
-8. a savepoint around `op.execute(once_token=proposal.id)`, under the MCP audit
-   provenance (`app.audit.provenance.mcp_write_context`), so every business
-   audit row it writes names the approved principal and the proposal's
-   correlation id;
-9. EXECUTED with the receipt and a `COMMITTED` event.
+   format-1 one (an older release's) is ``expired``; a PENDING one past its
+   expiry is ``expired``; a PENDING one inside it answers
+   ``awaiting_approval`` with the approval link.
 
-**Refusals are returned from inside the transaction, never raised through
-it**, so the status a proposal moves to (FAILED, STALE, EXPIRED) and the event
-that says why survive even though the business savepoint rolled back.
-Nothing partial survives: a domain refusal or any exception inside `execute`
-rolls back the savepoint, and only the proposal's own status and the event
-remain. A domain refusal is final (FAILED). An unexpected error is not the
-person's decision and not the proposal's fault: the proposal stays APPROVED
-and may be committed again inside the approval's window; the event records
-``internal_error``.
+Nothing here writes a proposal: statuses are moved only by the approval page.
 """
 
 from __future__ import annotations
@@ -45,21 +36,20 @@ import logging
 import uuid
 from typing import Any
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
-from app.audit.provenance import mcp_write_context
-from app.core.errors import DomainError
-from app.mcp_writes import operations
-from app.mcp_writes.access import family_id, writer_for, writes_enabled
+from app.mcp_writes import budgets
+from app.mcp_writes.access import family_id, writes_enabled
 from app.mcp_writes.models import (
-    McpWriteApproval,
+    CURRENT_FORMAT,
+    McpWriteEvent,
     McpWriteEventType,
     McpWriteProposal,
     ProposalStatus,
 )
-from app.mcp_writes.operations.base import Executed, OperationRefused
-from app.mcp_writes.proposals import approval_url, digest_of, record
+from app.mcp_writes.operations.base import Executed
+from app.mcp_writes.proposals import approval_url, record, record_refusal
 from app.mcp_writes.refusals import Refusal, jsonable, refusal
 
 logger = logging.getLogger("app.mcp_writes")
@@ -95,6 +85,7 @@ def same_principal(proposal: McpWriteProposal, access: Any, user: Any) -> bool:
 
 
 def receipt(executed: Executed) -> dict[str, Any]:
+    """The receipt the approval page stores with an executed proposal."""
     from app.mcp_access import config
 
     url = executed.url or ""
@@ -123,30 +114,12 @@ def executed_answer(proposal: McpWriteProposal, *, replayed: bool) -> dict[str, 
     }
 
 
-def _finish(
-    proposal: McpWriteProposal,
-    status: str,
-    code: str,
-    *,
-    event: str,
-    message: str = "",
-    **detail: Any,
-) -> Refusal:
-    """Move the proposal to a final status, record why, and answer the refusal."""
-    proposal.status = status
-    proposal.failure_code = code[:32]
-    proposal.save(update_fields=["status", "failure_code", "updated_at"])
-    record(event, succeeded=False, proposal=proposal, code=code, **detail)
-    return refusal(code, message)
-
-
 def _refuse(
     proposal: McpWriteProposal | None, code: str, *, user: Any, access: Any, **detail: Any
 ) -> Refusal:
-    """Refuse without changing the proposal; record it."""
-    record(
+    """Refuse; record it (aggregated). The proposal is never changed here."""
+    record_refusal(
         McpWriteEventType.COMMIT_REFUSED,
-        succeeded=False,
         proposal=proposal,
         user=user if proposal is None else None,
         grant_id=access.grant_id if proposal is None else None,
@@ -157,33 +130,66 @@ def _refuse(
     return refusal(code)
 
 
-def _approval_holds(proposal: McpWriteProposal, approval: McpWriteApproval) -> bool:
-    recomputed = digest_of(proposal)
-    return (
-        approval.user_id == proposal.user_id
-        and approval.grant_id == proposal.grant_id
-        and approval.arguments_digest == proposal.arguments_digest
-        and recomputed == proposal.arguments_digest
-    )
+def _deliver(proposal: McpWriteProposal) -> dict[str, Any]:
+    """The receipt of a saved change: first delivery, or a replay."""
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            # Two first fetches at once take turns: exactly one is «not replayed».
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                [f"mcp_writes.receipt:{proposal.pk}"],
+            )
+        delivered = McpWriteEvent.objects.filter(
+            proposal=proposal, event_type=McpWriteEventType.RECEIPT_DELIVERED
+        ).exists()
+        if delivered:
+            record_refusal(
+                McpWriteEventType.COMMIT_REPLAYED,
+                succeeded=True,
+                counts_as_refused=False,
+                proposal=proposal,
+            )
+        else:
+            record(McpWriteEventType.RECEIPT_DELIVERED, proposal=proposal)
+    return executed_answer(proposal, replayed=delivered)
 
 
 def commit(*, access: Any, user: Any, proposal_id: Any) -> dict[str, Any] | Refusal:
-    """Execute an approved proposal once; see the module docstring for every step."""
+    """Report a proposal's outcome to its own client; see the module docstring for every step."""
     pid = _parse_id(proposal_id)
     if pid is None:
         return refusal("not_found")
     if not writes_enabled():
         return refusal("writes_disabled")
+    proposal = McpWriteProposal.objects.filter(pk=pid).first()
+    own = proposal is not None and same_principal(proposal, access, user)
+
+    if own and proposal is not None and proposal.status == ProposalStatus.EXECUTED:
+        # Never refused: the change is saved and its receipt is the client's.
+        budgets.count_only("commit", access=access, user=user)
+        return _deliver(proposal)
+
+    limited = budgets.admit("commit", access=access, user=user)
+    if limited is not None:
+        record_refusal(
+            McpWriteEventType.COMMIT_REFUSED,
+            counts_as_refused=False,
+            user=user,
+            grant_id=access.grant_id,
+            client_id=access.client_id,
+            code="rate_limited",
+            reason=str(limited.extra.get("budget", "")),
+        )
+        return limited
+
     with transaction.atomic():
-        proposal = McpWriteProposal.objects.select_for_update().filter(pk=pid).first()
         if proposal is None:
             return _refuse(None, "not_found", user=user, access=access, reason="no_such_proposal")
-        if not same_principal(proposal, access, user):
+        if not own:
             # Recorded against the proposal for the operator; the caller is
             # told exactly what a missing proposal tells it.
-            record(
+            record_refusal(
                 McpWriteEventType.COMMIT_REFUSED,
-                succeeded=False,
                 proposal=proposal,
                 user=user,
                 grant_id=access.grant_id,
@@ -192,151 +198,32 @@ def commit(*, access: Any, user: Any, proposal_id: Any) -> dict[str, Any] | Refu
                 reason="principal_mismatch",
             )
             return refusal("not_found")
-
-        if proposal.status == ProposalStatus.EXECUTED:
-            record(McpWriteEventType.COMMIT_REPLAYED, proposal=proposal)
-            return executed_answer(proposal, replayed=True)
         if proposal.status in _FINAL_CODES:
             return _refuse(
                 proposal, _FINAL_CODES[ProposalStatus(proposal.status)], user=user, access=access
             )
-
-        now = timezone.now()
-        approval = McpWriteApproval.objects.filter(proposal=proposal).first()
-        if approval is None:
-            if proposal.status == ProposalStatus.PENDING and proposal.is_expired_at(now):
-                return _finish(
-                    proposal,
-                    ProposalStatus.EXPIRED,
-                    "expired",
-                    event=McpWriteEventType.EXPIRED,
-                    reason="not_approved_in_time",
-                )
-            if proposal.status == ProposalStatus.PENDING:
-                record(
-                    McpWriteEventType.COMMIT_REFUSED,
-                    succeeded=False,
-                    proposal=proposal,
-                    code="awaiting_approval",
-                )
-                return {
-                    "status": "awaiting_approval",
-                    "proposal_id": str(proposal.pk),
-                    "approval_url": approval_url(proposal.pk),
-                    "expires_at": proposal.expires_at.isoformat(),
-                }
-            # APPROVED with no approval row: the row was tampered with.
-            return _finish(
-                proposal,
-                ProposalStatus.FAILED,
-                "approval_mismatch",
-                event=McpWriteEventType.COMMIT_REFUSED,
-                reason="no_approval_row",
-            )
-        if not _approval_holds(proposal, approval):
-            return _finish(
-                proposal,
-                ProposalStatus.FAILED,
-                "approval_mismatch",
-                event=McpWriteEventType.COMMIT_REFUSED,
-                reason="digest_or_principal",
-            )
-        if approval.is_expired_at(now):
-            return _finish(
-                proposal,
-                ProposalStatus.EXPIRED,
-                "expired",
-                event=McpWriteEventType.EXPIRED,
-                reason="approval_expired",
-            )
-
-        # The account is asked again here, inside the transaction: a
-        # revoke-write, a revoked grant, a lost business role or a
-        # switched-off account since the approval ends it now.
-        writer = writer_for(access)
-        if writer is None or writer.pk != proposal.user_id:
+        if proposal.format_version != CURRENT_FORMAT:
+            # Prepared under an older release's rules: never approved under these.
+            return _refuse(proposal, "expired", user=user, access=access, reason="format")
+        if proposal.status == ProposalStatus.APPROVED:
+            # Format 2 approves and saves in one transaction: an APPROVED one
+            # was not approved by this release's page.
             return _refuse(
-                proposal, "forbidden", user=user, access=access, reason="no_longer_writer"
+                proposal, "approval_mismatch", user=user, access=access, reason="approved_unsaved"
             )
-
-        op = operations.get(proposal.operation)
-        if op is None:
-            return _finish(
-                proposal,
-                ProposalStatus.FAILED,
-                "domain_rule",
-                event=McpWriteEventType.FAILED,
-                reason="unknown_operation",
+        if proposal.is_expired_at(timezone.now()):
+            return _refuse(
+                proposal, "expired", user=user, access=access, reason="not_approved_in_time"
             )
-        canonical = proposal.canonical_arguments
-        try:
-            op.lock(canonical=canonical)
-            current = jsonable(op.state(user=writer, canonical=canonical))
-        except (OperationRefused, DomainError) as error:
-            code = getattr(error, "code", "domain_rule")
-            return _finish(
-                proposal,
-                ProposalStatus.STALE,
-                "stale",
-                event=McpWriteEventType.COMMIT_REFUSED,
-                reason=f"state_{code}",
-            )
-        if current != proposal.state:
-            return _finish(
-                proposal,
-                ProposalStatus.STALE,
-                "stale",
-                event=McpWriteEventType.COMMIT_REFUSED,
-                reason="state_changed",
-            )
-
-        try:
-            with transaction.atomic(), mcp_write_context(writer, proposal.correlation_id):
-                executed = op.execute(user=writer, canonical=canonical, once_token=proposal.pk)
-                stored = receipt(executed)
-        except OperationRefused as error:
-            return _finish(
-                proposal,
-                ProposalStatus.FAILED,
-                error.code,
-                event=McpWriteEventType.FAILED,
-                message=error.message,
-            )
-        except DomainError:
-            return _finish(
-                proposal, ProposalStatus.FAILED, "domain_rule", event=McpWriteEventType.FAILED
-            )
-        except Exception as error:
-            # Not a refusal: nothing was saved (the savepoint is gone) and the
-            # approval still stands, so the client may try again inside its
-            # window. The class only — a message could quote data.
-            logger.error(
-                "MCP write %s (%s) failed in execute: %s",
-                proposal.pk,
-                proposal.operation,
-                type(error).__name__,
-            )
-            record(
-                McpWriteEventType.FAILED,
-                succeeded=False,
-                proposal=proposal,
-                code="internal_error",
-                retryable=True,
-                error=type(error).__name__,
-            )
-            return refusal("internal_error")
-
-        proposal.status = ProposalStatus.EXECUTED
-        proposal.executed_at = timezone.now()
-        proposal.result = stored
-        proposal.failure_code = ""
-        proposal.save(
-            update_fields=["status", "executed_at", "result", "failure_code", "updated_at"]
-        )
-        record(
-            McpWriteEventType.COMMITTED,
+        record_refusal(
+            McpWriteEventType.COMMIT_REFUSED,
+            counts_as_refused=False,
             proposal=proposal,
-            record_type=stored.get("record_type", ""),
-            record_id=stored.get("record_id", ""),
+            code="awaiting_approval",
         )
-    return executed_answer(proposal, replayed=False)
+        return {
+            "status": "awaiting_approval",
+            "proposal_id": str(proposal.pk),
+            "approval_url": approval_url(proposal.pk),
+            "expires_at": proposal.expires_at.isoformat(),
+        }

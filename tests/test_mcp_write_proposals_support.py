@@ -222,8 +222,18 @@ def install_access(monkeypatch: Any) -> AccessStandIns:
 
 
 def active_grant(user: Any) -> McpAccessGrant:
+    """An ACTIVE grant whose write decision predates every token made for it afterwards.
+
+    ``write_enabled_at`` is what the approval page's live-connection check
+    (`access.family_live`, SEC-009) compares a token family's start with, as
+    `writer_for` does."""
+    now = timezone.now()
     return McpAccessGrant.objects.create(
-        user=user, status=GrantStatus.ACTIVE, activated_at=timezone.now(), created_via="test"
+        user=user,
+        status=GrantStatus.ACTIVE,
+        activated_at=now,
+        created_via="test",
+        write_enabled_at=now - timedelta(seconds=1),
     )
 
 

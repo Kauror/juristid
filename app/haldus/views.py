@@ -276,8 +276,19 @@ def susteem(request: HttpRequest) -> HttpResponse:
             readiness=_readiness(),
             errors=_processing_errors(),
             continuity=administration.continuity_status(),
+            mcp_writes=_mcp_write_budgets(),
         ),
     )
+
+
+def _mcp_write_budgets() -> dict[str, Any] | None:
+    """The MCP write gateway's budgets, counts only (SEC-014); None when writes are off."""
+    from app.mcp_writes import budgets
+
+    try:
+        return budgets.summary()
+    except DatabaseError:
+        return {"unreadable": True}
 
 
 #: Haldus → Lovable lists at most this many of the run's changes by name.
