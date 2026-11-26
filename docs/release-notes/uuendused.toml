@@ -12,7 +12,7 @@
 [[day]]
 date = 2026-11-26
 basis = "deployment"
-prs = []
+prs = [730]
 changes = [
   "Valitsuse päevakorra öine lugemine ei loe enam veaks päevakorda, mis on valitsus.ee-s juba olemas, kuid veel avaldamata: öö lõpeb siis tavapäraselt ja päevakord loetakse järgmisel ööl, kui see on avaldatud. Kui valitsus.ee keelab ligipääsu ka juba avaldatud päevakorrale või kui reede öösel pole nädala päevakorda ikka leitud, märgitakse see endiselt probleemiks.",
   "Halduse «Registrite jälgimine» all on uus plokk «Valitsuse päevakord»: iga öö kohta on näha, kas päevakord loeti, oli veel avaldamata või ei õnnestunud seda lugeda, koos istungi kuupäeva ja valitsus.ee vastusega.",
