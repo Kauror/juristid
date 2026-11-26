@@ -37,8 +37,8 @@ from app.mcp_writes.models import (
 )
 from tests import factories
 from tests import test_mcp_write_proposals_support as support
-from tests.test_mcp_write_approval import binding_on
 from tests.gate import PASSWORD, apply_shared_gate
+from tests.test_mcp_write_approval import binding_on
 
 pytestmark = pytest.mark.django_db
 
