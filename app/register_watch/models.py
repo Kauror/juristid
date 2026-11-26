@@ -409,6 +409,57 @@ class GovernmentAgenda(BaseModel):
         return self.title
 
 
+class AgendaCheckState(models.TextChoices):
+    """What a night found for a week's agenda (`agenda.run`, r95)."""
+
+    STORED = "STORED", "Päevakord loetud"
+    ALREADY_STORED = "ALREADY_STORED", "Nädala päevakord juba olemas"
+    NOT_FOUND = "NOT_FOUND", "Päevakorra lehte veel ei ole"
+    NOT_PUBLISHED = "NOT_PUBLISHED", "Päevakord on olemas, kuid veel avaldamata"
+    INACCESSIBLE = "INACCESSIBLE", "Oodatud aadress ajutiselt kättesaamatu"
+    UNCONFIRMED = "UNCONFIRMED", "Avaldamine kinnitamata"
+    ACCESS_REFUSED = "ACCESS_REFUSED", "Juurdepääs keelatud"
+    SOURCE_ERROR = "SOURCE_ERROR", "Lugemise viga"
+    PARSE_ERROR = "PARSE_ERROR", "Lehte ei saanud lugeda"
+
+
+class GovernmentAgendaCheck(BaseModel):
+    """One night's look for one week's agenda: the run ledger the step had none of.
+
+    Haldus → Registrite jälgimine shows the latest ones, so an agenda not yet
+    published (403 before publication) reads differently from a failure. Written by
+    every run, whatever it found; nothing else reads it, and it never stands in for
+    a stored agenda (`agenda_of_week` reads `GovernmentAgenda` only).
+    """
+
+    week = models.DateField(verbose_name="nädala esmaspäev")
+    state = models.CharField(max_length=20, choices=AgendaCheckState.choices, verbose_name="seis")
+    session_date = models.DateField(null=True, blank=True, verbose_name="istungi päev")
+    http_status = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="HTTP olek")
+    url = models.URLField(max_length=500, blank=True, default="", verbose_name="aadress")
+    detail = models.CharField(max_length=300, blank=True, default="", verbose_name="selgitus")
+    #: The week's last nightly attempt passed with no agenda stored.
+    missing = models.BooleanField(default=False, verbose_name="nädala päevakord puudub")
+    ai_calls = models.PositiveSmallIntegerField(default=0, verbose_name="mudeli päringuid")
+    ai_failures = models.PositiveSmallIntegerField(default=0, verbose_name="mudeli vigu")
+    agenda = models.ForeignKey(
+        GovernmentAgenda,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="checks",
+        verbose_name="päevakord",
+    )
+
+    class Meta:
+        verbose_name = "päevakorra kontroll"
+        verbose_name_plural = "päevakorra kontrollid"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.week} {self.state}"
+
+
 class AgendaItemStatus(models.TextChoices):
     PENDING = "PENDING", "Ootab"
     ADDED = "ADDED", "Lisatud teemale"

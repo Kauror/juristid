@@ -11,6 +11,16 @@ can fall on; `parse` reads the page.
 Each item is one paragraph that opens with ``<strong>N. Title</strong>``, then
 ``Esitaja: …`` and ``Tüüp: …``, followed by the Government's explanation in the next
 paragraphs, until the next numbered title. robots.txt allows ``/uudised/``.
+
+**Before publication** (r95, 26.11.2026). The page for the coming session can exist
+before it is public: valitsus.ee then answers **403** at its address, while an
+address with no page answers 404 and a published agenda 200 (seen on 25–26.11.2026
+for 26.11.26). A 403 alone does not say which it is — a site refusing us everything
+answers 403 too — so `look` asks one control page, the newest agenda already
+stored: when the site serves that, the 403 is this page's alone, and for a session
+still to come it is «not yet published». When the control is refused too, it is
+access refused; when the control cannot be read at all, publication is unconfirmed.
+Neither of those is ever reported as a successful check.
 """
 
 from __future__ import annotations
@@ -18,6 +28,7 @@ from __future__ import annotations
 import datetime as dt
 import html
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from app.register_watch.sources.http import FetchError, get_text
@@ -146,17 +157,116 @@ def parse(url: str, page: str) -> Agenda:
     )
 
 
-def fetch(day: dt.date) -> Agenda | None:
-    """The agenda of a session on ``day``, or ``None`` when no such page exists (yet)."""
+#: What one session day's lookup found (`look`).
+FOUND = "FOUND"
+#: Every address answered 404: no page for that day (yet).
+NOT_FOUND = "NOT_FOUND"
+#: The expected address answered 403, the control agenda 200, the session is still to
+#: come: the page exists and is not published yet.
+NOT_PUBLISHED = "NOT_PUBLISHED"
+#: As NOT_PUBLISHED, but for a session day already past: the expected page exists and
+#: is not readable — temporarily inaccessible, worth a look.
+INACCESSIBLE = "INACCESSIBLE"
+#: The expected address answered 403 and the control could not be read: no evidence
+#: either way.
+UNCONFIRMED = "UNCONFIRMED"
+#: The control agenda was refused (403) as well: the site refuses this reader.
+ACCESS_REFUSED = "ACCESS_REFUSED"
+#: 429, 5xx, a timeout, a refused connection, reading switched off.
+SOURCE_ERROR = "SOURCE_ERROR"
+#: A page came back that is not this session's commented agenda.
+PARSE_ERROR = "PARSE_ERROR"
+
+
+@dataclass
+class Lookup:
+    """One session day: what was found, with the evidence (status, address)."""
+
+    day: dt.date
+    state: str
+    agenda: Agenda | None = None
+    status: int | None = None
+    url: str = ""
+    detail: str = ""
+
+
+def site_answers(path: str) -> bool | None:
+    """The control: True when valitsus.ee serves ``path``, False when it refuses it
+    (403), None when it cannot be told (any other failure)."""
+    try:
+        get_text(HOST, path)
+    except FetchError as error:
+        return False if error.status == 403 else None
+    return True
+
+
+def look(
+    day: dt.date,
+    *,
+    today: dt.date,
+    control: Callable[[], bool | None] | None = None,
+) -> Lookup:
+    """The agenda of a session on ``day``, or why there is none (module docstring).
+
+    ``control`` answers `site_answers` for a page known to be published (the caller
+    memoises it: one control read per run). Both address shapes are tried: a 403 on
+    the first is not the end, the second may be the published one.
+    """
+    refused = ""
     for path in candidate_paths(day):
+        url = f"https://{HOST}{path}"
         try:
             page = get_text(HOST, path)
         except FetchError as error:
-            if "vastas 404" in str(error):
+            if error.status == 404:
                 continue
-            raise
-        agenda = parse(f"https://{HOST}{path}", page)
+            if error.status == 403:
+                refused = refused or url
+                continue
+            return Lookup(day, SOURCE_ERROR, status=error.status, url=url, detail=str(error))
+        try:
+            agenda = parse(url, page)
+        except FetchError as error:
+            return Lookup(day, PARSE_ERROR, url=url, detail=str(error))
         if agenda.session_date != day:
-            raise FetchError(f"{HOST}{path} on teise istungi päevakord ({agenda.session_date})")
-        return agenda
-    return None
+            return Lookup(
+                day,
+                PARSE_ERROR,
+                url=url,
+                detail=f"{HOST}{path} on teise istungi päevakord ({agenda.session_date})",
+            )
+        return Lookup(day, FOUND, agenda=agenda, url=url)
+    if not refused:
+        return Lookup(day, NOT_FOUND)
+    served = control() if control is not None else None
+    if served is False:
+        return Lookup(
+            day,
+            ACCESS_REFUSED,
+            status=403,
+            url=refused,
+            detail=f"{HOST} vastas 403 ka avaldatud päevakorrale: juurdepääs keelatud",
+        )
+    if served is None:
+        return Lookup(
+            day,
+            UNCONFIRMED,
+            status=403,
+            url=refused,
+            detail=f"{HOST} vastas 403; avaldamine kinnitamata (kontrolllehte ei saanud lugeda)",
+        )
+    if day >= today:
+        return Lookup(
+            day,
+            NOT_PUBLISHED,
+            status=403,
+            url=refused,
+            detail=f"{HOST} vastas 403: päevakord on olemas, kuid veel avaldamata",
+        )
+    return Lookup(
+        day,
+        INACCESSIBLE,
+        status=403,
+        url=refused,
+        detail=f"{HOST} vastas 403 möödunud istungi päevakorrale: ajutiselt kättesaamatu",
+    )

@@ -367,7 +367,11 @@ check_healthz() {
 }
 
 check_database() {
-  if docker exec "$(container_name db)" pg_isready -q >/dev/null 2>&1; then
+  # As the db container's own healthcheck: name the role and the database. Without
+  # them pg_isready connects as the caller (root), which PostgreSQL logs as
+  # «FATAL: role "root" does not exist» every 15 minutes while still answering
+  # "accepting connections" (first-night verification 26.11.2026, N3).
+  if docker exec "$(container_name db)" pg_isready -q -U juristid -d juristid >/dev/null 2>&1; then
     report db ok "pg_isready"
   else
     report db CRIT "pg_isready failed in $(container_name db)."

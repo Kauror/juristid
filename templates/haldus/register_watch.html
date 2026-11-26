@@ -59,6 +59,34 @@
     </div>
   </section>
 
+  <section class="panel" aria-labelledby="regwatchlog-agenda">
+    <h2 class="acctsection__title" id="regwatchlog-agenda">Valitsuse päevakord</h2>
+    {% comment %}r95: one row per night and week (GovernmentAgendaCheck). A page that exists but is not yet published answers 403; it is «veel avaldamata», not an error, once a published agenda is readable at the same time. Friday's cycle is the week's last reading.{% endcomment %}
+    <p class="regwatch__meta">Loetakse öise tsükli osana alates kella 01:00. Enne avaldamist vastab valitsus.ee päevakorra aadressile 403; kui samal ajal saab lugeda avaldatud päevakorda, on see «veel avaldamata», mitte viga. Nädala viimane katse on reede öösel.</p>
+    {% if agenda_checks %}
+      <div class="accttable">
+        <table class="data-table">
+          <thead>
+            <tr><th scope="col">Kontrollitud</th><th scope="col">Nädal</th><th scope="col">Seis</th><th scope="col">Istung</th><th scope="col">HTTP</th></tr>
+          </thead>
+          <tbody>
+            {% for row in agenda_checks %}
+              <tr>
+                <td class="regwatchlog__nowrap">{{ row.check.created_at|date:"j.n.Y H:i" }}</td>
+                <td class="regwatchlog__nowrap">{{ row.check.week|date:"j.n" }}</td>
+                <td>{% if row.problem %}<span class="statechip statechip--problem">{{ row.check.get_state_display }}{% if row.check.missing %} · nädala päevakord puudub{% endif %}</span>{% elif row.check.state == "STORED" or row.check.state == "ALREADY_STORED" %}<span class="statechip statechip--ok">{{ row.check.get_state_display }}</span>{% else %}<span class="statechip">{{ row.check.get_state_display }}</span>{% endif %}{% if row.check.detail %}<br><span class="regwatch__meta">{{ row.check.detail }}</span>{% endif %}</td>
+                <td class="regwatchlog__nowrap">{{ row.check.session_date|date:"j.n.Y"|default:"—" }}</td>
+                <td>{{ row.check.http_status|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p>Päevakorda pole veel kontrollitud.</p>
+    {% endif %}
+  </section>
+
   <section class="panel" aria-labelledby="regwatchlog-runs">
     <h2 class="acctsection__title" id="regwatchlog-runs">Käivitused</h2>
     {% if runs %}

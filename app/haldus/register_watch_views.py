@@ -90,11 +90,31 @@ def runs(request: HttpRequest) -> HttpResponse:
             # failed or unrun stage shown as a clean one.
             riigikogu=_riigikogu_stages(),
             riigikogu_timing=_riigikogu_timing(),
+            # «Valitsuse päevakord» (r95): each night's verdict for its week, so a
+            # page not yet published reads differently from a failure.
+            agenda_checks=_agenda_checks(),
             waiting=WatchFinding.objects.filter(
                 status=FindingStatus.PENDING, matter__in=_visible(request)
             ).count(),
         ),
     )
+
+
+#: The newest agenda checks shown (about a week of nights, a backfill included).
+AGENDA_CHECKS_SHOWN = 8
+#: The states the page marks as a problem; the waiting ones are plain.
+AGENDA_PROBLEMS = frozenset(
+    {"INACCESSIBLE", "UNCONFIRMED", "ACCESS_REFUSED", "SOURCE_ERROR", "PARSE_ERROR"}
+)
+
+
+def _agenda_checks() -> list[dict[str, Any]]:
+    from app.register_watch.models import GovernmentAgendaCheck
+
+    return [
+        {"check": check, "problem": check.state in AGENDA_PROBLEMS or check.missing}
+        for check in GovernmentAgendaCheck.objects.order_by("-created_at")[:AGENDA_CHECKS_SHOWN]
+    ]
 
 
 def _riigikogu_timing() -> dict[str, int]:

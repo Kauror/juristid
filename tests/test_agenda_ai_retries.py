@@ -302,7 +302,15 @@ def test_a_new_agenda_left_partly_unjudged_is_still_told_to_the_head(monkeypatch
             for n in (1, 2)
         ],
     )
-    monkeypatch.setattr(valitsus, "fetch", lambda day: found if day == SESSION else None)
+    monkeypatch.setattr(
+        valitsus,
+        "look",
+        lambda day, **_: (
+            valitsus.Lookup(day, valitsus.FOUND, agenda=found)
+            if day == SESSION
+            else valitsus.Lookup(day, valitsus.NOT_FOUND)
+        ),
+    )
 
     _run(Client_({1: "NONE"}))
 

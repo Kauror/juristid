@@ -54,7 +54,7 @@ def site(monkeypatch):
         asked.append(path)
         if path == valitsus.candidate_paths(SESSION)[0]:
             return PAGE
-        raise FetchError(f"{host} vastas 404")
+        raise FetchError(f"{host} vastas 404", status=404)
 
     monkeypatch.setattr(valitsus, "get_text", fake)
     return SimpleNamespace(asked=asked)
@@ -224,6 +224,12 @@ def test_the_command_ends_with_a_machine_line_when_asked(monkeypatch):
         "errors": 1,
         "judged": 0,
         "stored": 0,
+        # r95: why a week has no agenda, and the evidence (none here).
+        "inaccessible": 0,
+        "missing": 0,
+        "not_published": 0,
+        "note": "",
+        "unconfirmed": 0,
     }
 
 
