@@ -214,7 +214,9 @@ class AuthenticationModeMiddleware:
             # An administrator's one-time link, followed from outside before
             # the gate: keep its proof (never the secret), and come back to
             # the bare page after the password (docs/adr/0186).
-            return redirect(f"{gate_url}?{urlencode({'next': link_page})}")
+            arriving = redirect(f"{gate_url}?{urlencode({'next': link_page})}")
+            arriving["Referrer-Policy"] = "no-referrer"
+            return arriving
         back = shared_gate.gate_return_target(request)
         if back:
             # An MCP consent or enrolment page reached from outside: come back
@@ -319,11 +321,20 @@ class AuthenticationModeMiddleware:
 
         current = getattr(request, "user", None)
         if current is not None and current.is_authenticated:
-            if (current.upn or "").lower() == email:
+            held = cloudflare_access.session_holds(
+                request.session, current, email=email, claims=claims
+            )
+            if held:
                 return self.get_response(request)
-            # A session that belongs to somebody else. This happens when two
-            # people share a browser profile, and it must not be resolved in
-            # favour of the older session.
+            # Not a session this mode established for this assertion. Either it
+            # belongs to somebody else — two people sharing a browser profile,
+            # which must not be resolved in favour of the older session — or it
+            # was opened by another mode (a persona behind the shared gate, a
+            # development sign-in, a personal password) and merely names the
+            # same account. A matching address is not provenance: the whole
+            # session goes, and this request is decided below from the
+            # assertion alone, exactly as for a first visit (SEC-012,
+            # docs/adr/0232).
             logout(request)
 
         token = request.META.get(cloudflare_access.HEADER, "")
@@ -347,7 +358,11 @@ class AuthenticationModeMiddleware:
         login(request, person, backend=MODEL_BACKEND)
         request.session.pop(cloudflare_access.SIGNED_OUT_ASSERTION, None)
         request.session["cf_access_email"] = email
-        request.session.set_expiry(cloudflare_access.seconds_until_expiry(claims))
+        cloudflare_access.mark_session(request.session, person, email=email, claims=claims)
+        # Never 0: Django reads `set_expiry(0)` as "until the browser closes",
+        # which for an assertion in its last seconds would have been the
+        # longest session of all rather than the shortest.
+        request.session.set_expiry(max(1, cloudflare_access.seconds_until_expiry(claims)))
         return self.get_response(request)
 
     def _signed_out(self, request: HttpRequest) -> HttpResponse:
