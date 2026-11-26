@@ -180,6 +180,15 @@ def run(step: str, seconds: float, grace: float, kill_after: float, command: lis
     if previous is not None and members(previous):
         _emit(step=step, result="busy", rc=BUSY, pgid=previous.get("pgid"))
         return BUSY
+    # Before the child exists: a request to stop can never leave it unsupervised.
+    asked: list[int] = []
+
+    def ask_to_stop(signum: int, _frame: Any) -> None:
+        asked.append(signum)
+
+    for sig in (signal.SIGTERM, signal.SIGINT, SIGHUP):
+        signal.signal(sig, ask_to_stop)
+
     started = time.monotonic()
     hard = started + seconds
     soft_epoch = time.time() + max(seconds - grace, 0.0)
@@ -203,14 +212,6 @@ def run(step: str, seconds: float, grace: float, kill_after: float, command: lis
     tmp = pid_file.with_suffix(".tmp")
     tmp.write_text(json.dumps(record))
     tmp.replace(pid_file)
-
-    asked: list[int] = []
-
-    def ask_to_stop(signum: int, _frame: Any) -> None:
-        asked.append(signum)
-
-    for sig in (signal.SIGTERM, signal.SIGINT, SIGHUP):
-        signal.signal(sig, ask_to_stop)
 
     result = "finished"
     while child.poll() is None:

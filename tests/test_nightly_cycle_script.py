@@ -895,6 +895,7 @@ def test_work_that_cannot_be_verified_gone_keeps_the_cycle_lock(host) -> None:
     assert (host["state"] / f"{WINTER_NIGHT}.completed").exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="a POSIX SIGTERM to bash; Windows terminates outright")
 def test_a_cycle_stopped_from_outside_stops_the_steps_first(host) -> None:
     (host["fake"] / "block-watch_registers").write_text("")
     (host["fake"] / "alive-register-watch").write_text("")
