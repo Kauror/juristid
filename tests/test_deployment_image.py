@@ -362,6 +362,16 @@ APPLICATION_WORKERS = {
     "unraid-test": {"intake-reader", "searchindex", "intake-sweeper"},
 }
 
+#: The parser boundary (docs/adr/0230) runs the release image too, and is the
+#: one deliberate exception to the rule above: it must never load the
+#: deployment's settings module — that module is where the credentials are —
+#: so it is not a `manage.py` command and runs no system checks. What it is
+#: held to instead is what makes it a boundary, asserted below.
+PARSER_SERVICES = {
+    "unraid-main": {"intake-parser", "batch-parser"},
+    "unraid-test": set(),
+}
+
 
 @pytest.mark.parametrize("stack", sorted(APPLICATION_WORKERS))
 def test_the_workers_and_their_healthchecks_already_refuse(stack: str) -> None:
@@ -380,7 +390,9 @@ def test_the_workers_and_their_healthchecks_already_refuse(stack: str) -> None:
     workers = {
         name: service
         for name, service in compose["services"].items()
-        if name != "web" and service.get("image") == application
+        if name != "web"
+        and service.get("image") == application
+        and name not in PARSER_SERVICES[stack]
     }
     assert set(workers) == APPLICATION_WORKERS[stack], sorted(workers)
     for name, service in workers.items():
@@ -392,6 +404,66 @@ def test_the_workers_and_their_healthchecks_already_refuse(stack: str) -> None:
             assert _management_command(words[2]).requires_system_checks, (
                 f"{name}: `{words[2]}` skips the system checks"
             )
+
+
+@pytest.mark.parametrize("stack", sorted(PARSER_SERVICES))
+def test_the_parser_services_have_no_network_no_secrets_and_bounded_resources(
+    stack: str,
+) -> None:
+    """SEC-008: what makes `intake-parser` and `batch-parser` a boundary.
+
+    No network (not even the internal bridge `db` is on), no env_file and no
+    database settings, a read-only root, nothing mounted but its own socket
+    volume and a bounded scratch tmpfs, and memory, CPU and process ceilings.
+    Every one of these is the reason the service exists; losing one in an edit
+    would leave a container that looks isolated and is not (docs/adr/0230).
+    """
+    compose = yaml.safe_load(
+        (Path(settings.BASE_DIR) / "deploy" / stack / "compose.yml").read_text(encoding="utf-8")
+    )
+    services = compose["services"]
+    application = services["web"]["image"]
+    parsers = {
+        name
+        for name, service in services.items()
+        if service.get("image") == application
+        and "app.documents.extraction.isolation_server" in map(str, service.get("command", []))
+    }
+    assert parsers == PARSER_SERVICES[stack]
+    for name in parsers:
+        service = services[name]
+        assert service["network_mode"] == "none", name
+        assert "networks" not in service, name
+        assert "env_file" not in service, name
+        environment = service.get("environment", {})
+        assert not any(
+            key.startswith(("POSTGRES", "DJANGO", "OPENAI", "ANTHROPIC")) for key in environment
+        ), name
+        assert service["read_only"] is True, name
+        assert service["cap_drop"] == ["ALL"], name
+        assert "no-new-privileges:true" in service["security_opt"], name
+        assert service["mem_limit"] and service["memswap_limit"] == service["mem_limit"], name
+        assert float(service["cpus"]) <= 1.0, name
+        assert int(service["pids_limit"]) <= 64, name
+        assert service["init"] is True, name
+        assert service["tmpfs"] == ["/scratch:size=256m,mode=0700,uid=10001,gid=10001"], name
+        volumes = service["volumes"]
+        assert len(volumes) == 1 and volumes[0].endswith(":/run/juristid-parser"), name
+        volume = volumes[0].split(":")[0]
+        assert compose["volumes"][volume]["driver_opts"]["type"] == "tmpfs", name
+        probe = [str(part) for part in service["healthcheck"]["test"]]
+        assert probe[:4] == ["CMD", "python", "-m", "app.documents.extraction.isolation_server"]
+        # Each socket is shared with exactly one caller.
+        users = [
+            other
+            for other, definition in services.items()
+            if other != name
+            and any(str(v).split(":")[0] == volume for v in definition.get("volumes", []))
+        ]
+        assert len(users) == 1, (name, users)
+        caller = services[users[0]]["environment"]
+        assert caller["DOCUMENT_PARSER_ISOLATION"] == "service"
+        assert caller["DOCUMENT_PARSER_SOCKET"] == "/run/juristid-parser/parser.sock"
 
 
 # -- the healthcheck -------------------------------------------------------

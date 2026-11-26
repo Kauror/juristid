@@ -36,6 +36,11 @@ from config.settings import *
 #: the settings actually in force are these ones.
 IS_TEST_SETTINGS = True
 
+# Parsers run in this process for the suite, so a test that swaps a parser for
+# a fake one sees the fake run; tests/test_parser_isolation.py switches the
+# boundary on where the boundary is what is being tested (docs/adr/0230).
+DOCUMENT_PARSER_ISOLATION = "inprocess"
+
 DEBUG = False
 SECURE_SSL_REDIRECT = False
 SECURE_HSTS_SECONDS = 0

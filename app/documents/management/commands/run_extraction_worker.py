@@ -78,6 +78,7 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         from app.documents.extraction.heartbeat import EXTRACTION_WORKER as mark
         from app.documents.extraction.orchestrator import (
+            PARSER_UNAVAILABLE,
             claim_version,
             extract_document_version,
             pending_versions,
@@ -135,6 +136,11 @@ class Command(BaseCommand):
                 continue
 
             report = extract_document_version(claimed)
+            if report.state == PARSER_UNAVAILABLE:
+                # The file went back to the queue untouched. Taking it again
+                # at once would spin on a boundary that is down (ADR 0230).
+                self.stderr.write("Faili lugeja ei ole kättesaadav; töötleja peatub.")
+                break
             processed += 1
             self.stdout.write(
                 f"  {report.state:<16} {claimed.original_filename[:48]:<48} "

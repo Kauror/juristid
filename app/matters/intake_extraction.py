@@ -53,6 +53,7 @@ from django.utils import timezone
 
 from app.documents.enums import DerivativeKind, ExtractionState
 from app.documents.extraction import parsers  # noqa: F401  (registers every parser)
+from app.documents.extraction.isolation import INTAKE, ParserUnavailable
 from app.documents.extraction.orchestrator import (
     ATTEMPTS_EXHAUSTED,
     attempts_exhausted_note,
@@ -67,6 +68,12 @@ logger = logging.getLogger(__name__)
 #: The same distinction the canonical worker draws: it is not something the row
 #: *is*, it is something that happened to this attempt.
 CLAIM_LOST = "CLAIM_LOST"
+
+#: Reported when the parser service could not be reached. The claim was handed
+#: back (the row is PENDING again, its attempts untouched) and `drain` stops
+#: the batch, so a reader whose boundary is down waits instead of spinning on
+#: the same row (docs/adr/0230).
+PARSER_UNAVAILABLE = "PARSER_UNAVAILABLE"
 
 
 class ClaimLost(RuntimeError):
@@ -208,12 +215,28 @@ def extract_intake_file(staged: MatterIntakeFile) -> IntakeExtractionReport:
     started = time.monotonic()
     fence = staged.extraction_claimed_at
 
-    outcome = parse_source(
-        filename=staged.original_filename,
-        mime_type=staged.mime_type,
-        load=lambda: _read_staged(staged),
-        reference=f"intake file {staged.pk}",
-    )
+    try:
+        outcome = parse_source(
+            filename=staged.original_filename,
+            mime_type=staged.mime_type,
+            load=lambda: _read_staged(staged),
+            reference=f"intake file {staged.pk}",
+            # The form's budget: well inside INTAKE_READER_STALE_CLAIM_MINUTES,
+            # so a file the boundary stops is settled by this pass rather than
+            # reclaimed behind its back (docs/adr/0230 §Limits).
+            budget=INTAKE,
+        )
+    except ParserUnavailable:
+        logger.warning("intake parser unavailable; file=%s handed back", staged.pk)
+        released = _release(staged, fence=fence)
+        return IntakeExtractionReport(
+            file_id=staged.pk,
+            state=PARSER_UNAVAILABLE if released else CLAIM_LOST,
+            fragments=0,
+            seconds=time.monotonic() - started,
+            note="Faili lugeja ei olnud kättesaadav; fail jäi järjekorda.",
+            error_code="parser_unavailable" if released else "claim_lost",
+        )
 
     fragments: list[dict[str, Any]] = []
     email_metadata: dict[str, Any] | None = None
@@ -283,6 +306,19 @@ def extract_intake_file(staged: MatterIntakeFile) -> IntakeExtractionReport:
     )
 
 
+def _release(staged: MatterIntakeFile, *, fence: Any) -> bool:
+    """Hand an unfinished claim back: PENDING again, fenced, attempts untouched."""
+    updated = MatterIntakeFile.objects.filter(pk=staged.pk, extraction_claimed_at=fence).update(
+        extraction_state=ExtractionState.PENDING,
+        extraction_claimed_at=None,
+        updated_at=timezone.now(),
+    )
+    if updated:
+        staged.extraction_state = ExtractionState.PENDING
+        staged.extraction_claimed_at = None
+    return bool(updated)
+
+
 def _read_staged(staged: MatterIntakeFile) -> bytes:
     storage = staging_storage()
     with storage.open(staged.storage_key, "rb") as handle:
@@ -341,5 +377,9 @@ def drain(*, limit: int = 25) -> list[IntakeExtractionReport]:
         claimed = claim_intake_file(candidate.pk)
         if claimed is None:
             continue
-        reports.append(extract_intake_file(claimed))
+        report = extract_intake_file(claimed)
+        reports.append(report)
+        if report.state == PARSER_UNAVAILABLE:
+            # The row is back in the queue; taking it again now would spin.
+            break
     return reports

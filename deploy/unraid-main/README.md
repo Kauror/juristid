@@ -9,7 +9,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Auth mode | `shared_gate` (temporary; see below) |
 | Public URL | `https://juristid.orgusaar.ee` — behind the shared gate |
 | Compose project | `juristid-main` |
-| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-intake-sweeper`, `juristid-main-notifications`, `juristid-main-tunnel` |
+| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-intake-parser`, `juristid-main-batch-parser` (ADR 0230, `PARSER-ISOLATION.md`), `juristid-main-searchindex`, `juristid-main-intake-sweeper`, `juristid-main-notifications`, `juristid-main-tunnel` |
 | Network | `juristid-main-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-main/` |
 | Evidence | `…/evidence` — **back this up** |
