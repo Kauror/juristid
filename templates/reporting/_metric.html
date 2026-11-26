@@ -41,9 +41,16 @@ and a refusal must never look alike (Stage-2E brief 9, 48).
     whose basis is already the whole corpus does not say so twice — "Kogu korpus
     · kogu korpus" is what the first CI screenshot showed on every archive card.
   {% endcomment %}
-  <span class="metric__basis">
-    {{ result.time_basis_label }}{% if result.definition.respects_period %} · {{ reporting.period.label }}{% elif not result.is_whole_corpus %} · kogu korpus{% endif %}
-  </span>
+  {% comment %}
+    `hide_snapshot_corpus_basis`: Andmekvaliteet does not print «Hetkeseis ·
+    kogu korpus» at all (UX-002, 2026-11-26); every other basis line stays.
+  {% endcomment %}
+  {% if hide_snapshot_corpus_basis and result.definition.time_basis == "POINT_IN_TIME" and not result.definition.respects_period %}
+  {% else %}
+    <span class="metric__basis">
+      {{ result.time_basis_label }}{% if result.definition.respects_period %} · {{ reporting.period.label }}{% elif not result.is_whole_corpus %} · kogu korpus{% endif %}
+    </span>
+  {% endif %}
 
   {% if result.coverage_denominator %}
     <span class="metric__coverage">

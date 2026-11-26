@@ -1085,6 +1085,12 @@ def teema_import_status(statuses: list[ImportStatus]) -> dict[str, Any]:
     It replaced a fixed «Lehe sisu ja manuseid ei ole Juristidesse imporditud»,
     which stayed on every Teema after its OneNote files had been imported
     (ONENOTE-UI-002, 2026-11-05).
+
+    A page whose files are all here says nothing: the owner removed the
+    «Lehe sisu ja kõik N faili on Juristidesse imporditud …» confirmation in
+    every count (UX-005, 2026-11-26), and the page's own chip in «Ajalooline
+    OneNote» still carries the counts. Only what is still outstanding — files
+    not imported, or a page shared between Teemad — is said here.
     """
     total = ImportStatus(
         counts={
@@ -1093,19 +1099,10 @@ def teema_import_status(statuses: list[ImportStatus]) -> dict[str, Any]:
         files=sum(s.files for s in statuses),
     )
     lines = []
-    if not total.files:
-        lines.append("Lehe sisu on Juristides; lehel ei ole faile.")
-    else:
+    if total.files:
         imported = total.counts["imported"]
         empty = total.counts["empty"]
-        if imported and imported + empty == total.files:
-            lines.append(
-                f"Lehe sisu ja {'kõik ' if imported > 1 else ''}{_files(imported)} on Juristidesse "
-                "imporditud (failide loend ja «Ajalooline OneNote» ülal)."
-            )
-            if empty:
-                lines.append(f"{_files(empty)} oli OneNote'is tühi ja jäi tõendina loomata.")
-        else:
+        if not (imported and imported + empty == total.files):
             lines.append(f"Lehe sisu on Juristides. Failid: {total.label}.")
         if total.counts["held_shared"]:
             lines.append(

@@ -470,7 +470,8 @@ def test_allikas_and_ajalooline_read_the_same_counts(status_world, specialist):
     assert summary["status"]["counts"]["imported"] == 3
     assert summary["status"]["counts"]["empty"] == 1
     assert summary["links"][0].import_status.counts == {"imported": 3, "empty": 1}
-    assert "Lehe sisu ja kõik 3 faili on Juristidesse imporditud" in summary["status"]["lines"][0]
+    # Fully imported: nothing outstanding, so no sentence (UX-005, 2026-11-26).
+    assert summary["status"]["lines"] == []
     shared = historical_summary(status_world["b"], specialist)
     assert shared["status"]["counts"]["held_shared"] == 2
     assert shared["status"]["tone"] == "waiting"

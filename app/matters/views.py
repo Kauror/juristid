@@ -4629,7 +4629,6 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "document_year_unknown": documents.filter(
                 onenote_imported=True, onenote_added_at__isnull=True
             ).exists(),
-            "document_onenote_dates": any(d.onenote_imported for d in visible_evidence),
             "document_filters": {"otsi": term, "roll": role, "aasta": year},
             "document_filters_active": bool(term or role or year),
             # Built from the *applied* values rather than from `request.GET`, so

@@ -14,9 +14,10 @@ and a link to its rows.
 Top to bottom: the window, the KPI cards (each says what it counts —
 «teemat», «muudatust», «arvamust»), the filters, the per-person table grouped
 by the Teema's *current* Vastutaja, and one paginated, sortable change table.
-Three kinds of knowledge are kept visibly apart: recorded changes (main
-column), a comparison of two daily photographs, and what the record cannot
-know (both in the rail). Everything is computed by
+Recorded changes (main column) are kept visibly apart from a comparison of
+two daily photographs (in the rail). The coverage figures
+(`page.coverage`) are still computed; the owner removed the panel that
+printed them (UX-004, 2026-11-26). Everything is computed by
 `app.matters.department_changes`; this template only draws it.
 {% endcomment %}
 
@@ -300,46 +301,6 @@ know (both in the rail). Everything is computed by
         {% else %}
           <p class="ovnote">Perioodi algusest ja lõpust ei ole kahte erinevat hetktõmmist, seega võrdlust ei ole.</p>
         {% endif %}
-      </section>
-
-      <section class="ovsection" aria-label="Katvus" data-coverage>
-        <div class="ovsection__head">
-          <h2 class="ovsection__title">Mida see ei näita</h2>
-        </div>
-        {% if page.coverage.recorded_since is None %}
-          <p class="ovnote">Ühtegi muudatust ei ole veel salvestatud.</p>
-        {% elif page.unrecorded %}
-          <p class="ovnote" data-unrecorded>
-            Muudatusi on salvestatud alates {{ page.coverage.recorded_since|date:"j.n.Y" }};
-            valitud periood jääb tervikuna enne seda ja selle muudatusi ei ole teada.
-          </p>
-        {% elif page.partial_coverage %}
-          <p class="ovnote" data-partial>
-            Muudatusi on salvestatud alates {{ page.coverage.recorded_since|date:"j.n.Y" }};
-            periood algab varem ja on osaliselt kaetud.
-          </p>
-        {% endif %}
-        <p class="ovnote">
-          Imporditud teemasid perioodil: <b>{{ page.coverage.imported_matters }}</b>.
-          Neid ei loeta uuteks ja nende varasem ajalugu ei ole siin.
-        </p>
-        <p class="ovnote">
-          Impordi- ja süsteemikirjeid, mida ei loeta: <b>{{ page.coverage.system_events }}</b>.
-        </p>
-        {% comment %}
-          Step changes the system made on a person's behalf — a follow-up check
-          scheduled by a send, a planned step made current — are its, not that
-          person's, and are counted here instead of above (ADR 0159 §2, D1).
-        {% endcomment %}
-        <p class="ovnote" data-automatic-steps>
-          Süsteemi automaatseid tegevuse muudatusi (nt arvamuse järelkontrolli ajastamine), mida ei loeta kellegi tegevuseks: <b>{{ page.coverage.automatic_steps }}</b>.
-        </p>
-        <p class="ovnote">
-          Avatud teemasid, mille hetkeseisu algus ei ole teada: <b>{{ page.coverage.stage_start_unknown }}</b>.
-        </p>
-        <p class="ovnote">
-          «Tähelepanu vajavad» ja «Tähtaja ületanud» muutust saab mõõta alates 30.10.2026 hetktõmmistest; varasemad hetktõmmised neid seise ei salvestanud.
-        </p>
       </section>
     </aside>
   </div>

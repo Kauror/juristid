@@ -230,7 +230,7 @@ def test_the_status_is_not_inferred_from_the_page_row(world, enabled, specialist
     assert status.label == "1 fail on veel importimata" and status.tone == "waiting"
 
 
-def test_allikas_says_what_was_imported_and_keeps_the_old_sentence_without_a_page(
+def test_allikas_says_only_what_is_outstanding_and_keeps_the_old_sentence_without_a_page(
     world, enabled, client, specialist, monkeypatch
 ):
     from app.matters import views
@@ -241,16 +241,22 @@ def test_allikas_says_what_was_imported_and_keeps_the_old_sentence_without_a_pag
     )
     client.force_login(specialist)
     full = _documents(client, world["a"]).content.decode()
-    assert "Lehe sisu ja kõik 4 faili on Juristidesse imporditud" in full
-    assert "1 fail oli OneNote&#x27;is tühi ja jäi tõendina loomata." in full
+    # A fully imported page says nothing under «Allikas» (UX-005, 2026-11-26):
+    # the confirmation, its empty-file addendum and «Originaal avaneb …» are
+    # gone; the link to the page and the row's chip remain.
+    assert "on Juristidesse imporditud" not in full
+    assert "jäi tõendina loomata" not in full
+    assert "Originaal avaneb" not in full
+    assert 'href="https://tenant.invalid/onenote"' in full
     assert "ei ole Juristidesse imporditud" not in full
-    assert "Kõik 4 faili imporditud" in full  # the page row's chip
+    assert "Kõik 4 faili imporditud · 1 fail oli OneNote&#x27;is tühi" in full  # the chip
     shared = _documents(client, world["c"]).content.decode()
     assert "1 fail ootab teemaga seostamist" in shared
     assert "faili kuuluvuse otsustab inimene" in shared
     assert "ei ole Juristidesse imporditud" not in shared
     no_files = _documents(client, world["e"]).content.decode()
-    assert "Lehe sisu on Juristides; lehel ei ole faile." in no_files
+    assert "Lehe sisu on Juristides; lehel ei ole faile." not in no_files
+    assert 'href="https://tenant.invalid/onenote"' in no_files
     never = register_teema("2026_9")
     untouched = _documents(client, never).content.decode()
     assert "Lehe sisu ja manuseid ei ole Juristidesse imporditud" in untouched
@@ -319,8 +325,10 @@ def test_onenote_files_read_and_sort_on_their_onenote_day_across_years(
     assert cells["teadmata.pdf"] == "Lisamise kuupäev teadmata"
     today = timezone.localtime(timezone.now())
     assert cells["tavaline.pdf"] == f"{today.day}.{today.month}.{today.year}"
-    # The two kinds of date are explained once, above the table.
-    assert "OneNote'ist imporditud failide kuupäev on päev, mil fail OneNote'i lisati" in html
+    # The explanation above the table was removed by the owner (UX-005,
+    # 2026-11-26); the dates and the order above are what it described.
+    assert "OneNote'ist imporditud failide kuupäev" not in html
+    assert "kuupaeva-selgitus" not in html
     # The import day appears nowhere as a OneNote file's date.
     assert "5.11.2026 lisatud" not in html
 

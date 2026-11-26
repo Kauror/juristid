@@ -292,18 +292,6 @@ finds again (§23.5).
                 {% endif %}
               </div>
             {% endif %}
-            {% if document_onenote_dates %}
-              {% comment %}
-                Said once, above the table, only where the list holds a file
-                the OneNote import brought: two kinds of date in one column are
-                unambiguous only when the reader is told which is which
-                (docs/adr/0206).
-              {% endcomment %}
-              <p class="cardnote" id="kuupaeva-selgitus">
-                OneNote'ist imporditud failide kuupäev on päev, mil fail OneNote'i lisati; teiste failide kuupäev on Juristidesse lisamise päev.
-                Loend on selle kuupäeva järgi, uuemad eespool; teadmata lisamise kuupäevaga failid on lõpus.
-              </p>
-            {% endif %}
             <div class="tablewrap tablewrap--evidence">
               <table class="table doctable">
                 <thead>
@@ -812,11 +800,12 @@ finds again (§23.5).
           empty file list above reads as "not brought over yet" rather than as a
           failed import (docs/adr/0191 §6).
 
-          **Once the page is here, the sentence is the import's own record**
-          (ONENOTE-UI-002, 2026-11-05): «Lehe sisu ja kõik 27 faili on
-          Juristidesse imporditud», «… 145 faili ootab teemaga seostamist»,
-          counted from the import rows (`teema_import_status`). The fixed «ei
-          ole Juristidesse imporditud» is said only where no page is linked.
+          **Once the page is here, only what is outstanding is said**
+          (ONENOTE-UI-002, 2026-11-05; UX-005, 2026-11-26): «… 145 faili ootab
+          teemaga seostamist», counted from the import rows
+          (`teema_import_status`); a fully imported page shows the link alone.
+          The fixed «ei ole Juristidesse imporditud» is said only where no page
+          is linked.
         {% endcomment %}
         <section class="docsection" aria-labelledby="allikas-heading">
           <div class="docsection__head">
@@ -826,13 +815,13 @@ finds again (§23.5).
             {% for link in source_links %}
               <li class="filelist__item">
                 <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">OneNote</a>
-                <span class="filelist__meta">
-                  {% if historical.status %}
-                    {% for line in historical.status.lines %}{{ line }} {% endfor %}Originaal avaneb OneNote'is sinu Microsofti kontoga.
-                  {% else %}
+                {% if not historical.status %}
+                  <span class="filelist__meta">
                     Lehe sisu ja manuseid ei ole Juristidesse imporditud; avaneb OneNote'is sinu Microsofti kontoga.
-                  {% endif %}
-                </span>
+                  </span>
+                {% elif historical.status.lines %}
+                  <span class="filelist__meta">{{ historical.status.lines|join:" " }}</span>
+                {% endif %}
               </li>
             {% endfor %}
           </ul>

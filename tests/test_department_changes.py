@@ -642,7 +642,9 @@ def test_the_head_reads_the_page(client, department_head, specialist):
     assert f"<td data-actor>{specialist.display_name}</td>" in body
     assert "data-kpis" in body and "data-people" in body and "data-detail" in body
     assert reverse("matters:matter_detail", kwargs={"pk": matter.pk}) in body
-    assert "data-outputs" in body and "data-snapshots" in body and "data-coverage" in body
+    assert "data-outputs" in body and "data-snapshots" in body
+    # «Mida see ei näita» was removed by the owner (UX-004, 2026-11-26).
+    assert "data-coverage" not in body and "Mida see ei näita" not in body
     assert "data-changes-empty" not in body
 
 
@@ -720,7 +722,8 @@ def test_the_empty_state_is_said_in_words(client, department_head):
     # Nothing was ever recorded, so the window's changes are unknown, not 0.
     assert "data-changes-unrecorded" in body
     assert "Sel perioodil muudatusi veel ei salvestatud." in body
-    assert "Ühtegi muudatust ei ole veel salvestatud." in body
+    # The removed «Mida see ei näita» panel said this a second time (UX-004).
+    assert "Ühtegi muudatust ei ole veel salvestatud." not in body
     assert "võrdlust ei ole" in body
 
 
@@ -1025,7 +1028,9 @@ def test_a_window_wholly_before_recording_is_unknown_not_zero(client, department
     assert "Muudatuste arv teadmata" in body
     assert "data-changes-unrecorded" in body
     assert "Sel perioodil muudatusi veel ei salvestatud." in body
-    assert "data-unrecorded" in body and "data-partial" not in body
+    # The coverage sentence lived in the removed panel (UX-004); the unknown
+    # count above still says it, and `changes.unrecorded` is asserted above.
+    assert "data-unrecorded" not in body and "data-partial" not in body
     assert "data-changes-empty" not in body
     assert "<b>0</b>" not in body.split('aria-label="Faktid"')[0]
     assert "<b>—</b> uued teemad" in body
@@ -1044,8 +1049,10 @@ def test_a_window_partly_before_recording_keeps_the_partial_wording(
 
     client.force_login(department_head)
     body = client.get(PAGE, params).content.decode()
-    assert "data-partial" in body and "data-unrecorded" not in body
-    assert "osaliselt kaetud" in body
+    # The partial-coverage sentence lived in the removed panel (UX-004);
+    # `changes.partial_coverage` above is still computed.
+    assert "data-partial" not in body and "data-unrecorded" not in body
+    assert "osaliselt kaetud" not in body
     assert "Muudatuste arv teadmata" not in body
     assert "data-changes-unrecorded" not in body
 

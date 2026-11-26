@@ -96,6 +96,14 @@ kind. Two kinds of date in one column are stated once, above the table, only
 where the list holds an imported file. A Teema of uploads only has no such
 note. Its dates, its order and its year filter are what they were.
 
+> **Amended 2026-11-26 (owner, UX-005).** The note above the table is removed;
+> each cell still names its kind («… lisatud OneNote'i», «Lisamise kuupäev
+> teadmata»), and the order and year filter are unchanged. Under «Allikas» a
+> fully imported page now shows the OneNote link alone: «Lehe sisu ja kõik N
+> faili on Juristidesse imporditud …», its empty-file addendum and «Originaal
+> avaneb OneNote'is …» are gone in every count. Outstanding files and a page
+> shared between Teemad are still said (`teema_import_status`).
+
 The year filter reads the year of `list_at` in Europe/Tallinn (a file added on
 31.12.2020 at 22:30 UTC is 2021). It adds «Kuupäev teadmata» (`aasta=teadmata`)
 when undated imported files exist. 0129 §10's «no backdating, no historical
