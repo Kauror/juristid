@@ -88,7 +88,9 @@ def test_the_scheduled_check_is_counted_aside_as_the_systems(department_head, sp
     assert event.payload["follow_up"]["automatic"] is True
 
 
-def test_the_page_keeps_the_systems_steps_out_of_the_persons_acts(client, department_head, specialist, ministry):
+def test_the_page_keeps_the_systems_steps_out_of_the_persons_acts(
+    client, department_head, specialist, ministry
+):
     matter = create_matter(title="Saadetud lehel", owner=specialist, actor=specialist)
     mark_sent(matter, specialist, [ministry])
     client.force_login(department_head)
