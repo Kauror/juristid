@@ -56,12 +56,21 @@ class Command(BaseCommand):
             return
 
     def _machine_line(self, outcome: Any) -> None:
-        counts = {
+        from app.register_watch.sources import valitsus
+
+        counts: dict[str, Any] = {
             "stored": len(outcome.stored),
             "judged": outcome.judged,
             "errors": len(outcome.errors),
             "ai_calls": outcome.usage.calls,
             "ai_failures": outcome.usage.failures,
+            # r95: a page not yet published is waiting, not an error; the rest say why.
+            "not_published": outcome.count(valitsus.NOT_PUBLISHED),
+            "inaccessible": outcome.count(valitsus.INACCESSIBLE),
+            "unconfirmed": outcome.count(valitsus.UNCONFIRMED),
+            "missing": int(outcome.missing),
+            # The session day and HTTP status of the newest week without an agenda.
+            "note": outcome.note(),
         }
         self.stdout.write("OUTCOME-JSON " + json.dumps(counts, sort_keys=True))
 
@@ -78,5 +87,12 @@ class Command(BaseCommand):
         )
         for error in outcome.errors[:10]:
             self.stdout.write(f"  ERROR {error}")
+        for check in outcome.checks:
+            if check.state in ("STORED", "ALREADY_STORED"):
+                continue
+            day = check.session_date or check.week
+            status = f" HTTP {check.http_status}" if check.http_status else ""
+            missing = " MISSING (the week's last nightly reading)" if check.missing else ""
+            self.stdout.write(f"  WEEK {check.week} {check.state} {day}{status}{missing}")
         if u.failures:
             self.stdout.write(f"  AI {u.last_failure}")

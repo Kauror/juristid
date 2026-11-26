@@ -17,7 +17,7 @@ import datetime as dt
 import json
 import logging
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -28,9 +28,15 @@ from django.utils import timezone
 
 from app.register_watch import ai_call, candidates_ai, outbound
 from app.register_watch.house_style import KODA_STYLE
-from app.register_watch.models import AgendaItem, AgendaItemStatus, GovernmentAgenda, Strength
+from app.register_watch.models import (
+    AgendaCheckState,
+    AgendaItem,
+    AgendaItemStatus,
+    GovernmentAgenda,
+    GovernmentAgendaCheck,
+    Strength,
+)
 from app.register_watch.sources import valitsus
-from app.register_watch.sources.http import FetchError
 
 logger = logging.getLogger("app.register_watch")
 
@@ -117,7 +123,56 @@ class Outcome:
     stored: list[GovernmentAgenda]
     judged: int
     usage: candidates_ai.Usage
+    #: Genuine failures only: refused access, 429/5xx/timeouts, unreadable pages.
     errors: list[str]
+    #: Every week's verdict for this run, one ledger row each (r95).
+    checks: list[GovernmentAgendaCheck] = field(default_factory=list)
+
+    def count(self, *states: str) -> int:
+        return sum(1 for check in self.checks if check.state in states)
+
+    @property
+    def missing(self) -> bool:
+        return any(check.missing for check in self.checks)
+
+    def note(self) -> str:
+        """The evidence of the newest week without an agenda: session day and status."""
+        for check in self.checks:
+            if check.state not in (AgendaCheckState.STORED, AgendaCheckState.ALREADY_STORED):
+                day = check.session_date.isoformat() if check.session_date else str(check.week)
+                status = f", HTTP {check.http_status}" if check.http_status else ""
+                return f"{day}{status}"
+        return ""
+
+
+#: A week's verdict, worst first: one failure outweighs a waiting day (r95).
+_WEEK_ORDER = (
+    valitsus.SOURCE_ERROR,
+    valitsus.PARSE_ERROR,
+    valitsus.ACCESS_REFUSED,
+    valitsus.UNCONFIRMED,
+    valitsus.INACCESSIBLE,
+    valitsus.NOT_PUBLISHED,
+    valitsus.NOT_FOUND,
+)
+_FAILURES = frozenset({valitsus.SOURCE_ERROR, valitsus.PARSE_ERROR, valitsus.ACCESS_REFUSED})
+
+
+def _control_path() -> str | None:
+    """The newest stored agenda's address on valitsus.ee: the page `look` asks to tell
+    an unpublished page from a refusal."""
+    from urllib.parse import urlsplit
+
+    for url in GovernmentAgenda.objects.order_by("-session_date").values_list("url", flat=True)[:1]:
+        parts = urlsplit(url)
+        if parts.hostname == valitsus.HOST and parts.path.startswith("/"):
+            return parts.path
+    return None
+
+
+def _last_attempt(monday: dt.date, today: dt.date) -> bool:
+    """The night reading ``today`` is the week's last (Friday's cycle), or later."""
+    return today >= monday + dt.timedelta(days=LAST_CYCLE_WEEKDAY)
 
 
 def run(
@@ -134,21 +189,35 @@ def run(
     usage = candidates_ai.Usage()
     stored: list[GovernmentAgenda] = []
     errors: list[str] = []
+    verdicts: list[dict[str, Any]] = []
+    control_answer: list[bool | None] = []
+
+    def control() -> bool | None:
+        # One control read per run, and only when a 403 needs telling apart.
+        if not control_answer:
+            path = _control_path()
+            control_answer.append(valitsus.site_answers(path) if path else None)
+        return control_answer[0]
+
     for back in range(weeks):
         monday = week_monday(today) - dt.timedelta(days=7 * back)
         if agenda_of_week(monday) is not None:
+            verdicts.append({"week": monday, "state": AgendaCheckState.ALREADY_STORED})
             continue
+        looks: list[valitsus.Lookup] = []
+        week_agenda: GovernmentAgenda | None = None
         for day in session_days(monday):
             if day > today + dt.timedelta(days=1):
                 continue
-            try:
-                found = valitsus.fetch(day)
-            except FetchError as error:
-                errors.append(str(error)[:300])
-                continue
-            if found is not None:
-                stored.append(store(found))
+            found = valitsus.look(day, today=today, control=control)
+            looks.append(found)
+            if found.state in _FAILURES:
+                errors.append(found.detail[:300])
+            if found.agenda is not None:
+                week_agenda = store(found.agenda)
+                stored.append(week_agenda)
                 break
+        verdicts.append(_week_verdict(monday, today, looks, week_agenda))
     judged = 0
     # Agendas the model gave verdicts in this run: a retry's proposals reach their
     # owners too, not only a newly stored agenda's (audit HR-02 review).
@@ -180,7 +249,52 @@ def run(
     if told:
         with transaction.atomic():
             tell_owners(list(told.values()))
-    return Outcome(stored=stored, judged=judged, usage=usage, errors=errors)
+    checks = [
+        GovernmentAgendaCheck.objects.create(
+            **verdict, ai_calls=min(usage.calls, 32767), ai_failures=min(usage.failures, 32767)
+        )
+        for verdict in verdicts
+    ]
+    return Outcome(stored=stored, judged=judged, usage=usage, errors=errors, checks=checks)
+
+
+def _week_verdict(
+    monday: dt.date,
+    today: dt.date,
+    looks: list[valitsus.Lookup],
+    agenda: GovernmentAgenda | None,
+) -> dict[str, Any]:
+    """One week's ledger row from its days' lookups (the worst state wins)."""
+    if agenda is not None:
+        return {
+            "week": monday,
+            "state": AgendaCheckState.STORED,
+            "session_date": agenda.session_date,
+            "url": agenda.url,
+            "agenda": agenda,
+        }
+    worst = min(
+        looks,
+        key=lambda one: _WEEK_ORDER.index(one.state) if one.state in _WEEK_ORDER else 99,
+        default=None,
+    )
+    if worst is None:
+        return {
+            "week": monday,
+            "state": AgendaCheckState.NOT_FOUND,
+            "missing": _last_attempt(monday, today),
+        }
+    return {
+        "week": monday,
+        "state": worst.state,
+        "session_date": worst.day if worst.state != valitsus.NOT_FOUND else None,
+        "http_status": worst.status,
+        "url": worst.url[:500],
+        "detail": worst.detail[:300],
+        # Friday's cycle is the week's last reading (owner, 25.11.2026): after it, a
+        # week with nothing stored is missing however it ended.
+        "missing": _last_attempt(monday, today),
+    }
 
 
 # -- the model ---------------------------------------------------------------------

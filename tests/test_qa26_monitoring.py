@@ -179,6 +179,18 @@ def test_logs_are_kept_and_counted_after_the_container_is_recreated(mon: dict) -
     assert any("WARN errors" in line and "web=2" in line for line in _sent(mon)), _sent(mon)
 
 
+def test_the_database_check_names_its_role_and_database(mon: dict) -> None:
+    """N3 (first-night verification, 26.11.2026): `pg_isready` without -U connected as
+    root, which PostgreSQL logged as «role "root" does not exist» every 15 minutes."""
+    result = _run(mon, "--tier", "fast")
+    assert result.returncode == 0, result.stderr
+    calls = [
+        c for c in mon["docker_log"].read_text(encoding="utf-8").splitlines() if "pg_isready" in c
+    ]
+    assert calls, "the fast tier no longer checks the database"
+    assert all("pg_isready -q -U juristid -d juristid" in c for c in calls), calls
+
+
 def test_kept_lines_older_than_a_day_are_not_counted(mon: dict) -> None:
     _run(mon, "--tier", "fast", STUB_LOG_LINES="ERROR app.core old", STUB_LOG_TS=_now_ts(30))
     _fresh_set(mon, _stamp(1))

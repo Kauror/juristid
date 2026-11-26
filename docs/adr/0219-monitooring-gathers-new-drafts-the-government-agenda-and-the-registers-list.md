@@ -1,6 +1,6 @@
 # 0219 — «Monitooring» gathers the new drafts, the Government's agenda and the registers' list
 
-Date: 2026-11-22 · Status: proposed (owner brief 2026-11-22, «make a new tab up top and call it monitooring»; four answers the same day; release awaits owner review)
+Date: 2026-11-22 · Status: proposed (owner brief 2026-11-22, «make a new tab up top and call it monitooring»; four answers the same day; release awaits owner review); amendment 2026-11-26 (r95) proposed
 
 ## Context
 
@@ -150,3 +150,46 @@ rule for this ADR's agenda, ADR 0218's new drafts and ADR 0217's nightly watch):
   for open TEST Teemad without the model, as before.
 - **The cap on offered Teemad (400 newest) is counted**, logged as a number and,
   for the new-drafts sweep, written on its run; it is not raised.
+
+## Amendment 2026-11-26 (r95, proposed) — an agenda not yet published is not a failure
+
+**Context.**
+- The first complete r94 night (26.11.2026) ended its agenda step PARTIAL.
+- valitsus.ee answered **403** for the 26.11.26 agenda page the night before the session. A nonexistent page answered 404, and the 19.11.26 agenda answered 200. The page existed but was not public yet.
+- `fetch` treated every answer but a 404 (matched in the error's text) as a source error.
+
+**Decision.**
+1. **The structured status is used.** `FetchError.status` decides, never the message text.
+2. **One session day ends in one of eight states** (`sources.valitsus.look`):
+   - FOUND;
+   - NOT_FOUND (every address 404);
+   - NOT_PUBLISHED;
+   - INACCESSIBLE;
+   - UNCONFIRMED;
+   - ACCESS_REFUSED;
+   - SOURCE_ERROR (429, 5xx, timeout, reading off);
+   - PARSE_ERROR (a page that is not this session's commented agenda).
+3. **Both address shapes are tried.** A 403 on the first does not stop the second.
+4. **A 403 is not evidence by itself.** It is told apart by **one control read per run**, of the newest stored agenda's address:
+   - control served (200), session still to come: **NOT_PUBLISHED**;
+   - control served, session already past: **INACCESSIBLE** (a warning);
+   - control refused (403): **ACCESS_REFUSED** (an error);
+   - control unreadable or none stored: **UNCONFIRMED** (a warning).
+
+   Only NOT_PUBLISHED counts as a clean night. Nothing else is ever reported as a successful check.
+5. **Nothing is created for a week without an agenda.**
+   - No `GovernmentAgenda` row, no model request, no notice.
+   - `agenda_of_week` still reads `GovernmentAgenda` only, so the next night reads the week again.
+6. **Each run writes one `GovernmentAgendaCheck` per week it considered** (migration register_watch 0010, additive).
+   - The row holds: state, session day, HTTP status, address, a short explanation, whether it was the week's last reading with nothing stored (`missing`), and the run's model calls.
+   - The step had no run ledger, so Haldus could not tell a delay from a failure. This is the only schema change, and r94 code ignores the table.
+7. **Friday's cycle stays the week's last reading** (owner, 25.11.2026); there is still no daytime reading. A week with nothing stored after it is `missing`, and the nightly outcome is PARTIAL whatever the last state was. Valitsuse info's «ei leitud» warning after the window is unchanged.
+8. **The machine line adds** `not_published`, `inaccessible`, `unconfirmed`, `missing` and a `note` (session day and HTTP status; never a title). `nightly_outcome` reads them as follows:
+   - not published only: SUCCEEDED_NO_NEW «agenda not yet published (date, HTTP 403)»;
+   - unconfirmed, inaccessible or missing: PARTIAL with the reason;
+   - errors and model failures: PARTIAL as before.
+9. **Haldus → Registrite jälgimine shows the eight latest checks.** Waiting states are plain chips; failures and a missing week are problem chips.
+
+**Consequences.**
+- The night before publication no longer turns the cycle and the morning monitor red. A refusal by the site, a 429, a 5xx, a timeout or an unreadable page still does.
+- The control read costs one request, and only on a night that met a 403.

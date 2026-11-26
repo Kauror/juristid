@@ -330,11 +330,42 @@ def _agenda(rc: int, reported: dict[str, Any] | None) -> StepOutcome:
         if rc != 0:
             return StepOutcome(step, FAILED, f"exit {rc} with no outcome line")
         return StepOutcome(step, SKIPPED_UNEXPECTED, "no outcome line")
-    counts = {k: int(reported.get(k) or 0) for k in ("stored", "judged", "errors", "ai_failures")}
+    keys = (
+        "stored",
+        "judged",
+        "errors",
+        "ai_failures",
+        "not_published",
+        "inaccessible",
+        "unconfirmed",
+        "missing",
+    )
+    counts = {k: int(reported.get(k) or 0) for k in keys}
+    # The session day and status of the week still waiting (r95): evidence, not a count.
+    note = str(reported.get("note") or "")[:60]
+    where = f" ({note})" if note else ""
     if rc != 0:
         return StepOutcome(step, FAILED, f"exit {rc}", counts)
     if counts["errors"] or counts["ai_failures"]:
         return StepOutcome(step, PARTIAL, "valitsus.ee errors or model failures", counts)
+    if counts["missing"]:
+        # Friday's cycle was the week's last reading and nothing was stored.
+        return StepOutcome(
+            step,
+            PARTIAL,
+            f"this week's agenda missing after its last nightly reading{where}",
+            counts,
+        )
+    if counts["unconfirmed"]:
+        return StepOutcome(
+            step, PARTIAL, f"valitsus.ee refused the agenda; publication unconfirmed{where}", counts
+        )
+    if counts["inaccessible"]:
+        return StepOutcome(
+            step, PARTIAL, f"a past session's agenda address is inaccessible{where}", counts
+        )
     if not (counts["stored"] or counts["judged"]):
+        if counts["not_published"]:
+            return StepOutcome(step, SUCCEEDED_NO_NEW, f"agenda not yet published{where}", counts)
         return StepOutcome(step, SUCCEEDED_NO_NEW, "", counts)
     return StepOutcome(step, SUCCEEDED, "", counts)
