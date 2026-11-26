@@ -21,6 +21,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.http.response import HttpResponseBase
+from django.middleware.csrf import rotate_token
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
@@ -46,6 +47,7 @@ from app.accounts.forms import (
     SecondFactorForm,
     SignInForm,
 )
+from app.accounts.models import User
 from app.core.request_params import safe_local_path
 
 # -- the boundary -------------------------------------------------------------------
@@ -68,6 +70,24 @@ def local_mode_or_administrator_link[R: HttpResponseBase](
         if not (local_auth.is_local_password() or admin_session.is_available()):
             raise Http404("Isiklik sisselogimine ei ole selles keskkonnas kasutusel.")
         return view(request, *args, **kwargs)
+
+    return wrapper
+
+
+def no_referrer[R: HttpResponseBase](view: Callable[..., R]) -> Callable[..., R]:
+    """Send no Referer from a one-time link page, whatever the site-wide policy.
+
+    The site says `same-origin`, which would hand this page's address to the
+    next page of the site. The `?kood=` is gone from the address by the time
+    anything renders, so this is belt and braces: nothing a link page loads or
+    leads to learns where the browser came from.
+    """
+
+    @functools.wraps(view)
+    def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R:
+        response = view(request, *args, **kwargs)
+        response["Referrer-Policy"] = "no-referrer"
+        return response
 
     return wrapper
 
@@ -270,24 +290,86 @@ LINK_ROUTES = {
 
 
 def keep_link_proof(request: HttpRequest, *, purpose: str) -> bool:
-    """Keep what the session may keep of an arriving `?kood=…` link. True if there was one.
+    """Keep what the session may keep of an arriving `?kood=…` link. True if it was kept.
 
     A *proof* — the selector and the SHA-256 of the secret, never the secret
     itself. Also called by the middleware for a link that arrives in front of
     the shared gate, so the link survives the gate's password without its
     secret ever travelling in the gate's `next` (app/accounts/middleware.py).
+
+    **Only a link that opens something is kept, and keeping it is a
+    session-identifier boundary** (SEC-006, docs/adr/0232):
+
+    * whatever the session held of an earlier link is dropped the moment
+      another arrives — kept or refused, the earlier one is obsolete;
+    * the link is checked here — shape, the credential-link throttle, purpose,
+      expiry, single use, the account's credential state and who may hold it
+      (`link_holder_here`) — so a value that opens nothing writes no session
+      row and is counted once against the network;
+    * the proof goes into the session **under a new identifier and a new CSRF
+      secret**. A session identifier planted in the browser beforehand — a
+      sibling host's cookie, a shared machine, a gate session somebody else
+      opened — is deleted with its row, and the planter's copy of it holds no
+      proof to set a password with.
     """
     raw = request.GET.get(mail.LINK_PARAMETER)
     if raw is None:
         return False
+    request.session.pop(local_auth.SESSION_LINK, None)
     proof = tokens.proof_of(raw[:200])
     if not proof:
         # Not the shape of a link at all. Keeping it would write a session row
         # (a fortnight long, before the gate) for every anonymous request that
         # carries any `?kood=` value (security review 2026-10-29, A-03).
         return False
+    if link_holder_here(request, proof=proof, purpose=purpose) is None:
+        return False
     request.session[local_auth.SESSION_LINK] = {"purpose": str(purpose), "proof": proof}
+    rotate_session(request)
     return True
+
+
+def rotate_session(request: HttpRequest) -> None:
+    """A new session identifier and a new CSRF secret, the contents kept.
+
+    `cycle_key` saves the contents under a fresh key and deletes the old row,
+    so the identifier somebody may have planted stops naming anything;
+    `rotate_token` does the same for a CSRF cookie planted beside it.
+    """
+    request.session.cycle_key()
+    rotate_token(request)
+
+
+def _link_probes(request: HttpRequest) -> list[throttle.Counter]:
+    return [throttle.network_counter(ThrottleScope.CREDENTIAL_LINK, request)]
+
+
+def link_holder_here(request: HttpRequest, *, proof: str, purpose: str) -> User | None:
+    """Whom this proof may set a password for on this deployment now — or ``None``.
+
+    One answer for the moment a link arrives and for every page that uses it:
+    the credential-link throttle first (a network that is locked has its proof
+    refused before any lookup), then the link itself — usable, of this purpose,
+    issued under the account's present credentials (`tokens.peek`) — then its
+    holder (`credentials.link_holder`) and, under the shared gate, whether the
+    holder may administer (docs/adr/0186). A proof that opens nothing is
+    counted as one failure (security review 2026-10-29, A-05).
+    """
+    if not proof:
+        return None
+    probes = _link_probes(request)
+    if throttle.is_locked(probes):
+        return None
+    holder = credentials.link_holder(tokens.peek(proof, purpose=purpose))
+    if (
+        holder is not None
+        and not local_auth.is_local_password()
+        and not admin_session.may_receive_administrator_link(holder)
+    ):
+        holder = None
+    if holder is None:
+        throttle.charge(probes)
+    return holder
 
 
 def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str) -> HttpResponse:
@@ -313,20 +395,10 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
     gate = not local_auth.is_local_password()
     stored = request.session.get(local_auth.SESSION_LINK) or {}
     proof = stored.get("proof", "") if stored.get("purpose") == str(purpose) else ""
-    # Guessing a link is impractical (128-bit selector, 256-bit verifier), and
-    # `ThrottleScope.CREDENTIAL_LINK` was defined for the attempt all the same —
-    # and charged nowhere (security review 2026-10-29, A-05). A network that is
-    # locked has its proof refused before any lookup; a proof that opens nothing
-    # counts as one failure.
-    probes = [throttle.network_counter(ThrottleScope.CREDENTIAL_LINK, request)]
-    if proof and throttle.is_locked(probes):
-        proof = ""
-    holder = credentials.link_holder(tokens.peek(proof, purpose=purpose)) if proof else None
-    if gate and holder is not None and not admin_session.may_receive_administrator_link(holder):
-        holder = None
+    holder = link_holder_here(request, proof=proof, purpose=purpose) if proof else None
     if holder is None:
-        if proof:
-            throttle.charge(probes)
+        # A proof that no longer opens anything — spent, expired, superseded,
+        # of the other purpose — is obsolete: it leaves the session.
         request.session.pop(local_auth.SESSION_LINK, None)
         if gate:
             raise Http404("Lehte ei leitud.")
@@ -353,6 +425,9 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
         if gate:
             raise Http404("Lehte ei leitud.")
         return render(request, template, {"invalid": True}, status=400)
+    # The link is spent and a password set: whatever identifier and CSRF
+    # secret this browser held while the link was open end here too.
+    rotate_session(request)
     if gate:
         # Setting the password moved the account's epoch. If this session had
         # chosen that very account as its persona, it keeps it — the person
@@ -373,6 +448,7 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
 
 
 @never_cache
+@no_referrer
 @local_mode_or_administrator_link
 @require_http_methods(["GET", "POST"])
 def activate(request: HttpRequest) -> HttpResponse:
@@ -385,6 +461,7 @@ def activate(request: HttpRequest) -> HttpResponse:
 
 
 @never_cache
+@no_referrer
 @local_mode_or_administrator_link
 @require_http_methods(["GET", "POST"])
 def reset_password(request: HttpRequest) -> HttpResponse:
