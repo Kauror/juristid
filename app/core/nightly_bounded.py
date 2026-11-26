@@ -18,7 +18,8 @@ where the work runs:
   `StepTerminated`, so a run record is closed as stopped and an open transaction
   rolls back), ``--kill-after`` seconds later SIGKILL, and the supervisor then
   **verifies** that no process of the group is left before it answers;
-* a pid file (``/tmp/juristid-nightly/<step>.json``) names the group, its leader's
+* a pid file (``<tempdir>/juristid-nightly/<step>.json``; ``/tmp`` in the container)
+  names the group, its leader's
   start time and the boot, so ``status`` and ``stop`` can find it from a second
   ``docker exec`` — and never mistake a recycled pid for it;
 * a step whose previous run is still alive is not started again (``busy``).
@@ -43,6 +44,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -55,7 +57,9 @@ ALIVE = 3
 #: The child's exit code after SIGTERM was turned into `StepTerminated`.
 TERMINATED = 143
 PID_DIR_ENV = "JURISTID_NIGHTLY_PID_DIR"
-DEFAULT_PID_DIR = "/tmp/juristid-nightly"  # noqa: S108 - the container's own /tmp, 0700
+#: Under the container's temporary directory (`/tmp` there), as `tempfile` finds it,
+#: so two test shards on one runner never share it (tests/test_ci_slices.py).
+DEFAULT_PID_DIR_NAME = "juristid-nightly"
 STEP_DEADLINE_ENV = "JURISTID_STEP_DEADLINE"  # = app.register_watch.sources.http.STEP_DEADLINE_ENV
 #: The machine line every verb prints last.
 PREFIX = "NIGHTLY-BOUNDED "
@@ -76,7 +80,7 @@ class StepTerminated(BaseException):
 
 
 def _pid_dir() -> Path:
-    return Path(os.environ.get(PID_DIR_ENV) or DEFAULT_PID_DIR)
+    return Path(os.environ.get(PID_DIR_ENV) or Path(tempfile.gettempdir()) / DEFAULT_PID_DIR_NAME)
 
 
 def _pid_file(step: str) -> Path:
