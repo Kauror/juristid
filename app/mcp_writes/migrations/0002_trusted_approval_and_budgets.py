@@ -23,6 +23,9 @@ replaces to run against:
     status, a final status → nothing); an execution time and a result only
     come with EXECUTED; and a proposal is never deleted.
 
+* Database-level defaults for every new column (format 1, empty JSON, empty
+  digest), so r94's code — which names none of them — can still insert during
+  an app rollback, and what it inserts is format 1.
 * Every outstanding format-1 proposal (PENDING or APPROVED, unexecuted) is
   retired as EXPIRED with ``failure_code = format_retired`` and one
   ``FORMAT_RETIRED`` event: an approval given under the old rules is never
@@ -105,6 +108,19 @@ $body$ LANGUAGE plpgsql;
 CREATE TRIGGER mcp_writes_proposal_insert_guard
 BEFORE INSERT ON mcp_writes_mcpwriteproposal
 FOR EACH ROW EXECUTE FUNCTION mcp_writes_proposal_insert_guard();
+"""
+
+#: Database-level defaults for every new column, so the release this one
+#: replaces (r94), which names none of them, can still insert proposals and
+#: approvals against this schema during a rollback — and they land as format 1.
+ROLLBACK_DEFAULTS = """
+ALTER TABLE mcp_writes_mcpwriteproposal ALTER COLUMN format_version SET DEFAULT 1;
+ALTER TABLE mcp_writes_mcpwriteproposal ALTER COLUMN arguments SET DEFAULT '{}'::jsonb;
+ALTER TABLE mcp_writes_mcpwriteapproval ALTER COLUMN format_version SET DEFAULT 1;
+ALTER TABLE mcp_writes_mcpwriteapproval ALTER COLUMN binding_digest SET DEFAULT '';
+ALTER TABLE mcp_writes_mcpwriteapproval ALTER COLUMN canonical_arguments SET DEFAULT '{}'::jsonb;
+ALTER TABLE mcp_writes_mcpwriteapproval ALTER COLUMN state SET DEFAULT '{}'::jsonb;
+ALTER TABLE mcp_writes_mcpwriteapproval ALTER COLUMN preview SET DEFAULT '{}'::jsonb;
 """
 
 DROP_GUARDS = """
@@ -235,6 +251,7 @@ class Migration(migrations.Migration):
                 ],
             },
         ),
+        migrations.RunSQL(sql=ROLLBACK_DEFAULTS, reverse_sql=migrations.RunSQL.noop),
         migrations.RunSQL(sql=INSERT_GUARD, reverse_sql=migrations.RunSQL.noop),
         migrations.RunSQL(sql=UPDATE_GUARD, reverse_sql=DROP_GUARDS),
         migrations.RunPython(retire_format_one, migrations.RunPython.noop),

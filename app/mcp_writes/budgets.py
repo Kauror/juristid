@@ -272,13 +272,15 @@ def count_only(action: str, *, access: Any, user: Any, now: datetime | None = No
 # -- what a prepare may keep --------------------------------------------------------
 
 
+def lock(name: str) -> None:
+    """A transaction-level advisory lock on ``name`` (no table privilege needed)."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", [name])
+
+
 def lock_user(user_id: Any) -> None:
     """Serialise one user's outstanding-proposal and storage checks (transaction-level)."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-            [f"mcp_writes.user:{user_id}"],
-        )
+    lock(f"mcp_writes.user:{user_id}")
 
 
 def storage_refusal(

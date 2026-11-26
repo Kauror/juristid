@@ -61,6 +61,11 @@ RAW_SQL_ALLOWED = {
     "app/mcp_writes/db_role.py",
     "app/mcp_server/management/commands/mcp_db_role.py",
     "app/mcp_writes/management/commands/mcp_writer_db_role.py",
+    # The budgets (docs/adr/0234 §4): one fixed-text `INSERT … ON CONFLICT DO
+    # UPDATE … RETURNING` on its own counter table (the ORM has no atomic
+    # upsert-and-return), one SELECT of a counter, and transaction-level
+    # advisory locks. Every value is a bound parameter.
+    "app/mcp_writes/budgets.py",
 }
 
 #: The modules that may open a network connection, and to where:

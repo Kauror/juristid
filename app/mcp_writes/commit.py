@@ -37,7 +37,7 @@ import logging
 import uuid
 from typing import Any
 
-from django.db import connection, transaction
+from django.db import transaction
 from django.utils import timezone
 
 from app.mcp_writes import budgets
@@ -134,12 +134,8 @@ def _refuse(
 def _deliver(proposal: McpWriteProposal) -> dict[str, Any]:
     """The receipt of a saved change: first delivery, or a replay."""
     with transaction.atomic():
-        with connection.cursor() as cursor:
-            # Two first fetches at once take turns: exactly one is «not replayed».
-            cursor.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                [f"mcp_writes.receipt:{proposal.pk}"],
-            )
+        # Two first fetches at once take turns: exactly one is «not replayed».
+        budgets.lock(f"mcp_writes.receipt:{proposal.pk}")
         delivered = McpWriteEvent.objects.filter(
             proposal=proposal, event_type=McpWriteEventType.RECEIPT_DELIVERED
         ).exists()
