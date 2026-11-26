@@ -375,6 +375,107 @@ is worth recognising the message, because "a backup set already exists" from a
 run you started by hand a moment after the scheduled one is about the clock, not
 about anything being wrong. Wait a second and run it again.
 
+### Backup confidentiality
+
+A set is the whole register; the pools are the bytes of every confidential
+document. From 2026-11-26 (docs/adr/0232 §4) `juristid-backup.sh` writes them
+private whatever umask cron gives it:
+
+| What | Mode | Owner |
+|---|---|---|
+| a new set directory (`sets/<stamp>`, while building `<stamp>.partial`) | 0700 | the account running the backup (root on the host) |
+| `database.dump`, `manifest.json`, `SHA256SUMS`, `*.files0` | 0600 | the same |
+| a pool object copied for the first time | 0600 (directories 0700) | kept from the source: 10001 on the host |
+| a pool object already in the pool | **unchanged** | unchanged |
+
+Who reads them, and why that still works: the backup, the verifier, the
+restore and `offhost-backup.sh` all run as root on the host; `pg_restore` reads
+the dump inside the `db` container as that container's root after
+`docker compose cp`; a restore copies pool objects into `appdata` with their
+mode and numeric owner (10001), which is the account the application reads
+them as. No digest, inventory or count includes a mode, so integrity, the
+membership check, level-2 verification and the restore rehearsal are unchanged.
+
+Every run inspects the backup root, `sets/` and both pools and writes one line
+per directory that lets anybody but its owner in: `confidentiality note` for
+the owner's group only, `CONFIDENTIALITY WARNING` for "other" bits or an ACL.
+`--require-private-destination` (or `JURISTID_BACKUP_REQUIRE_PRIVATE=1` in the
+cron environment) turns a warning into a refusal before anything is written.
+Leave it off until the destination has been tightened as below, or the nightly
+backup stops.
+
+#### Tightening what already exists — a targeted, one-time operator step
+
+Nothing below is run by any script. Do it in a quiet window, under the host
+lock, with this section open. It changes modes only; it moves, rewrites and
+deletes nothing, so every checksum stays valid.
+
+1. **Read first** (read-only, as root):
+
+   ```sh
+   B=/mnt/user/backups/juristid-main
+   ls -ldn "$B" "$B/sets" "$B/evidence" "$B/legacy-source" "$B/.."
+   getfacl -p "$B" "$B/sets" 2>/dev/null | head -20
+   find "$B/sets" -mindepth 1 -maxdepth 1 -type d -perm /077 | wc -l
+   find "$B/sets" -mindepth 2 -maxdepth 2 -type f -perm /077 | wc -l
+   find "$B/evidence" "$B/legacy-source" -type f -perm /077 | wc -l
+   find "$B/evidence" "$B/legacy-source" -type d -perm /077 | wc -l
+   grep -A8 -i 'backups' /etc/samba/smb-shares.conf
+   grep -i 'shareExport\|shareSecurity' /boot/config/shares/backups.cfg
+   ls -ld /mnt/disk*/backups/juristid-main /mnt/*pool*/backups/juristid-main 2>/dev/null
+   ```
+
+   Record the counts. The last line shows every physical path of the share:
+   Unraid presents `/mnt/user/…` as a union, and each disk path carries its own
+   modes.
+
+2. **Take the lock** so no backup, restore or release runs meanwhile:
+   `mkdir /tmp/juristid-host-lock && echo "owner=operator-confidentiality pid=$$" > /tmp/juristid-host-lock/owner`.
+
+3. **The four directories that gate everything else** — enough on its own to
+   close access through this path:
+
+   ```sh
+   chmod 0700 "$B" "$B/sets" "$B/evidence" "$B/legacy-source"
+   ```
+
+4. **The artifacts themselves**, listed first and changed by name, never with
+   `chmod -R` (a recursive chmod also turns every directory's search bit into
+   whatever the file mode says):
+
+   ```sh
+   find "$B/sets" -mindepth 1 -maxdepth 1 -type d -perm /077 -exec chmod 0700 {} +
+   find "$B/sets" -mindepth 2 -maxdepth 2 -type f -perm /077 -exec chmod 0600 {} +
+   find "$B/evidence" "$B/legacy-source" -type d -perm /077 -exec chmod 0700 {} +
+   find "$B/evidence" "$B/legacy-source" -type f -perm /077 -exec chmod 0600 {} +
+   ```
+
+   Ownership is left alone: pool objects keep 10001, which the restore relies
+   on. `operator-reports/` and anything else under `$B` that is not a set or a
+   pool is decided separately.
+
+5. **Release the lock** (`rm -r /tmp/juristid-host-lock`) and **prove nothing
+   else changed**: verify the newest set and one older set to level 2
+   (`juristid-verify-backup.sh --set … --backup-root "$B" --compose-file …`), and
+   re-run step 1's counts — they must all be 0.
+
+6. **The share.** If step 1 showed the `backups` share exported over SMB, that
+   is a host decision outside this repository: set it to not exported (or to
+   private with named users) in the Unraid share settings. An export does not
+   bypass the modes above, but it should not exist for a share nobody mounts.
+
+7. **Only then** put `JURISTID_BACKUP_REQUIRE_PRIVATE=1` in front of the
+   nightly backup's cron line (`JURISTID_BACKUP_REQUIRE_PRIVATE=1 bash
+   …/juristid-backup-nightly.sh …`) and the Lovable sync's, whose APPLY takes
+   its own fresh set through the same script — so a destination that is opened
+   up again stops the backup instead of only warning. Every reader of the
+   backup root is root on the host; no container mounts it.
+
+**Rollback** of the procedure is the reverse `chmod` of the four directories
+(their previous modes are in step 1's record); nothing about the content can
+have changed. **Rollback** of the script change is the previous image's
+`juristid-backup.sh`: sets written under either version restore under either.
+
 ## Checking a backup
 
 Three levels, because "the backup is verified" gets said about all three and

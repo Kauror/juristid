@@ -393,6 +393,9 @@ def complete_sign_in(request: HttpRequest, user: User, *, second_factor: str | N
     before sign-in from becoming an authenticated one after it.
     """
     next_path = request.session.get(SESSION_NEXT)
+    # A one-time link's proof left over from before the sign-in is nothing the
+    # signed-in session needs; it does not travel into it (SEC-006).
+    request.session.pop(SESSION_LINK, None)
     login(request, user, backend=MODEL_BACKEND)
     now = timezone.now()
     stamp = now.isoformat()

@@ -583,6 +583,46 @@ mcp_web_keys_not_ready() {
 # distinction worth keeping: absent is zero, unreadable is an error. Both
 # functions carry the guard, because both are `find | …` and both are read
 # through a command substitution.
+# --------------------------------------------------------------------------
+# Who besides the owner can reach a backup path (SEC-011, docs/adr/0232)
+# --------------------------------------------------------------------------
+#
+# A backup set holds the whole register and the bytes of every confidential
+# document, so whether a directory under the backup root lets anybody but its
+# owner in is a question this script asks rather than assumes. Read from the
+# mode string `ls -ld` prints — the one spelling GNU, BSD and busybox agree
+# on — so the answer is the same on the host, on the CI runner and in a test.
+#
+# The words, space-separated, in this order; "" when nothing but the owner:
+#
+#   group-read group-write other-read other-write other-search acl
+#
+# `other-search` is a directory others may pass through without listing it: a
+# name learned elsewhere (a manifest, a log) then opens the object behind it.
+# `acl` is the `+` a POSIX ACL adds, which this check does not interpret — an
+# ACL can grant anybody anything, so its presence alone is reported.
+access_beyond_owner() {
+  local mode found=""
+  mode="$(ls -ld -- "$1" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  [ -n "$mode" ] || die "cannot read the permissions of $1"
+  [ "${mode:4:1}" = "r" ] && found="$found group-read"
+  [ "${mode:5:1}" = "w" ] && found="$found group-write"
+  [ "${mode:7:1}" = "r" ] && found="$found other-read"
+  [ "${mode:8:1}" = "w" ] && found="$found other-write"
+  case "${mode:0:1}${mode:9:1}" in d[xt]) found="$found other-search" ;; esac
+  [ "${mode:10:1}" = "+" ] && found="$found acl"
+  printf '%s\n' "${found# }"
+}
+
+# Whether `access_beyond_owner` found anything that reaches people outside
+# the owner's group: the "other" bits, or an ACL nobody has read.
+reaches_others() {
+  case " $1 " in
+    *" other-"* | *" acl "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 count_files() {
   [ -d "$1" ] || { printf '0\n'; return 0; }
   find "$1" -type f 2>/dev/null | wc -l | tr -d ' '
