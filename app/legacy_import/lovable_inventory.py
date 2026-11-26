@@ -61,6 +61,7 @@ from typing import Any
 
 from django.db import models
 
+from app.core.csv_safety import csv_safe_row
 from app.legacy_import.integrity import canonical_sha256
 from app.legacy_import.lovable_inventory_models import (
     InventoryDecisionKind,
@@ -997,9 +998,23 @@ CSV_COLUMNS = (
 
 
 def ledger_csv(ledger: Ledger) -> str:
+    """The ledger as a spreadsheet opens it: every cell through `csv_safe_row`.
+
+    `ledger.csv` is the file a person opens in Excel or LibreOffice, and its
+    cells carry values read from the Lovable register — references, notes,
+    candidate labels — that somebody outside this system typed. A value that
+    begins with ``=``, ``+``, ``-`` or ``@`` (after any whitespace or control
+    characters) is prefixed with an apostrophe so it is read as text, never run
+    (SEC-007, app/core/csv_safety.py). Genuine numbers, booleans and blanks are
+    untouched, and the column order is the same.
+
+    The machine-readable record is `ledger.json`, written beside it from the
+    same rows without this treatment: anything that reads the ledger back reads
+    that, and gets the values exactly as the source held them.
+    """
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\n")
-    writer.writerow(CSV_COLUMNS)
+    writer.writerow(csv_safe_row(list(CSV_COLUMNS)))
     for row in ledger.rows:
         data = row.as_dict()
         data["notes"] = " ".join(row.notes)
@@ -1007,7 +1022,7 @@ def ledger_csv(ledger: Ledger) -> str:
         data["candidates"] = " ".join(
             f"{c['basis']}:{c['reference'] or c['source_id']}" for c in row.candidates
         )
-        writer.writerow(["" if data[c] is None else data[c] for c in CSV_COLUMNS])
+        writer.writerow(csv_safe_row(["" if data[c] is None else data[c] for c in CSV_COLUMNS]))
     return out.getvalue()
 
 
