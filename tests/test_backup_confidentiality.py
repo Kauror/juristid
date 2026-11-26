@@ -345,6 +345,7 @@ def test_a_private_set_still_verifies_and_restores(tmp_path: Path):
     assert verified.returncode == 0, verified.stdout + verified.stderr
 
     target = tmp_path / "restored"
+    target.mkdir()  # an empty data root, as the runbook prepares one
     restored = world.run(
         RESTORE,
         "--project",
