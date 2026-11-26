@@ -93,6 +93,7 @@ def runs(request: HttpRequest) -> HttpResponse:
             # «Valitsuse päevakord» (r95): each night's verdict for its week, so a
             # page not yet published reads differently from a failure.
             agenda_checks=_agenda_checks(),
+            agenda_summary=_agenda_summary(),
             waiting=WatchFinding.objects.filter(
                 status=FindingStatus.PENDING, matter__in=_visible(request)
             ).count(),
@@ -108,11 +109,28 @@ AGENDA_PROBLEMS = frozenset(
 )
 
 
+def _agenda_summary() -> dict[str, Any]:
+    """The last night the site's listings were read, and the newest stored agenda (r95)."""
+    from app.register_watch.models import GovernmentAgenda, GovernmentAgendaCheck
+
+    return {
+        "discovered": GovernmentAgendaCheck.objects.filter(discovery_ok=True)
+        .order_by("-created_at")
+        .first(),
+        "latest": GovernmentAgenda.objects.order_by("-session_date").first(),
+    }
+
+
 def _agenda_checks() -> list[dict[str, Any]]:
     from app.register_watch.models import GovernmentAgendaCheck
 
     return [
-        {"check": check, "problem": check.state in AGENDA_PROBLEMS or check.missing}
+        {
+            "check": check,
+            "problem": check.state in AGENDA_PROBLEMS
+            or check.missing
+            or check.discovery_ok is False,
+        }
         for check in GovernmentAgendaCheck.objects.order_by("-created_at")[:AGENDA_CHECKS_SHOWN]
     ]
 

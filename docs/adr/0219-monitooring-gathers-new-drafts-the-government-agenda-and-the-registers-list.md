@@ -1,6 +1,6 @@
 # 0219 — «Monitooring» gathers the new drafts, the Government's agenda and the registers' list
 
-Date: 2026-11-22 · Status: proposed (owner brief 2026-11-22, «make a new tab up top and call it monitooring»; four answers the same day; release awaits owner review); amendment 2026-11-26 (r95) proposed
+Date: 2026-11-22 · Status: proposed (owner brief 2026-11-22, «make a new tab up top and call it monitooring»; four answers the same day; release awaits owner review); amendments 2026-11-26 and 2026-11-26b (r95) proposed
 
 ## Context
 
@@ -193,3 +193,28 @@ rule for this ADR's agenda, ADR 0218's new drafts and ADR 0217's nightly watch):
 **Consequences.**
 - The night before publication no longer turns the cycle and the morning monitor red. A refusal by the site, a 429, a 5xx, a timeout or an unreadable page still does.
 - The control read costs one request, and only on a night that met a 403.
+
+## Amendment 2026-11-26b (r95, BUG-001, proposed) — the agenda is found through the site's own links
+
+**Context.**
+- The 26.11.26 agenda was published on 25.11.2026 at 18:14, at `/uudised/valitsuse-261126-istungi-kommenteeritud-paevakord-0`. The plain address held an *unpublished* page and answered 403 («Ligipääs keelatud»). The night of 26.11 guessed only the plain address and the long form and reported «not yet published». The amendment above would have made that a clean night: a 403 was taken as evidence of non-publication.
+- Agenda addresses are not predictable. The sitemap shows `191126`, `020726` (zero-padded), `2805` (no year), `7-mai-2026`, and Drupal's `-0`/`-1` suffixes for a taken address.
+- The site's own pages list every published agenda: the sitemap (`/sitemap.xml`, Simple XML Sitemap; robots.txt allows it) lists published news pages only, with `lastmod`; the homepage links the newest agenda while it is news. The homepage's «Kommenteeritud päevakord» button opens a search served by a separate service (`search.service.eu-live.vportal.ee`), which returns `null` unless the request carries the site's own browser Origin; it is **not used** (no impersonation, no external search, no AI to locate a page).
+
+**Decision.**
+1. **Discovery first** (`sources.valitsus.discover`): the homepage, the sitemap index and its newest page (and the one before it when the newest is not yet full) are read once per run — at most four requests, only on a night a week still needs its agenda. Agenda links are taken from them by pattern, on valitsus.ee only; `/en/` and `/ru/` and other hosts never match.
+2. **The day's listed addresses are read before any guess.** The generated addresses are a bounded fallback: three date shapes (plain, zero-padded, long) × plain/`-0`/`-1`, at most nine per session day. No redirect is followed (the HTTP door allows none).
+3. **A page is believed only when it parses as that session's agenda**: title «… istungi kommenteeritud päevakord» with a session date, an `<article>`, items numbered 1…N each with a title; the publication time when the page carries one. An HTTP 200 at a guessed address that is anything else (a maintenance page, another session, a title with no article) is ignored — never a success. At a *listed* address it is PARSE_ERROR.
+4. **«Not yet published» needs the listings.** NOT_PUBLISHED (shown as «Tõenäoliselt veel avaldamata», a likely publication delay) only when the sitemap page was read and lists nothing for the day, a fallback address answered 403 and the control was read. Without a readable sitemap, a 403 or all-404 is UNCONFIRMED. A 403 at a *listed* address is INACCESSIBLE. NOT_FOUND («Päevakorda veel ei leitud») means listings read, nothing listed, fallbacks 404.
+5. **The control is verified**, not just fetched: the newest stored agenda's page must parse as that agenda's session (`site_answers(path, session)`). Any other page answering 200 is no control (UNCONFIRMED).
+6. **No failure hides behind a stored agenda.** Discovery failures and failures met before the agenda was found go to `Outcome.errors` and to the week's row (`source_failures`, `discovery_ok`, `discovery`). The night is PARTIAL «valitsus.ee could not be read in full» even when the agenda was stored.
+7. **Revisions.** Until the week's last cycle (Friday's), a stored agenda's own page is re-read once per night. A changed item set (fingerprint of number, title, presenter, type, text) is a `GovernmentAgendaRevision` holding every earlier text: waiting items take the new text, and their model verdict is dropped (kept in the revision) when title or explanation changed; an item a person decided keeps what the person saw and is only marked `revised_at`; a withdrawn item is marked `source_removed_at` and kept (no longer a proposal); a new item is added unjudged. Only new or reopened items are judged and told (bell for the Monitooring audience at most once per revision; owner bells for those items only). The same page read again is no revision. Nothing ever becomes an obligation on a Teema without a person.
+8. **Model use is written on the week it was for** (`GovernmentAgendaCheck.ai_calls/ai_failures`), never the run total on every week; a retry for an earlier stored week gets its own row. A model failure makes the night PARTIAL «model failures: agenda items left unjudged»; items stay «Hindamata».
+9. **Deadline.** Friday's cycle (00:00 Friday Tallinn; the agenda lane from 01:00) is the week's last reading. A week with nothing stored after it is `missing`; the outcome says «missing» first, whatever else went wrong. Later-night recovery is the following nights' cycles: an agenda published after Wednesday night's reading is found by Thursday's or Friday's cycle (each looks again while nothing is stored). After Friday's cycle the only recovery is an authorised manual run (`manage.py watch_government_agenda --weeks N`), which reads the same way and stores a session at most once (`session_date` is unique). There is no daytime reading.
+10. **Schema** (migration register_watch 0011, additive): `GovernmentAgendaCheck.discovery_ok/discovery/source_failures`, state REVISED, `GovernmentAgenda.source_fingerprint/revised_at`, `AgendaItem.revised_at/source_removed_at`, table `GovernmentAgendaRevision`; item uniqueness per agenda and number now holds for live items only. r94 code still inserts against it (every new column is nullable or has a database default).
+11. **Haldus → Registrite jälgimine** adds when the listings were last read, the newest agenda (session, publication, read, revised), and per row the listings and the model's calls/failures. The lawyers' «Valitsuse info» is unchanged.
+
+**Consequences.**
+- The 26.11 incident is found from the sitemap on the first night (tests/test_government_agenda_discovery.py, public fixtures of 26.11.2026).
+- A night that needs discovery costs up to four more requests (homepage ≈ 150 kB, sitemap index ≈ 3 kB, newest sitemap page ≤ ≈ 1.2 MB); a stored week costs one re-read per night through Friday.
+- If the Government stops publishing the sitemap, nights become UNCONFIRMED (PARTIAL) rather than silently clean.

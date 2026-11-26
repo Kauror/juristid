@@ -10,6 +10,12 @@ by one control read of the newest stored agenda:
 * control 403: access refused — an error;
 * control unreadable: publication unconfirmed — a warning, never a clean check.
 
+Since BUG-001 (the same night: the agenda was published at «…-paevakord-0» and the
+plain address was an unpublished page) the agenda is found through the site's own
+listings first, and «not yet published» is said only when those listings were read
+and name nothing for the day (tests/test_government_agenda_discovery.py has the real
+26.11 incident). Here the homepage and the sitemap answer, empty of agendas.
+
 No test contacts valitsus.ee or the model: the page is the trimmed 19.11.26 copy in
 tests/fixtures/valitsus/ and every address answers from a table.
 """
@@ -45,8 +51,31 @@ PAGE = (Path(__file__).parent / "fixtures" / "valitsus" / "agenda-191126.html").
 #: The fixture page is the 19.11.26 agenda: its week (Mon 16.11) is the one tested.
 SESSION = dt.date(2026, 11, 19)
 WEDNESDAY, THURSDAY, FRIDAY = dt.date(2026, 11, 18), SESSION, dt.date(2026, 11, 20)
-SHORT, LONG = valitsus.candidate_paths(SESSION)
+SHORT = valitsus.candidate_paths(SESSION)[0]
+LONG = next(path for path in valitsus.candidate_paths(SESSION) if "november" in path)
 CONTROL = "/uudised/valitsuse-121126-istungi-kommenteeritud-paevakord"
+#: The control is the stored 12.11.26 agenda: it must parse as that session's.
+CONTROL_PAGE = PAGE.replace("19.11.26", "12.11.26").replace("19. 11. 26", "12. 11. 26")
+SITEMAP_PAGE = f"{valitsus.SITEMAP}?page=17"
+
+
+def listing(*paths: str) -> str:
+    """A sitemap page naming ``paths`` (and enough other pages to be a full one)."""
+    others = "".join(
+        f"<url><loc>https://valitsus.ee/uudised/muu-{n}</loc></url>" for n in range(300)
+    )
+    named = "".join(f"<url><loc>https://valitsus.ee{path}</loc></url>" for path in paths)
+    return f"<urlset>{others}{named}</urlset>"
+
+
+LISTINGS = {
+    valitsus.HOMEPAGE: '<html><a href="/uudised/muu-uudis">Muu</a></html>',
+    valitsus.SITEMAP: (
+        "<sitemapindex><sitemap><loc>https://valitsus.ee/sitemap.xml?page=17</loc>"
+        "</sitemap></sitemapindex>"
+    ),
+    SITEMAP_PAGE: listing(),
+}
 
 
 class Site:
@@ -57,9 +86,9 @@ class Site:
         self.default = default
         self.asked: list[str] = []
 
-    def __call__(self, host: str, path: str) -> str:
+    def __call__(self, host: str, path: str, **_: object) -> str:
         self.asked.append(path)
-        answer = self.answers.get(path, self.default)
+        answer = self.answers.get(path, LISTINGS.get(path, self.default))
         if isinstance(answer, Exception):
             raise answer
         if isinstance(answer, int):
@@ -125,7 +154,7 @@ def _nothing_written_but_the_check():
 
 
 def test_an_expected_page_refused_before_its_session_is_not_yet_published(site, last_week):
-    site.answers = {SHORT: 403, LONG: 404, CONTROL: PAGE}
+    site.answers = {SHORT: 403, LONG: 404, CONTROL: CONTROL_PAGE}
     outcome = _run(today=THURSDAY)
 
     assert outcome.stored == [] and outcome.errors == []
@@ -161,7 +190,7 @@ def test_the_first_address_refused_and_the_second_published_is_read(site, last_w
 
 
 def test_the_agenda_published_the_next_night_is_stored_then(site, last_week):
-    site.answers = {SHORT: 403, LONG: 404, CONTROL: PAGE}
+    site.answers = {SHORT: 403, LONG: 404, CONTROL: CONTROL_PAGE}
     first = _run(today=THURSDAY)
     assert first.stored == [] and first.checks[0].state == AgendaCheckState.NOT_PUBLISHED
 
@@ -206,7 +235,7 @@ def test_a_control_that_fails_otherwise_leaves_it_unconfirmed(site, last_week):
 
 def test_a_past_sessions_page_still_refused_is_inaccessible_not_waiting(site, last_week):
     # Friday night: Thursday's page still answers 403 while the control is served.
-    site.answers = {SHORT: 403, LONG: 404, CONTROL: PAGE}
+    site.answers = {SHORT: 403, LONG: 404, CONTROL: CONTROL_PAGE}
     outcome = _run(today=FRIDAY)
     check = outcome.checks[0]
     assert check.state == AgendaCheckState.INACCESSIBLE and check.missing
@@ -238,11 +267,32 @@ def test_rate_limits_server_errors_and_timeouts_are_source_errors(site, last_wee
     ],
     ids=["not-an-agenda", "another-session"],
 )
-def test_a_page_that_is_not_this_sessions_agenda_is_a_parse_error(site, last_week, page):
-    site.answers = {SHORT: page}
+def test_a_listed_page_that_is_not_this_sessions_agenda_is_a_parse_error(site, last_week, page):
+    # The site lists the address for the day, yet the page is no agenda of it.
+    site.answers = {SHORT: page, SITEMAP_PAGE: listing(SHORT)}
     outcome = _run(today=THURSDAY)
     assert outcome.checks[0].state == AgendaCheckState.PARSE_ERROR
     assert outcome.errors and outcome.stored == []
+    _nothing_written_but_the_check()
+    assert _classified(outcome).outcome == no.PARTIAL
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        "<html><h1>Hooldustööd</h1><p>Leht on ajutiselt kättesaamatu.</p></html>",
+        "<html><h1>Valitsuse 19.11.26 istungi kommenteeritud päevakord</h1></html>",
+        PAGE.replace("19.11.26", "12.11.26").replace("19. 11. 26", "12. 11. 26"),
+    ],
+    ids=["maintenance-page", "title-without-article", "another-session"],
+)
+def test_an_unrelated_200_at_a_guessed_address_is_no_success(site, last_week, page):
+    # BUG-001: an HTTP 200 proves nothing; a guessed address with some other page
+    # neither stores anything nor counts as a check that found the agenda.
+    site.answers = {SHORT: page}
+    outcome = _run(today=THURSDAY)
+    assert outcome.stored == []
+    assert outcome.checks[0].state == AgendaCheckState.NOT_FOUND
     _nothing_written_but_the_check()
 
 
@@ -296,7 +346,11 @@ def test_a_stored_agenda_is_told_once_and_a_later_night_tells_nobody_again(
         ({"unconfirmed": 1}, no.PARTIAL, "publication unconfirmed"),
         ({"inaccessible": 1}, no.PARTIAL, "inaccessible"),
         ({"missing": 1, "not_published": 1}, no.PARTIAL, "missing"),
-        ({"errors": 1, "not_published": 1}, no.PARTIAL, "valitsus.ee errors"),
+        ({"errors": 1, "not_published": 1}, no.PARTIAL, "could not be read"),
+        ({"errors": 1, "stored": 1}, no.PARTIAL, "could not be read"),
+        ({"ai_failures": 1, "stored": 1}, no.PARTIAL, "model failures"),
+        ({"missing": 1, "errors": 1}, no.PARTIAL, "missing"),
+        ({"revised": 1}, no.SUCCEEDED, ""),
         ({"stored": 1, "judged": 20}, no.SUCCEEDED, ""),
         ({}, no.SUCCEEDED_NO_NEW, ""),
     ],
@@ -310,7 +364,7 @@ def test_the_cycle_tells_waiting_from_failing(reported, expected, reason):
 
 @override_settings(REGISTER_WATCH_FETCH=True)
 def test_the_command_prints_the_waiting_week_and_its_evidence(site, last_week, monkeypatch):
-    site.answers = {SHORT: 403, LONG: 404, CONTROL: PAGE}
+    site.answers = {SHORT: 403, LONG: 404, CONTROL: CONTROL_PAGE}
     monkeypatch.setattr(agenda.timezone, "localdate", lambda: THURSDAY)
     out = io.StringIO()
     call_command("watch_government_agenda", "--no-ai", "--outcome-json", stdout=out)
@@ -333,7 +387,7 @@ def test_haldus_says_waiting_and_failing_apart(client, department_head, last_wee
         state=AgendaCheckState.NOT_PUBLISHED,
         session_date=THURSDAY,
         http_status=403,
-        detail="valitsus.ee vastas 403: päevakord on olemas, kuid veel avaldamata",
+        detail="valitsus.ee vastas 403 ja sisukaardis seda veel ei ole: tõenäoliselt avaldamata",
     )
     GovernmentAgendaCheck.objects.create(
         week=dt.date(2026, 11, 9), state=AgendaCheckState.ACCESS_REFUSED, http_status=403
@@ -345,8 +399,8 @@ def test_haldus_says_waiting_and_failing_apart(client, department_head, last_wee
         pytest.skip("this persona does not open Haldus → Registrite jälgimine")
     html = response.content.decode()
     section = html[html.index('id="regwatchlog-agenda"') : html.index('id="regwatchlog-runs"')]
-    assert "Päevakord on olemas, kuid veel avaldamata" in section
-    waiting = section[: section.index("Päevakord on olemas, kuid veel avaldamata")]
+    assert "Tõenäoliselt veel avaldamata" in section
+    waiting = section[: section.index("Tõenäoliselt veel avaldamata")]
     assert waiting.rstrip().endswith('<span class="statechip">')
     refused = section[: section.index("Juurdepääs keelatud")]
     assert refused.rstrip().endswith('statechip statechip--problem">')

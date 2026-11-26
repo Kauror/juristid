@@ -18536,6 +18536,29 @@ a.statpanel__note {
   white-space: nowrap;
 }
 
+/* Valitsuse päevakord (r95): when the listings were last read, the newest agenda. */
+.regwatchlog__facts {
+  display: grid;
+  gap: var(--spacing-1);
+  margin: var(--spacing-2) 0 var(--spacing-3);
+}
+
+.regwatchlog__facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.regwatchlog__facts dt {
+  color: var(--text-secondary);
+  min-width: 12rem;
+}
+
+.regwatchlog__facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 /* «Uued teemad» (app/register_watch, docs/adr/0218). Each row is strength |
  * the draft and its register entries | the three answers. */
 
