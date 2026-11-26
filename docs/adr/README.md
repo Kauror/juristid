@@ -237,6 +237,7 @@ consequences and reversibility.
 | [0227](0227-full-document-parliamentary-analysis-is-built-controlled-and-left-off.md) | Full-document parliamentary analysis is built, controlled, and left off (one cached, validated, quote-verified pipeline; deterministic version comparison; official evidence first; work-victory candidates only) | Accepted — code only; full-document processing not authorised |
 | [0228](0228-protocols-stenograms-and-answers-are-evidence-never-verdicts.md) | Protocols, stenograms and answers to invitations are evidence, never verdicts («vajab kontrollimist», never «ei vastanud»; deferred extensions listed) | Accepted |
 | [0229](0229-the-nightly-jobs-run-in-one-coordinated-cycle-at-midnight-in-tallinn.md) | The nightly jobs run in one coordinated cycle at midnight in Tallinn (one cron line fires 21:00 and 22:00 UTC, the script runs the 00:00 Tallinn one; Lovable first, then the registers lane and the agenda side by side; outcomes from run records; one cycle lock a release must take; prepared, not deployed) | Accepted |
+| [0232](0232-credential-links-rotate-the-session-access-reuses-only-its-own-sessions-and-backups-are-written-private.md) | Credential links rotate the session, Access reuses only its own sessions, and backups are written private (SEC-006/007/011/012; the shared gate's persona risk recorded as an accepted, temporary residual risk by the owner's deferral; dormant modes tested, nothing switched on) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -250,6 +251,10 @@ requires every gap in the numbering to be named here:
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
   rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
   The record lands with that branch, which then removes this line.
+- 0230 — left for package A of the security round of 2026-11-26 (developed in
+  parallel with 0232 and 0234); the integration owner renumbers if it lands
+  under another number.
+- 0231 — left for package B of the same round, likewise.
 
 Naming: `NNNN-short-decision-title.md`.
 
