@@ -26,6 +26,7 @@ import os
 import shutil
 import stat
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -167,6 +168,13 @@ class World:
         return sorted((self.backups / "sets").glob("*"))
 
 
+def _next_second(world: World) -> None:
+    """Sets are named to the second, and a second run in the same one is refused."""
+    taken = {path.name for path in world.sets()}
+    while time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) in taken:
+        time.sleep(0.05)
+
+
 # -- reading a mode ------------------------------------------------------------------
 
 
@@ -260,6 +268,7 @@ def test_an_object_already_in_the_pool_keeps_its_mode(tmp_path: Path):
     existing = world.backups / "evidence" / "ab" / "first.pdf"
     existing.chmod(0o644)  # as every pool object written before 2026-11-26 is
     (world.data / "evidence" / "ab" / "second.pdf").write_bytes(b"synthetic evidence two")
+    _next_second(world)
 
     again = world.backup()
 
