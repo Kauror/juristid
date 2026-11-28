@@ -46,13 +46,20 @@ Conditions to know at the deploy:
   policy (about 3 s in the test); `docker kill` is a manual stop and is **not** restarted:
   `docker start` it.
 * OCR is the only heavy case: about 6 s per dense A4 page on one core, memory about
-  3 MiB per page. The 120 s intake budget therefore reads a scan of about 19 pages; a
-  longer one is stopped with `parser_timeout`, shows «… Originaal on alles ja avatav.»,
-  and the Teema is created as usual. The 1200 s batch budget reads about 200 pages.
-  Raise `DOCUMENT_PARSER_INTAKE_WALL_SECONDS` only together with
-  `DOCUMENT_PARSER_QUEUE_SECONDS` so that wall + queue + 15 s stays under the reader's
-  300 s stale window (system check `documents.E001`); raise the batch wall only with a
-  higher `JURISTID_PARSER_MAX_MEMORY_BYTES` (and `mem_limit`). Both are owner decisions.
+  3 MiB per page. The intake budget is **240 s with a 30 s queue wait** (owner decision of
+  28.11.2026, raised from the 120 s first proposed), which reads a scan of about **39
+  dense pages**; a longer one is stopped with `parser_timeout`, shows «… Originaal on
+  alles ja avatav.», and the Teema is created as usual. The 1200 s batch budget reads
+  about 200 pages. This is a documented, revertable owner decision: the numbers are
+  `DOCUMENT_PARSER_INTAKE_WALL_SECONDS` (240) and `DOCUMENT_PARSER_QUEUE_SECONDS` (30)
+  in `config/settings.py`, both overridable from the environment of the callers; the
+  parser containers' ceilings (1500 s wall, 2 GiB, `mem_limit`) are unchanged. Wall +
+  queue + 15 s (285 s) must stay under the reader's 300 s stale window (system check
+  `documents.E001`), so going past about 39 pages also means a longer
+  `INTAKE_READER_STALE_CLAIM_MINUTES`; raise the batch wall only with a higher
+  `JURISTID_PARSER_MAX_MEMORY_BYTES` (and `mem_limit`). A second intake file arriving
+  while a long scan is read waits at most 30 s and is then handed back to the queue
+  (nothing is lost; the reader retries after 15 s).
 * `/dev/shm` (64 MiB, Docker's default) is the one writable place the Compose file does
   not name; it is bounded and counted against the container's memory.
 

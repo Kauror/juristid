@@ -327,15 +327,26 @@ def historical_materials(request: HttpRequest) -> HttpResponse:
     )
 
 
-#: Card notes Andmekvaliteet does not print (UX-002, 2026-11-26). The metrics
-#: still carry them — on the other tabs and in the CSV — so this is the page
-#: leaving two sentences out, not the measurement changing.
-QUALITY_PAGE_OMITTED_NOTES = frozenset({archive.NOT_A_SUBMISSION_NOTE, archive.EMPTY_NOTE})
+#: Card notes Andmekvaliteet does not print (UX-002, 2026-11-26; the two
+#: «teadlik valik» sentences 2026-11-28). The metrics still carry them — on the
+#: other tabs and in the CSV — so this is the page leaving sentences out, not the
+#: measurement changing. A note is left out when it contains one of these.
+QUALITY_PAGE_OMITTED_NOTES = frozenset(
+    {
+        archive.NOT_A_SUBMISSION_NOTE,
+        archive.EMPTY_NOTE,
+        documents.INTAKE_READ_NOTE,
+        documents.INTAKE_DELIBERATE_NOTE,
+    }
+)
 
 
 def _without_notes(results: list[MetricResult], omitted: frozenset[str]) -> list[MetricResult]:
     return [
-        dataclasses.replace(result, notes=tuple(n for n in result.notes if n not in omitted))
+        dataclasses.replace(
+            result,
+            notes=tuple(n for n in result.notes if not any(o in n for o in omitted)),
+        )
         for result in results
     ]
 
@@ -352,7 +363,7 @@ def data_quality(request: HttpRequest) -> HttpResponse:
             **_shell(request, context, "andmekvaliteet"),
             "cards": _without_notes(page.cards, QUALITY_PAGE_OMITTED_NOTES),
             "compositions": _bars(page.charts),
-            "extraction": page.tables,
+            "extraction": _without_notes(page.tables, QUALITY_PAGE_OMITTED_NOTES),
             "extraction_states": charts.bars(
                 _extraction_chart(context),
             ),

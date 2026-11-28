@@ -880,10 +880,18 @@ DOCUMENT_PARSER_SCRATCH_ROOT = env("DOCUMENT_PARSER_SCRATCH_ROOT", "")
 # boundary stops is settled by the pass that claimed it. The batch budget is
 # for corpus runs and register reads nobody is waiting on, inside
 # EXTRACTION_STALE_CLAIM_MINUTES for the same reason.
-DOCUMENT_PARSER_INTAKE_WALL_SECONDS = env_int("DOCUMENT_PARSER_INTAKE_WALL_SECONDS", 120)
+#
+# Intake 240 s (owner decision of 2026-11-28, docs/adr/0230 §Limits): OCR costs
+# about 6 s per dense A4 page on one core, so 240 s reads a scan of about 39
+# pages (120 s read about 19). Held inside the five-minute stale-claim window:
+# 240 + 30 queue + 15 hand-back = 285 s < 300 s. Reverting is the one number
+# below plus the queue, nothing else.
+DOCUMENT_PARSER_INTAKE_WALL_SECONDS = env_int("DOCUMENT_PARSER_INTAKE_WALL_SECONDS", 240)
 DOCUMENT_PARSER_BATCH_WALL_SECONDS = env_int("DOCUMENT_PARSER_BATCH_WALL_SECONDS", 1200)
 # How long a request may wait for the file in front of it at the service.
-DOCUMENT_PARSER_QUEUE_SECONDS = env_int("DOCUMENT_PARSER_QUEUE_SECONDS", 120)
+# A request that waits longer is handed back (the file stays queued), so the
+# wait is short: the intake wall above has used most of the stale-claim window.
+DOCUMENT_PARSER_QUEUE_SECONDS = env_int("DOCUMENT_PARSER_QUEUE_SECONDS", 30)
 # Address space of a child and everything it starts (RLIMIT_AS). Sized from
 # the measurements in docs/adr/0230; the container's mem_limit is the second,
 # cgroup-wide ceiling.

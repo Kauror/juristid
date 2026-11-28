@@ -243,6 +243,24 @@ def test_the_intake_budget_must_end_inside_the_stale_claim_window(settings):
     assert "stale-claim window" in errors[0].msg
 
 
+def test_the_intake_defaults_are_the_owner_decision_of_28_11_and_inside_the_claim_window(settings):
+    """240 s wall + 30 s queue (+ 15 s hand-back) < the reader's 300 s claim, batch unchanged."""
+    assert settings.DOCUMENT_PARSER_INTAKE_WALL_SECONDS == 240
+    assert settings.DOCUMENT_PARSER_QUEUE_SECONDS == 30
+    assert settings.DOCUMENT_PARSER_BATCH_WALL_SECONDS == 1200
+    held = settings.DOCUMENT_PARSER_INTAKE_WALL_SECONDS + settings.DOCUMENT_PARSER_QUEUE_SECONDS + 15
+    assert held == 285 < settings.INTAKE_READER_STALE_CLAIM_MINUTES * 60
+    assert check_parser_isolation() == []
+
+
+def test_a_240_second_parse_with_the_old_120_second_queue_would_outlive_its_claim(settings):
+    """The lease is why the queue was cut: 240 + 120 + 15 is past 300 s, and refused."""
+    settings.DOCUMENT_PARSER_QUEUE_SECONDS = 120
+    errors = check_parser_isolation()
+    assert [error.id for error in errors] == ["documents.E001"]
+    assert "stale-claim window" in errors[0].msg
+
+
 def test_service_mode_without_a_socket_is_a_configuration_error(settings):
     settings.DOCUMENT_PARSER_ISOLATION = "service"
     settings.DOCUMENT_PARSER_SOCKET = ""

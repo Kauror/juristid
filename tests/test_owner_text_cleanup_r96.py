@@ -32,6 +32,9 @@ QUALITY_REMOVED = (
     "„Loetud teema loomisel“ tähendab",
     "see on teadlik valik, mitte tegemata töö",
     "Failid ise on alati avatavad teema juurest",
+    # The two near-variants of the same sentence (owner, 28.11.2026).
+    "see on teadlik valik, mitte puudujääk",
+    "teadlik valik (docs/adr/0072), mitte tegemata töö",
 )
 
 
@@ -140,3 +143,32 @@ def test_the_kokku_row_has_one_cell_per_column(client, department_head, speciali
     assert head.count("<th ") == 6
     assert foot.count("<th ") + foot.count("<td ") == 6
     assert foot.count('<td class="chtable__num">') == 5
+
+
+def test_the_two_teadlik_valik_notes_are_left_out_of_andmekvaliteet_only(rf, client, specialist):
+    """Absent on Andmekvaliteet; the metrics, their values and states are unchanged and
+    still carry the sentences for every other consumer (other tabs, the CSV)."""
+    from app.reporting import metric_catalogue as keys
+    from app.reporting.selectors import documents
+
+    request = rf.get(QUALITY)
+    request.user = specialist
+    context = reporting_context.from_request(request)
+
+    intake = documents.extraction_intake_read(context)
+    assert documents.INTAKE_READ_NOTE in intake.notes
+    shown = reporting_views._without_notes([intake], reporting_views.QUALITY_PAGE_OMITTED_NOTES)[0]
+    assert documents.INTAKE_READ_NOTE not in shown.notes
+    assert (shown.key, shown.value, shown.status) == (intake.key, intake.value, intake.status)
+    assert shown.key == keys.EXTRACTION_INTAKE_READ
+
+    # The dynamic coverage note keeps its count when it is shown elsewhere, and is
+    # dropped here by its fixed sentence.
+    dynamic = intake.with_note(f"5 faili loeti. {documents.INTAKE_DELIBERATE_NOTE}")
+    kept = reporting_views._without_notes([dynamic], reporting_views.QUALITY_PAGE_OMITTED_NOTES)[0]
+    assert not any(documents.INTAKE_DELIBERATE_NOTE in n for n in kept.notes)
+    assert any(documents.INTAKE_DELIBERATE_NOTE in n for n in dynamic.notes)
+
+    client.force_login(specialist)
+    body = _text(client.get(QUALITY))
+    assert "teadlik valik" not in body and "mitte tegemata töö" not in body

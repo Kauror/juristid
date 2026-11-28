@@ -79,14 +79,14 @@ Defaults (`config/settings.py`, ceilings in `deploy/unraid-main/compose.yml`):
 
 | Limit | Intake | Batch | Container ceiling |
 |---|---|---|---|
-| Wall clock per file | 120 s | 1200 s | 1500 s |
-| CPU seconds per file | 120 s | 1200 s | 1500 s; `cpus: 1.0` |
+| Wall clock per file | 240 s | 1200 s | 1500 s |
+| CPU seconds per file | 240 s | 1200 s | 1500 s; `cpus: 1.0` |
 | Address space (`RLIMIT_AS`) | 2 GiB | 2 GiB | 2 GiB; `mem_limit` 2560 MiB |
 | Single file written (`RLIMIT_FSIZE`) | 256 MiB | 256 MiB | 256 MiB; scratch tmpfs 256 MiB |
 | Output (JSON) | 64 MiB | 512 MiB | 512 MiB |
 | Input | — | — | 128 MiB (upload ceiling is 100 MiB) |
 | Processes | — | — | `pids_limit: 32` |
-| Queue wait at the service | 120 s | 120 s | — |
+| Queue wait at the service | 30 s | 120 s | — |
 
 The intake budget is held inside the reader's stale-claim window by system check
 `documents.E001` (deadline + queue + 15 s < `INTAKE_READER_STALE_CLAIM_MINUTES`), so a
@@ -117,16 +117,27 @@ in force, one fresh container per class. Peak = the container's `memory.peak`.
 | scanned PDF, 10 / 25 / 100 dense A4 pages (OCR) | 62 / 152 / 592 s | 139 / 173 / 383 MiB | 265 / 317 / 627 MiB |
 
 OCR costs about 6 s per dense page on one core, and memory grows about 3 MiB per page.
-Consequences: the 120 s intake budget reads a scan of about 19 pages; the 1200 s batch
+Consequences: the 120 s intake budget first proposed read a scan of about 19 pages (the
+owner raised it to 240 s on 28.11.2026, below: about 39 pages); the 1200 s batch
 budget about 200 pages (≈ 0.8 GiB child), so raising the batch wall to cover the 500-page
 extraction ceiling would also need a higher address-space limit (about 1.9 GiB at 500
-pages against `RLIMIT_AS` 2 GiB). A 25-page scan on `Uus teema` was stopped at 120 s with
+pages against `RLIMIT_AS` 2 GiB). A 25-page scan on `Uus teema` was stopped at 120 s (the measurement run, before the raise) with
 `parser_timeout`, the next file was read by the same service, and nothing was left in
 the scratch directory.
 
+**Owner decision, 28.11.2026: intake wall 240 s, queue wait 30 s.** The first proposal
+(120 s) stopped a 25-page scan; 240 s reads about 39 dense pages. Wall + queue + the 15 s
+hand-back is 285 s, inside the reader's 300 s claim window (`documents.E001` refuses a
+configuration that is not), so a parse that is stopped or finishes late can never be
+overtaken by a second reader, and the settling writes stay fenced on the claim
+timestamp. Batch wall (1200 s), per-file memory (2 GiB) and the container's memory are
+unchanged. The decision is revertable by two settings; it is documented here so nobody
+mistakes 240 s for a measured necessity.
+
 **What the limits affect.** A file somebody adds on `Uus teema` that takes longer than
-120 s to read — in practice a long scan that needs OCR page by page — gets no
-suggestions and reads «Faili lugemine katkestati, sest see kestis üle 120 sekundi.
+240 s to read — in practice a scan of more than about 39 dense pages that needs OCR
+page by page — gets no suggestions and reads «Faili lugemine katkestati, sest see
+kestis üle 240 sekundi.
 Originaal on alles ja avatav.»; before this record the same file outlived the reader's
 five-minute claim and was reclaimed until its attempts ran out. The file itself is
 stored and opens as always, and the Teema is created regardless. A batch file past
@@ -183,7 +194,7 @@ Named, not hidden:
    accepted. The worst case is a missed intake read until the reader's next turn.
 3. **One file at a time per service.** A long batch file never delays an intake file
    (separate services), but two intake files from two forms queue; the queue allowance
-   (120 s) is inside the stale-claim window by the system check.
+   (30 s) is inside the stale-claim window by the system check.
 4. **The legacy archive import** (`app/legacy_import/opinion_text.py`) still calls
    `PdfParser` in its own process. It is an operator command over Koda's own historical
    archive, not a reader of outside files, and was left as it is.
