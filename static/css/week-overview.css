@@ -43,3 +43,9 @@
 .wo--single { grid-template-columns: minmax(0, 1fr); }
 .wo__count { color: var(--text-secondary); font-weight: 400; font-size: 0.875rem; }
 .wo__when { font-variant-numeric: tabular-nums; }
+
+/* Minu statistika: a selectable chart column (r97). */
+.mystats__colbtn { color: inherit; text-decoration: none; cursor: pointer; border-radius: var(--radius-card); }
+.mystats__colbtn:hover { background: var(--surface-hover); }
+.mystats__colbtn.is-selected { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.mystats__colbtn:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: var(--focus-ring-offset-width); }

@@ -578,3 +578,41 @@ def test_the_overview_adds_a_bounded_number_of_queries(client, request, monkeypa
     )
     without = queries()
     assert with_overview - without <= 25, (with_overview, without)
+
+
+# --- Minu statistika: a chart column opens its days -----------------------------
+
+
+def _statistics(client: Any, user: Any, **params: str) -> Any:
+    client.force_login(user)
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    response = client.get(reverse("matters:my_statistics") + (f"?{query}" if query else ""))
+    assert response.status_code == 200
+    return response.context["stats"]
+
+
+def test_a_chart_column_opens_its_own_days_and_clearing_keeps_the_period(
+    client, specialist
+) -> None:
+    a_matter(specialist)  # a person-made assignment: recording is reliable from today
+    stats = _statistics(client, specialist, naitaja="uued")
+    openable = [c for c in stats.columns if c.url]
+    assert openable, "a measured column must be selectable, a genuine 0 included"
+    column = openable[0]
+    chosen = _statistics(
+        client, specialist, naitaja="uued", valik=column.url.split("valik=")[1].split("#")[0]
+    )
+    assert chosen.selection and chosen.clear_url
+    assert "valik=" not in chosen.clear_url
+    assert "periood=nadal" in chosen.clear_url and "naitaja=uued" in chosen.clear_url
+    assert [c.selected for c in chosen.columns].count(True) == 1
+
+
+def test_a_column_nobody_measured_or_in_the_future_is_not_selectable(client, specialist) -> None:
+    stats = _statistics(client, specialist, naitaja="uued")
+    assert all(c.url == "" for c in stats.columns if c.future)
+
+
+def test_a_made_up_selection_is_ignored(client, specialist) -> None:
+    stats = _statistics(client, specialist, naitaja="uued", valik="1999-01-01")
+    assert stats.selection == "" and stats.clear_url == ""

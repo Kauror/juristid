@@ -780,6 +780,12 @@ class Column:
     future: bool = False
     #: The value is a lower bound or unknown: drawn faint.
     partial: bool = False
+    #: Selecting this column narrows the list under the chart to its days (r97).
+    #: Empty for a column nobody measured and for one in the future: a click there
+    #: would promise records for a span the product cannot speak about. A column
+    #: that *was* measured and holds a genuine 0 is selectable.
+    url: str = ""
+    selected: bool = False
 
 
 @dataclass(frozen=True)
@@ -825,6 +831,10 @@ class MyStatistics:
     #: reliable coverage begins (``None``: not established).
     recording: dict[str, date | None] = field(default_factory=dict)
     reliable: dict[str, date | None] = field(default_factory=dict)
+    #: The chart column the list is narrowed to (its label), and the link that
+    #: clears only that — the period and the figure stay.
+    selection: str = ""
+    clear_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -961,6 +971,7 @@ def my_statistics(
     *,
     show_all: bool = False,
     path: str = "",
+    selected_bucket: str = "",
 ) -> MyStatistics:
     """The page for ``person``, read as ``person``, for ``period`` (default: this week).
 
@@ -1021,8 +1032,16 @@ def my_statistics(
     ]
     chosen = next(card for group in groups for card in group.cards if card.selected)
 
-    columns, note = _chart(chosen, period, series, ownership, person.pk)
-    drill = _drill(chosen, period, series, ownership, person.pk, present, show_all, path)
+    bucket = next(
+        (
+            b
+            for b in period.buckets()
+            if not b.future and b.span.start.isoformat() == selected_bucket
+        ),
+        None,
+    )
+    columns, note = _chart(chosen, period, series, ownership, person.pk, path, bucket)
+    drill = _drill(chosen, period, series, ownership, person.pk, present, show_all, path, bucket)
 
     bar = []
     for key, label in stat_periods.KINDS:
@@ -1038,6 +1057,10 @@ def my_statistics(
         today=today,
         groups=groups,
         selected=chosen,
+        selection=(bucket.label + (" " + bucket.sublabel if bucket.sublabel else ""))
+        if bucket
+        else "",
+        clear_url=period.url(path, naitaja=chosen.figure.key) if bucket else "",
         columns=columns,
         chart_note=note,
         drill=drill,
@@ -1089,7 +1112,13 @@ def _present_state(person: Any, today: date) -> dict[str, tuple[list[DrillRow], 
 
 
 def _chart(
-    card: Card, period: Any, series: dict[str, Series], ownership: Ownership, person_id: Any
+    card: Card,
+    period: Any,
+    series: dict[str, Series],
+    ownership: Ownership,
+    person_id: Any,
+    path: str = "",
+    chosen: Any = None,
 ) -> tuple[list[Column], str]:
     """The selected figure by day, week or month (`Period.grain`); future columns empty."""
     figure = card.figure
@@ -1119,6 +1148,9 @@ def _chart(
             columns.append(Column(bucket.label, bucket.sublabel, span_text, "", 0.0, future=True))
             continue
         height = 100.0 * (found.value or 0) / top if top else 0.0
+        # A measured column — a real count, a lower bound above 0 or a genuine 0 —
+        # can be opened; an unmeasured one (UNKNOWN) has no records to open.
+        openable = found.coverage is not Coverage.UNKNOWN and figure.mode == SERIES
         columns.append(
             Column(
                 bucket.label,
@@ -1127,6 +1159,13 @@ def _chart(
                 found.text,
                 height,
                 partial=not found.exact,
+                url=(
+                    period.url(path, naitaja=figure.key, valik=bucket.span.start.isoformat())
+                    + "#mystats-joonis"
+                    if openable and path
+                    else ""
+                ),
+                selected=chosen is not None and chosen.span.start == bucket.span.start,
             )
         )
     return columns, ""
@@ -1141,8 +1180,9 @@ def _drill(
     present: dict[str, tuple[list[DrillRow], int]],
     show_all: bool,
     path: str,
+    bucket: Any = None,
 ) -> Drill:
-    """The records behind the selected figure for the period, newest first."""
+    """The records behind the selected figure for the period (or one chart column), newest first."""
     figure = card.figure
     rows: list[DrillRow]
     if figure.mode == PRESENT:
@@ -1160,7 +1200,9 @@ def _drill(
     else:
         rows = []
         for record in sorted(
-            series[figure.key].within(period.counted), key=lambda r: r.day, reverse=True
+            series[figure.key].within(bucket.span if bucket is not None else period.counted),
+            key=lambda r: r.day,
+            reverse=True,
         ):
             reference, title = ownership.names.get(record.matter_id, ("", ""))
             rows.append(
