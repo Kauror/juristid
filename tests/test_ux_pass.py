@@ -1018,7 +1018,8 @@ def test_osakond_costs_the_same_whatever_the_department_holds(
 
     # +1 since the page counts sent opinions from one read of the one reader
     # (docs/adr/0214 §6) — the same at 3, 12, 30 and 60.
-    with django_assert_max_num_queries(46):
+    # +12 for «Selle nädala ülevaade» (r97, docs/adr/0235): fixed reads, the same at 3-60.
+    with django_assert_max_num_queries(58):
         response = client.get(reverse("matters:department"))
     assert response.status_code == 200
 

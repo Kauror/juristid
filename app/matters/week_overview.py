@@ -54,7 +54,7 @@ from app.matters.my_statistics import (
     recording_since,
     reliable_since,
 )
-from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
+from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 
 SELF, DEPARTMENT, COLLEAGUE = "self", "department", "colleague"
@@ -220,6 +220,10 @@ class Ctx:
     facts: list[Any] | None = None
     #: First day each history figure is reliably recorded (`reliable_since`).
     reliable: dict[str, date | None] = field(default_factory=dict)
+    #: One request's reads, by what was asked: a figure and the preview or list that
+    #: shares its population never read it twice. Per request, per reader — never
+    #: shared between users, so it cannot go stale or leak.
+    memo: dict[Any, Any] = field(default_factory=dict)
 
     @property
     def person_id(self) -> Any:
@@ -291,6 +295,13 @@ def classify_ended(row: NextAction) -> str:
     return DATE_CHANGED
 
 
+def _ended_rows(ctx: Ctx, span: Any) -> list[NextAction]:
+    key = ("ended", span.start, span.end)
+    if key not in ctx.memo:
+        ctx.memo[key] = list(_ended_in(ctx, span))
+    return ctx.memo[key]
+
+
 def _ended_in(ctx: Ctx, span: Any) -> QuerySet[NextAction]:
     rows = (
         NextAction.objects.visible_to(ctx.viewer)
@@ -342,7 +353,7 @@ def action_recs(ctx: Ctx, kind: str, span: Any) -> list[Rec]:
             )
         return out
     out = []
-    for row in _ended_in(ctx, span):
+    for row in _ended_rows(ctx, span):
         if classify_ended(row) != kind or row.ended_at is None:
             continue
         out.append(
@@ -443,15 +454,18 @@ def owed_recs(ctx: Ctx, *, before_week: bool) -> list[Rec]:
     recorded request is a Teema-level workload (the strip's «koostamisel»), not a
     request, and is not counted here.
     """
-    rows = drafting_matters(ctx.viewer).filter(response_deadline__isnull=False)
-    if ctx.scope == SELF:
-        rows = rows.filter(owner=ctx.subject)
-    if before_week:
-        rows = rows.filter(response_deadline__lt=ctx.week.start)
-    else:
-        rows = rows.filter(
-            response_deadline__gte=ctx.week.start, response_deadline__lte=ctx.week.end
+    if "requests" not in ctx.memo:
+        rows = drafting_matters(ctx.viewer).filter(
+            response_deadline__isnull=False, response_deadline__lte=ctx.week.end
         )
+        if ctx.scope == SELF:
+            rows = rows.filter(owner=ctx.subject)
+        ctx.memo["requests"] = list(
+            rows.select_related("owner").order_by("response_deadline", "pk")
+        )
+    found = [
+        m for m in ctx.memo["requests"] if (m.response_deadline < ctx.week.start) == before_week
+    ]
     return [
         Rec(
             key=f"request:{m.pk}:{m.response_deadline}",
@@ -461,7 +475,7 @@ def owed_recs(ctx: Ctx, *, before_week: bool) -> list[Rec]:
             url=_matter_url(m.pk),
             owner=_name(m.owner) if ctx.scope == DEPARTMENT else "",
         )
-        for m in rows.select_related("owner").order_by("response_deadline", "pk")
+        for m in found
     ]
 
 
@@ -571,6 +585,19 @@ def records(
     span: Any,
     items: list[wi.WorkItem] | None = None,
     rows: list[EffectiveRow] | None = None,
+) -> list[Rec]:
+    key = ("records", kind, span.start, span.end)
+    if key not in ctx.memo:
+        ctx.memo[key] = _records(ctx, kind, span, items, rows)
+    return ctx.memo[key]
+
+
+def _records(
+    ctx: Ctx,
+    kind: str,
+    span: Any,
+    items: list[wi.WorkItem] | None,
+    rows: list[EffectiveRow] | None,
 ) -> list[Rec]:
     if kind in HISTORY_KINDS:
         return action_recs(ctx, kind, span)
@@ -807,7 +834,7 @@ def _seven_days(ctx: Ctx, overview: WeekOverview, items: list[wi.WorkItem]) -> N
         if drow.due > horizon:
             continue
         item = drow.item
-        review = item.action_kind in (ActionKind.WAIT, ActionKind.MONITOR) or (
+        review = item.action_kind in REVIEW_KINDS or (
             item.is_action and item.date_semantics == DateSemantics.REVIEW_ON
         )
         late = bool(item.is_overdue) and not review

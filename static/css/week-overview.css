@@ -57,3 +57,4 @@
   .wk__table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr); padding-block: var(--spacing-2); border-bottom: 1px solid var(--border-default); }
   .wk__table tbody th, .wk__table tbody td { display: block; border-bottom: 0; padding: 0 var(--spacing-2); }
 }
+.wo a, .wo__table th, .wo__table td, .wo__list li, .wo__block { overflow-wrap: anywhere; min-width: 0; }
