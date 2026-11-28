@@ -15,6 +15,20 @@ client. Concurrency starts none either: every count is one
 PostgreSQL serialises per row, and the outstanding-proposal and storage checks
 run under a per-user transaction-level advisory lock.
 
+**Lock order (storage claims).** A prepare takes, inside its one transaction and
+always in this order: (1) the *user lock* (`lock_user`, a transaction-level
+advisory lock; serialises that user's outstanding and per-user storage checks),
+then (2) the *global counter row*, claimed with one conditional statement
+(`claim`: ``INSERT … ON CONFLICT DO UPDATE … WHERE count + n <= limit
+RETURNING``), then (3) the per-user counter row, then the proposal insert. The
+global row's lock is held to the end of the transaction, so two users on
+different user locks still queue on it: the loser re-evaluates the condition on
+the winner's committed value and is refused. Every transaction takes the user
+lock before the global row and nothing takes them the other way round, so there
+is no cycle and no deadlock. The claim is made in the same transaction as the
+proposal insert: a refusal claims nothing (the global claim is the last check
+that can refuse) and a rollback releases it.
+
 **Windows** are fixed (10 minutes and one day, UTC-aligned): a refusal says
 exactly when the window ends (``retry_after_seconds``).
 
@@ -160,6 +174,48 @@ def add(principal: str, bucket: str, period: str, amount: int = 1, *, now: datet
     return int(value)
 
 
+_CLAIM = (
+    "INSERT INTO mcp_writes_mcpwritecounter "
+    "(id, principal, bucket, period, period_start, count, first_at, last_at) "
+    "SELECT %s, %s, %s, %s, %s, %s, %s, %s WHERE %s <= %s "
+    "ON CONFLICT (principal, bucket, period, period_start) DO UPDATE SET "
+    "count = mcp_writes_mcpwritecounter.count + EXCLUDED.count, last_at = EXCLUDED.last_at "
+    "WHERE mcp_writes_mcpwritecounter.count + EXCLUDED.count <= %s "
+    "RETURNING count"
+)
+
+
+def claim(
+    principal: str, bucket: str, period: str, amount: int, allowed: int, *, now: datetime
+) -> bool:
+    """Add ``amount`` to one window's counter only if the total stays within ``allowed``.
+
+    One statement, so the check and the claim cannot be separated: the row is
+    locked by the first claimant until its transaction ends, and a concurrent
+    claimant re-reads the committed value when the lock is released (READ
+    COMMITTED re-evaluates the ``WHERE`` of an ``ON CONFLICT DO UPDATE``).
+    Answers False, having changed nothing, when it would not fit; a rolled-back
+    transaction releases the claim with it."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _CLAIM,
+            [
+                uuid.uuid4(),
+                principal[:100],
+                bucket[:120],
+                period,
+                window_start(period, now),
+                int(amount),
+                now,
+                now,
+                int(amount),
+                int(allowed),
+                int(allowed),
+            ],
+        )
+        return cursor.fetchone() is not None
+
+
 def current(principal: str, bucket: str, period: str, *, now: datetime) -> int:
     with connection.cursor() as cursor:
         cursor.execute(
@@ -288,7 +344,8 @@ def storage_refusal(
 ) -> Refusal | None:
     """Inside the prepare's transaction, under `lock_user`: may one more proposal be kept?
 
-    Answers None and counts the bytes when it may."""
+    Answers None and claims the bytes (user and global) when it may; claims
+    nothing when it may not. Lock order: the module docstring."""
     allowed = limit("MCP_WRITE_MAX_OUTSTANDING")
     if allowed and outstanding >= allowed:
         return refusal(
@@ -305,15 +362,18 @@ def storage_refusal(
     per_user = limit("MCP_WRITE_STORED_BYTES_PER_DAY")
     overall = limit("MCP_WRITE_STORED_BYTES_GLOBAL_PER_DAY")
     key = f"user:{user_id}"
-    for principal, allowed_bytes in ((key, per_user), ("global", overall)):
-        if allowed_bytes and current(principal, "stored_bytes", "1d", now=now) + stored_bytes > (
-            allowed_bytes
-        ):
-            return rate_limited(
-                Exceeded(_kind(principal), "stored_bytes", "1d", retry_after("1d", now))
-            )
+    # (1) the user's own allowance, under `lock_user` (taken by the caller)
+    if per_user and current(key, "stored_bytes", "1d", now=now) + stored_bytes > per_user:
+        return rate_limited(Exceeded("user", "stored_bytes", "1d", retry_after("1d", now)))
+    # (2) the deployment's allowance: one atomic conditional claim, the last
+    # step that can refuse, so a refusal leaves nothing claimed
+    if overall:
+        if not claim("global", "stored_bytes", "1d", stored_bytes, overall, now=now):
+            return rate_limited(Exceeded("global", "stored_bytes", "1d", retry_after("1d", now)))
+    else:
+        add("global", "stored_bytes", "1d", stored_bytes, now=now)
+    # (3) the user's counter (cannot fail: the user lock is held)
     add(key, "stored_bytes", "1d", stored_bytes, now=now)
-    add("global", "stored_bytes", "1d", stored_bytes, now=now)
     return None
 
 

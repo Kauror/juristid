@@ -312,3 +312,164 @@ def test_only_an_executed_proposal_carries_a_result(world):
         [world["proposal"].pk],
     )
     assert "only an executed MCP proposal has a result" in message
+
+
+# -- r96 final: the rest of the boundary, again as the real role ----------------------------
+
+AUDIT_EVENT = "audit_securityauditevent"
+EVENT = "mcp_writes_mcpwriteevent"
+APPROVAL = "mcp_writes_mcpwriteapproval"
+
+
+def _executed(world):
+    """The proposal approved and saved the way the trusted page does it (as the application)."""
+    outcome = support.approve_and_save(world["proposal"])
+    world["proposal"].refresh_from_db()
+    assert world["proposal"].status == ProposalStatus.EXECUTED, outcome
+    return world["proposal"]
+
+
+@pytest.mark.parametrize(
+    "column",
+    ["binding_digest", "arguments_digest", "preview", "canonical_arguments", "state", "expires_at"],
+)
+def test_the_gateway_cannot_change_a_recorded_approval(world, role, column):
+    """An approval row — the bound digest, the preview it covered, its expiry — is `web`'s alone."""
+    proposal = _executed(world)
+    value = {
+        "binding_digest": "0" * 64,
+        "arguments_digest": "0" * 64,
+        "preview": '{"summary": "Midagi süütut"}',
+        "canonical_arguments": '{"title": "Muu"}',
+        "state": '{"title": "Muu"}',
+        "expires_at": "2099-01-01T00:00:00Z",
+    }[column]
+    message = refusal_as(
+        role, f"UPDATE {APPROVAL} SET {column} = %s WHERE proposal_id = %s", [value, proposal.pk]
+    )
+    assert DENIED in message and APPROVAL in message
+
+
+def test_the_gateway_cannot_delete_or_edit_the_trail(world, role):
+    """Approvals, events and security audit rows are append-only for it (INSERT at most)."""
+    proposal = _executed(world)
+    assert DENIED in refusal_as(
+        role, f"DELETE FROM {APPROVAL} WHERE proposal_id = %s", [proposal.pk]
+    )
+    assert DENIED in refusal_as(role, f"DELETE FROM {EVENT} WHERE proposal_id = %s", [proposal.pk])
+    assert DENIED in refusal_as(
+        role, f"UPDATE {EVENT} SET detail = '{{}}' WHERE proposal_id = %s", [proposal.pk]
+    )
+    assert DENIED in refusal_as(role, f"DELETE FROM {AUDIT_EVENT}")
+    assert DENIED in refusal_as(role, f"UPDATE {AUDIT_EVENT} SET id = id")
+
+
+def test_the_gateway_cannot_move_a_status_backwards(world, role):
+    """As the gateway: any status UPDATE is a privilege error. For everybody: forward only."""
+    proposal = _executed(world)
+    for status in ("PENDING", "APPROVED"):
+        assert DENIED in refusal_as(
+            role, f"UPDATE {PROPOSAL} SET status = %s WHERE id = %s", [status, proposal.pk]
+        )
+    # …and the trigger refuses it for the application's own role too (not only the privilege)
+    assert "never changes" in refusal_as(
+        None, f"UPDATE {PROPOSAL} SET status = 'PENDING' WHERE id = %s", [proposal.pk]
+    )
+
+
+def test_a_pending_proposal_cannot_go_back_from_approved_for_anybody(world):
+    proposal = world["proposal"]
+    McpWriteProposal.objects.filter(pk=proposal.pk).update(status=ProposalStatus.APPROVED)
+    assert "only moves forward" in refusal_as(
+        None, f"UPDATE {PROPOSAL} SET status = 'PENDING' WHERE id = %s", [proposal.pk]
+    )
+
+
+def test_the_gateway_has_no_write_privilege_on_any_table_but_its_own(world, role):
+    """Every table of the schema, not a list: the role writes the four tables and nothing else."""
+    allowed = db_role.WRITE_ALLOWLIST
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY 1"
+        )
+        tables = [row[0] for row in cursor.fetchall()]
+        assert len(tables) > 100  # the whole schema was looked at
+        found: dict[str, set[str]] = {}
+        for table in tables:
+            for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+                cursor.execute("SELECT has_table_privilege(%s, %s, %s)", [role, table, privilege])
+                held = bool(cursor.fetchone()[0])
+                if privilege == "UPDATE":
+                    cursor.execute(
+                        "SELECT has_any_column_privilege(%s, %s, 'UPDATE')", [role, table]
+                    )
+                    held = held or bool(cursor.fetchone()[0])
+                if held:
+                    found.setdefault(table, set()).add(privilege)
+    assert found == {table: set(privileges) for table, privileges in allowed.items()}
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        f"ALTER TABLE {PROPOSAL} DISABLE TRIGGER USER",
+        f"DROP TRIGGER mcp_writes_proposal_update_guard ON {PROPOSAL}",
+        "SET session_replication_role = replica",
+        "CREATE TABLE public.gateway_scratch (x int)",
+        "CREATE FUNCTION public.gateway_fn() RETURNS int LANGUAGE sql AS 'SELECT 1'",
+        "ALTER ROLE CURRENT_USER SUPERUSER",
+        "CREATE ROLE gateway_made_this",
+    ],
+)
+def test_the_gateway_cannot_remove_the_guards_or_widen_itself(world, role, statement):
+    """No bypass of the integrity triggers and no self-service privileges."""
+    message = refusal_as(role, statement)
+    assert "permission denied" in message or "must be" in message or "only" in message, message
+
+
+def test_the_gateway_role_is_a_plain_login_role_with_no_way_to_the_owner(world, role):
+    """No superuser, no role creation, no bypass, no membership of the owner (so no SET ROLE)."""
+    owner = connection.settings_dict["USER"]
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT rolsuper, rolcreaterole, rolcreatedb, rolbypassrls, rolreplication, "
+            "pg_has_role(%s, %s, 'MEMBER') FROM pg_roles WHERE rolname = %s",
+            [role, owner, role],
+        )
+        assert cursor.fetchone() == (False, False, False, False, False, False)
+
+
+def test_a_grant_the_gateway_attempts_changes_nothing(world, role):
+    """Without grant option PostgreSQL only warns; nothing is granted to it or to anybody."""
+    runs_as(role, f"GRANT UPDATE ON {PROPOSAL} TO PUBLIC")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM pg_class c, aclexplode(c.relacl) a "
+            "WHERE c.relname = %s AND a.grantee = 0 AND a.privilege_type = 'UPDATE'",
+            [PROPOSAL],
+        )
+        assert cursor.fetchone()[0] == 0
+        cursor.execute("SELECT has_table_privilege(%s, %s, 'UPDATE')", [role, PROPOSAL])
+        assert cursor.fetchone()[0] is False
+
+
+def test_the_trusted_approval_run_by_the_gateways_role_saves_nothing(world, role):
+    """The alternate path: the page's own approve-and-save, executed as the gateway's role."""
+    proposal = world["proposal"]
+    title_before = world["matter"].title
+    with connection.cursor() as cursor:
+        cursor.execute(f'SET ROLE "{role}"')
+    try:
+        try:
+            with transaction.atomic():
+                support.approve_and_save(proposal)
+        except DatabaseError:
+            pass
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET ROLE")
+    world["matter"].refresh_from_db()
+    proposal.refresh_from_db()
+    assert world["matter"].title == title_before
+    assert proposal.status != ProposalStatus.EXECUTED

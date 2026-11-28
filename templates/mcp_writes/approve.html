@@ -40,7 +40,7 @@
       </p>
     {% endif %}
     {% endif %}
-    <p class="acctnote">Muudatuse valmistas ette sinu ChatGPT ühendus. Tegutsed kasutajana <strong>{{ persona.display_name }}</strong>. Kinnitamise aeg lõpeb {{ proposal.expires_at|date:"d.m.Y H:i" }}.</p>
+    <p class="acctnote">Ette valmistanud sinu ChatGPT ühendus. Kasutaja: <strong>{{ persona.display_name }}</strong>. Kinnitada saab kuni {{ proposal.expires_at|date:"d.m.Y H:i" }}.</p>
   </section>
 
   {% if preview and preview.changes %}
@@ -81,7 +81,7 @@
       {% if can_approve %}
         <input type="hidden" name="sidumine" value="{{ binding }}">
         {% if recent %}
-          <p class="acctnote">Sisestasid autentija koodi selles seansis äsja. Kinnitamiseks vajuta «Kinnita».</p>
+          <p class="acctnote">Autentija kood on selles seansis äsja sisestatud.</p>
         {% else %}
           <label class="field">
             <span class="field__label">Kood rakendusest «Juristidi MCP autentija»</span>
@@ -97,7 +97,7 @@
                    autofocus>
           </label>
         {% endif %}
-        <p class="acctnote">Kinnita ainult siis, kui palusid selle muudatuse ise ja just praegu. «Kinnita» salvestab kohe täpselt ülal näidatud muudatuse ja ainult selle.</p>
+        <p class="acctnote"><strong>«Kinnita» salvestab muudatuse kohe.</strong> Kinnita ainult siis, kui palusid seda ise.</p>
       {% endif %}
       <div class="form__actions">
         {% if can_approve %}<button type="submit" name="otsus" value="kinnita" class="button button--primary">Kinnita</button>{% endif %}

@@ -43,7 +43,9 @@ Three facts constrain it:
   ladder and throttles as `/oauth/authorize`). A code accepted in the same gate session
   spares them typing another for five minutes; every approval is still its own button
   press for its own proposal. The approval is a row only `web` can write.
-- **Commit.** `commit_prepared_action` executes the approved proposal once: token,
+- **Commit.** *(Superseded by ADR 0234 for format-2 proposals: since r96 «Kinnita» on
+  the Juristid page saves the change, and `commit_prepared_action` only reports the
+  receipt.)* `commit_prepared_action` executes the approved proposal once: token,
   grant, write scope and business capability re-verified; approval bound to the same
   person, grant and argument digest, unexpired; the canonical locks taken and the state
   recomputed under them (a moved deadline, a new owner or a closed Matter make it

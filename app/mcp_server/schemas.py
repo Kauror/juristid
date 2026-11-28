@@ -556,8 +556,8 @@ class CommitPreparedActionArguments(StrictArguments):
             max_length=36,
             pattern=UUID_PATTERN,
             description=(
-                "The proposal_id a prepare_* tool returned. Commit it only after the user "
-                "says they approved it in Juristid."
+                "The proposal_id a prepare_* tool returned. Asks for its receipt; it does not "
+                "approve or save anything."
             ),
         ),
     ]
@@ -569,12 +569,17 @@ class PreparedProposalOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["prepared"]
-    proposal_id: str = Field(description="Pass to commit_prepared_action after approval.")
+    proposal_id: str = Field(
+        description="Pass to commit_prepared_action to fetch the receipt after the user approved."
+    )
     operation: str
     label: str = Field(description="The change, in Estonian.")
     expires_at: str = Field(description="When the proposal lapses unapproved (ISO 8601).")
     approval_url: str = Field(
-        description="Give this link to the user: they open it and approve in Juristid."
+        description=(
+            "Give this link to the user: they open it, check it and press Kinnita in Juristid, "
+            "which saves the change immediately."
+        )
     )
     preview: dict[str, Any] = Field(
         description=(
@@ -585,7 +590,9 @@ class PreparedProposalOutput(BaseModel):
 
 
 class CommitOutput(BaseModel):
-    """Either the saved change's receipt (executed) or a proposal still awaiting approval."""
+    """Either the saved change's receipt (executed) or a proposal still awaiting approval.
+
+    A declined, expired or failed proposal is answered as an error, not in this shape."""
 
     model_config = ConfigDict(extra="forbid")
 

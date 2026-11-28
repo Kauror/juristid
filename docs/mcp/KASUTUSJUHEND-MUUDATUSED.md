@@ -3,8 +3,8 @@
 ChatGPT saab Juristidis muudatusi **ette valmistada**: lisada teemale märke,
 kirja panna kohtumise, muuta pealkirja või lühikokkuvõtet, määrata vastutaja,
 seada järgmise tegevuse või arvamuse tähtaja jne. **Ühtegi muudatust ei salvestata
-enne, kui sina selle Juristidis oma autentimisrakenduse koodiga kinnitad.**
-ChatGPT ise ei saa midagi salvestada.
+enne, kui sina selle Juristidis oma autentimisrakenduse koodiga kinnitad —
+ja kinnitamisel salvestub muudatus kohe.** ChatGPT ise ei saa midagi salvestada.
 
 ## 1. Kuidas küsida
 
@@ -52,18 +52,21 @@ kinnitada.
 2. Loe eelvaade läbi. Juristid näitab seda, mis ettevalmistamisel salvestati —
    mitte ChatGPT kokkuvõtet.
 3. Kui kõik on õige, sisesta oma **autentimisrakenduse kuuekohaline kood** (sama,
-   millega ChatGPT ühenduse lõid) ja vajuta kinnitusnuppu. Kui midagi on valesti,
-   vajuta **Keeldu** — siis ei salvestata midagi.
-4. Ütle ChatGPT-le, et kinnitasid. Alles siis salvestab ta muudatuse. Vastuses on
-   salvestatud kirje link Juristidis.
+   millega ChatGPT ühenduse lõid) ja vajuta **Kinnita**. **Muudatus salvestatakse
+   kohe** — ChatGPT-le ei pea midagi ütlema, et see salvestuks. Kui midagi on
+   valesti, vajuta **Lükka tagasi** — siis ei salvestata midagi.
+4. Soovi korral ütle ChatGPT-le, et kinnitasid: ta küsib Juristidist kviitungi ja
+   näitab salvestatud kirje linki. See ei kinnita ega salvesta midagi, ainult
+   teatab tulemuse.
 
-Ettevalmistatud muudatus aegub umbes 15 minutiga, kinnitus umbes 10 minutiga.
+Ettevalmistatud muudatus aegub umbes 15 minutiga.
 Kui teemas muutus vahepeal midagi (keegi teine muutis sama välja), ei saa vana
 ettepanekut enam kinnitada — palu ChatGPT-l see uuesti ette valmistada.
 
-**Muudatus on salvestatud ainult siis, kui ChatGPT ütleb, et Juristid salvestas
-selle, ja annab kirje lingi.** Kui ta ütleb «ootab kinnitust», ei ole midagi
-salvestatud.
+**Muudatus on salvestatud ainult siis, kui Juristid näitas «Kinnitatud ja
+salvestatud» või ChatGPT ütleb, et Juristid salvestas selle, ja annab kirje
+lingi.** Kui ta ütleb «ootab kinnitust», ei ole midagi salvestatud; «tagasi
+lükatud», «aegunud» või «ebaõnnestus» tähendab samuti, et midagi ei salvestatud.
 
 ## 4. Kui ChatGPT palub uuesti ühendust luua
 
