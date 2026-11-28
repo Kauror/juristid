@@ -761,6 +761,16 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     # the basis label after it moved with the calendar (2026-11-17, PR #637).
     # Not required: the block renders only when something happened on the desk.
     (".actline__when", "26.10"),
+    # «Selle nädala ülevaade» (r97). The week range, the seven-day table's day and
+    # its relative words, and the dates of the two previews all derive from the
+    # run's clock: «9.11 8 päeva möödas» is a different width on every day of the
+    # month and, in an auto-layout table, moves the column — and with it the rows
+    # — which failed `minu-too`, `minu-too-3440` and `hele-minu-too` in run
+    # 46140004535. Held at the widest value the product prints; the rest of the
+    # block (headings, labels, counts) stays in the comparison.
+    (".wo__range", "26.10–1.11"),
+    (".wo__date", "26.10 12 päeva möödas"),
+    (".wo__when", "26.10.2026"),
 )
 
 #: The same mechanism, for a value whose *selector* is not scenario-specific.
@@ -1818,6 +1828,23 @@ def test_dashboard(page, base_url):
     """
     signed_in(page, base_url, OSAKOND_PINNED)
     compare("osakond", capture(page, "osakond"))
+
+
+def test_the_department_head_overview(page, base_url):
+    """«Selle nädala ülevaade» as the department head sees it (r97).
+
+    The `osakond` capture is a specialist's, so it does not hold the head-only
+    band. Clipped to that band: the rest of the head's page — Meeskond, Tehtud, the
+    digest — is dated, and is not what this protects. Its clock-derived text (the
+    week range) is held by `NORMALISED_TEXT`.
+    """
+    signed_in(page, base_url, OSAKOND_PINNED, persona=HEAD)
+    compare("osakond-juht", capture(page, "osakond-juht", clip_to=".wo--dept"))
+
+
+def test_light_department_head_overview(page, base_url):
+    signed_in(in_light(page), base_url, OSAKOND_PINNED, persona=HEAD)
+    compare("hele-osakond-juht", light_capture(page, "hele-osakond-juht", clip_to=".wo--dept"))
 
 
 #: The closed-disclosure shapes on Osakond, and the element whose presence

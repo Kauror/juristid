@@ -68,6 +68,10 @@ nothing to hide (app/matters/department.py).
   {% endcomment %}
   {% include "components/seis.html" with figures=page.seis show_zeros=1 trailing="matters/partials/department_seis_sort.html" %}
 
+  {% if page.is_department and page.overview %}
+    {% include "matters/partials/week_overview_department.html" with ov=page.overview %}
+  {% endif %}
+
   <div class="ovbody">
     <div class="ovbody__main">
       {% if page.is_areas %}

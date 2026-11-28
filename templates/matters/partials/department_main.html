@@ -159,6 +159,10 @@ control that promised one of them would be lying about what it does
 <section class="ovsection" aria-label="Eesolev">
   <div class="ovsection__head">
     <h2 class="ovsection__title">Eesolev</h2>
+    {% if page.overview %}
+      {% comment %}The next seven days, counted as «Selle nädala ülevaade» counts them (r97): real deadlines, ripe reviews and late work are three different things.{% endcomment %}
+      <span class="ovsection__note">Järgmised 7 päeva: {{ page.overview.seven_day_deadlines }} tähtaega · {{ page.overview.seven_day_reviews }} ülevaatust{% if page.overview.seven_day_late %} · {{ page.overview.seven_day_late }} üle tähtaja{% endif %}</span>
+    {% endif %}
     <span class="ovsection__spacer"></span>
     <a class="ovsection__link" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;too=tahtaeg-vahemik">Kõik tähtajad →</a>
   </div>

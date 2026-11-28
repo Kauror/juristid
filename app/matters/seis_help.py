@@ -80,6 +80,16 @@ MY_NO_ACTION_HELP = FigureHelp(
     ),
 )
 
+#: «teemat vajab tähelepanu»: the register's `?too=sekkumist` population — the same
+#: Teemad Osakond's «Vajab sekkumist» counts — narrowed to this person's.
+MY_ATTENTION_HELP = FigureHelp(
+    slug="minu-vajab-tahelepanu",
+    title="Vajab tähelepanu",
+    paragraphs=(
+        "Teemad, mille järgmine samm on hiljaks jäänud või mille ülevaatamise aeg on käes.",
+    ),
+)
+
 #: `OpinionWork.due_this_week`: `drafting_matters` owned by this person whose
 #: `Arvamuse tähtaeg` falls Monday to Sunday of the current week, both inclusive.
 MY_OPINIONS_DUE_HELP = FigureHelp(

@@ -1,0 +1,88 @@
+{% comment %}
+«Selle nädala ülevaade» (r97), one component for three scopes (`ov.scope`):
+self, department (the head's Osakond) and colleague (operational work only).
+Every figure is a link to exactly the rows it counted, resolved by the same
+function (`week_overview.records`); a figure with no exact list is a span. A
+figure is read through its `Cell`, so a lower bound prints «≥ 3» and an unknown
+prints «—», never a false 0. Incoming monitoring has its own block and is never
+summed into work.
+{% endcomment %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/week-overview.css' %}">
+<!--week-overview-->
+<section class="wo{% if not ov.has_history %} wo--single{% endif %}" aria-label="Nädala ülevaade">
+  {% if ov.has_history %}
+  <div class="wo__main">
+    <section class="wo__block" aria-labelledby="wo-week">
+      <h2 class="wo__h" id="wo-week">Selle nädala ülevaade <span class="wo__range">{{ ov.start|date:"d.m" }}–{{ ov.end|date:"d.m" }}</span></h2>
+      <div class="wo__group"><h3 class="wo__sub">Arvamused</h3>
+        {% include "matters/partials/week_figures.html" with figures=ov.opinions %}
+      </div>
+      <div class="wo__group"><h3 class="wo__sub">Muud tegevused</h3>
+        {% include "matters/partials/week_figures.html" with figures=ov.actions %}
+      </div>
+      <div class="wo__group"><h3 class="wo__sub">Jõustumised</h3>
+        {% include "matters/partials/week_figures.html" with figures=ov.commencements %}
+      </div>
+    </section>
+    <section class="wo__block" aria-labelledby="wo-prev">
+      <h2 class="wo__h" id="wo-prev">Eelmine nädal <span class="wo__range">{{ ov.previous_start|date:"d.m" }}–{{ ov.previous_end|date:"d.m" }}</span>
+        {% if ov.previous_statistics_url %}<a class="wo__more" href="{{ ov.previous_statistics_url }}">Minu statistika</a>{% endif %}</h2>
+      {% include "matters/partials/week_figures.html" with figures=ov.previous %}
+    </section>
+  </div>
+  {% endif %}
+  <section class="wo__block wo__days" aria-labelledby="wo-7">
+    <h2 class="wo__h" id="wo-7">{% if ov.is_department %}Osakonna 7 päeva tähtajad{% else %}Minu 7 päeva tähtajad{% endif %} <span class="wo__count">{{ ov.seven_days|length }}</span>
+      {% if ov.seven_days_url %}<a class="wo__more" href="{{ ov.seven_days_url }}">Kõik tähtajad</a>{% endif %}</h2>
+    {% if ov.seven_days %}
+    <div class="wo__scroll" tabindex="0" role="region" aria-label="7 päeva tähtajad">
+    <table class="wo__table">
+      <thead><tr><th scope="col">Teema</th>{% if ov.is_department %}<th scope="col">Vastutaja</th>{% endif %}<th scope="col">Tegevus</th><th scope="col">Kuupäev</th><th scope="col">Staatus</th></tr></thead>
+      <tbody>
+      {% for row in ov.seven_days %}
+        <tr{% if row.is_late %} class="is-late"{% endif %}>
+          <th scope="row" class="wo__matter"><a href="{{ row.url }}" title="{{ row.matter.title }}">{{ row.matter.title }}</a></th>
+          {% if ov.is_department %}<td>{{ row.owner }}</td>{% endif %}
+          <td>{{ row.what }}{% if row.category and row.what != row.category %} <span class="wo__muted">· {{ row.category }}</span>{% endif %}</td>
+          <td class="wo__date">{{ row.when|date:"j.n" }} {{ row.relative }}</td>
+          <td>{% if row.status %}<span class="wo__status{% if row.is_late %} wo__status--late{% endif %}">{{ row.status }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="wo__empty">Järgmise 7 päeva tähtaegu ei ole.</p>{% endif %}
+  </section>
+</section>
+
+{% if ov.has_history %}
+<section class="wo wo--row" aria-label="Viimased ja tulevased">
+  <section class="wo__block" aria-labelledby="wo-sent">
+    <h2 class="wo__h" id="wo-sent">Saadetud arvamused <a class="wo__more" href="{{ ov.recent_opinions_url }}">Vaata kõiki</a></h2>
+    {% include "matters/partials/week_preview.html" with rows=ov.recent_opinions empty="Saadetud arvamusi pole." %}
+  </section>
+  <section class="wo__block" aria-labelledby="wo-new">
+    <h2 class="wo__h" id="wo-new">Uued teemad <a class="wo__more" href="{{ ov.new_matters_url }}">Vaata kõiki</a></h2>
+    {% include "matters/partials/week_preview.html" with rows=ov.new_matters empty="Uusi teemasid pole." %}
+  </section>
+  <section class="wo__block" aria-labelledby="wo-com">
+    <h2 class="wo__h" id="wo-com">Lähimad jõustumised {% if ov.commencements_url %}<a class="wo__more" href="{{ ov.commencements_url }}">Vaata kõiki</a>{% endif %}</h2>
+    {% if ov.upcoming_commencements %}
+      <ul class="wo__list">
+      {% for row in ov.upcoming_commencements %}
+        <li><a href="{{ row.matter_url }}" title="{{ row.matter.title }}">{{ row.matter.title }}</a>
+          <span class="wo__muted">{{ row.display_date }} · {{ row.certainty_label }}</span></li>
+      {% endfor %}
+      </ul>
+    {% else %}<p class="wo__empty">Jõustumisi pole.</p>{% endif %}
+  </section>
+  {% if ov.monitoring %}
+  <section class="wo__block" aria-labelledby="wo-mon">
+    <h2 class="wo__h" id="wo-mon">Sissetulev seire {% if ov.monitoring %}<span class="wo__range">sel nädalal</span>{% endif %}<a class="wo__more" href="{% url 'register_watch:review' %}">Monitooring</a></h2>
+    {% if ov.monitoring %}{% include "matters/partials/week_figures.html" with figures=ov.monitoring %}{% endif %}
+  </section>
+  {% endif %}
+</section>
+{% endif %}
+<!--/week-overview-->

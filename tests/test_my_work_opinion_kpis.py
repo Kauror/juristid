@@ -537,20 +537,17 @@ def test_the_total_is_the_owners_cell_on_osakond(
 # ---------------------------------------------------------------------------
 
 
-def test_the_strip_keeps_its_four_figures_and_adds_the_two_after_them(specialist) -> None:
+def test_the_strip_keeps_its_figures_and_the_two_opinion_figures(specialist) -> None:
+    """r97 §6 moved the four primary figures to the front; the opinion two are unchanged."""
     work = build_my_work(specialist, today=FRIDAY)
 
-    assert [figure.key for figure in work.seis] == [
-        "open",
-        "overdue",
-        "week",
-        "no_action",
-        WEEK_KEY,
-        TOTAL_KEY,
-    ]
-    assert [figure.caption for figure in work.seis][-2:] == [WEEK_CAPTION, TOTAL_CAPTION]
+    keys = [figure.key for figure in work.seis]
+    assert keys == ["overdue", "attention", TOTAL_KEY, "open", "week", "no_action", WEEK_KEY]
+    by_key = strip(work)
+    assert by_key[WEEK_KEY].caption == WEEK_CAPTION
+    assert by_key[TOTAL_KEY].caption == TOTAL_CAPTION
     # Counts of work state, not warnings: neither figure carries a tone.
-    assert [figure.tone for figure in work.seis][-2:] == ["", ""]
+    assert (by_key[WEEK_KEY].tone, by_key[TOTAL_KEY].tone) == ("", "")
 
 
 def test_an_opinion_in_preparation_leaves_the_timeline_as_it_was(specialist) -> None:

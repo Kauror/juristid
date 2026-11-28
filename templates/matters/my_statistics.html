@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Minu statistika · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -18,6 +19,7 @@ A value that is not the period's whole count reads «≥ N» or «—» with an
 {% endcomment %}
 
 {% block content %}
+<link rel="stylesheet" href="{% static 'css/week-overview.css' %}">
 {% with period=stats.period %}
 <div class="page mystats">
   {% include "matters/_my_tabs.html" with my_tab="statistika" %}
@@ -114,7 +116,8 @@ A value that is not the period's whole count reads «≥ N» or «—» with an
     {% if stats.columns %}
       <div class="statcols mystats__cols" role="list">
         {% for column in stats.columns %}
-          <span class="statcol{% if column.partial %} statcol--partial{% endif %}{% if column.future %} mystats__col--future{% endif %}" role="listitem" title="{{ column.title }}">
+          {% if column.url %}<a class="statcol mystats__colbtn{% if column.partial %} statcol--partial{% endif %}{% if column.selected %} is-selected{% endif %}" role="listitem" href="{{ column.url }}" title="{{ column.title }}"{% if column.selected %} aria-current="true"{% endif %}>
+          {% else %}<span class="statcol{% if column.partial %} statcol--partial{% endif %}{% if column.future %} mystats__col--future{% endif %}" role="listitem" title="{{ column.title }}">{% endif %}
             <span class="statcol__value">{{ column.text }}</span>
             <span class="statcol__track">
               {% if column.height %}
@@ -125,7 +128,7 @@ A value that is not the period's whole count reads «≥ N» or «—» with an
             </span>
             <span class="statcol__label mystats__collabel">{{ column.label }}{% if column.sublabel %}<span class="mystats__colsub">{{ column.sublabel }}</span>{% endif %}</span>
             <span class="visually-hidden">{{ column.title }}</span>
-          </span>
+          {% if column.url %}</a>{% else %}</span>{% endif %}
         {% endfor %}
       </div>
     {% else %}
@@ -133,7 +136,8 @@ A value that is not the period's whole count reads «≥ N» or «—» with an
     {% endif %}
 
     <div class="mystats__drill">
-      <h3 class="mystats__drilltitle">Kirjed{% if stats.drill.total %} <span class="statpanel__note">{{ stats.drill.total }}</span>{% endif %}</h3>
+      <h3 class="mystats__drilltitle">Kirjed{% if stats.selection %} · {{ stats.selection }}{% endif %}{% if stats.drill.total %} <span class="statpanel__note">{{ stats.drill.total }}</span>{% endif %}</h3>
+      {% if stats.clear_url %}<a class="quietlink" href="{{ stats.clear_url }}#mystats-joonis">Eemalda valik</a>{% endif %}
       {% if stats.drill.rows %}
         <ul class="mystats__list">
           {% for row in stats.drill.rows %}

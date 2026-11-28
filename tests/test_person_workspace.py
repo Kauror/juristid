@@ -331,7 +331,11 @@ def test_no_complete_button(client, specialist, today):
     assert "/valmis/" not in body
     assert "uxdone" not in body
     assert "data-workdone" not in body
-    assert "tehtud" not in body.lower().split("rowmenu")[0]
+    # «Selle nädala ülevaade» prints the *count* «Tehtud» (r97): a figure that links
+    # to the rows the person finished, not a control — so it is cut out first.
+    start, end = body.index("<!--week-overview-->"), body.index("<!--/week-overview-->")
+    page = body[:start] + body[end:]
+    assert "tehtud" not in page.lower().split("rowmenu")[0]
     # The ⋯ menu still offers the way there, as a link — and says so. It read
     # `Märgi tehtuks` while the click only navigated to the form that completes
     # the step, which promised the act and delivered a page (R2-02 §11).

@@ -71,7 +71,10 @@ pytestmark = pytest.mark.django_db
 #: +3 since one count of sent opinions (docs/adr/0214 §6, quality audit 2026-11-19): the
 #: strip, the rail and the team table count from one read of the one reader — its
 #: Teemad, their instruments, areas and senders, and the three sent records.
-OSAKOND_BUDGET = 51
+#: +13 for «Selle nädala ülevaade» (r97, docs/adr/0235), then +8 for the department's incoming
+#: monitoring (one read of the five sources) and coverage: fixed reads, constant in the
+#: size of the department — the 36- and 72-Teema worlds cost the same.
+OSAKOND_BUDGET = 72
 #: Minu asjad +1 since the rail's Kalender (docs/adr/0158, amendment of
 #: 2026-10-26): its commencements, read once; its work is the page's own list.
 #: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
@@ -98,7 +101,11 @@ OSAKOND_BUDGET = 51
 #: and the list's state are conditions inside it, not reads of their own).
 #: +1 for «Monitooring» on the bar (docs/adr/0219): for anybody but the head,
 #: whether the head opened the tab to everyone — one row, read once per page.
-MINU_ASJAD_BUDGET = 54
+#: +31 for «Selle nädala ülevaade» (r97, docs/adr/0235): one `load_series` read of the
+#: person's history (shared by the current and the previous week and by the previews),
+#: plus the week's ended actions, reviews, requests and commencements. Constant in the
+#: size of the desk — the 36- and 72-Teema worlds cost the same.
+MINU_ASJAD_BUDGET = 85
 #: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
 #: tähendavad» is a remembered block, and the reader's saved block states are
 #: read once per request (app/accounts/disclosures.py).

@@ -106,6 +106,12 @@ class OpinionFact:
     #: who ended the request as answered. ``None`` for an imported statement,
     #: which names nobody (Minu statistika, docs/adr/0223). No count reads it.
     actor_id: Any = None
+    #: The underlying record: ``submission:<id>`` for a `Submission`,
+    #: ``answered:<id>`` for a request a person ended as answered,
+    #: ``outcome:<id>`` for an imported statement. Two opinions sent on one Teema on
+    #: one day are two facts with two identities (r97); empty only for a fact built
+    #: by hand in a test that has no record behind it.
+    record_id: str = ""
 
     @property
     def on_time(self) -> bool | None:
@@ -221,7 +227,7 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
     ended = list(
         MatterResponseDeadline.objects.filter(
             matter_id__in=known, outcome=ResponseDeadlineOutcome.ANSWERED
-        ).values("matter_id", "deadline", "submission_id", "ended_by_id", "note", "ended_at")
+        ).values("id", "matter_id", "deadline", "submission_id", "ended_by_id", "note", "ended_at")
     )
     for row in ended:
         if row["submission_id"]:
@@ -243,6 +249,7 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
                 deadline=answered_by_submission.get(submission["id"]),
                 source=SOURCE_SUBMISSION,
                 actor_id=submission["sent_by_id"],
+                record_id=f"submission:{submission['id']}",
             )
         )
 
@@ -259,6 +266,7 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
                 deadline=row["deadline"],
                 source=SOURCE_ANSWERED,
                 actor_id=row["ended_by_id"],
+                record_id=f"answered:{row['id']}",
             )
         )
 
@@ -293,6 +301,7 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
                 sent_on=outcome.sent_on,
                 deadline=outcome.request_deadline,
                 source=SOURCE_IMPORTED,
+                record_id=f"outcome:{outcome.pk}",
             )
         )
     facts.sort(key=lambda fact: (fact.sent_on, fact.matter.reference, str(fact.matter.matter_id)))

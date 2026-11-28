@@ -7,6 +7,22 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# r97 — ülevaade, nädala töö ja statistika sügavamad lingid (#740; ADR 0235, ilma andmebaasi muudatuseta).
+# PAIGALDUSPÄEV 2026-11-29 (pühapäev) — kontrolli enne paigaldust; kui paigaldus nihkub, muuda
+# see kuupäev tegelikuks paigalduspäevaks (väljalaskekomplekt kontrollib seda ja eraldi päevad ei tohi kattuda).
+# Kasutajale nähtamatu: päringute eelarved, ühised lugemised, lingid ilma salvestatud olekuta.
+[[day]]
+date = 2026-11-29
+basis = "deployment"
+prs = [740]
+changes = [
+  "Minu asjad: ülal on neli põhinäitajat (tähtaja ületanud, vajavad tähelepanu, arvamused koostamisel, menetluses teemad); iga number avab täpselt need kirjed, mida ta loeb.",
+  "Minu asjad: uus «Selle nädala ülevaade» (arvamused, muud tegevused, jõustumised), «Eelmine nädal», «Minu 7 päeva tähtajad», «Saadetud arvamused», «Uued teemad», «Lähimad jõustumised» ja «Sissetulev seire». Tähtaja edasilükkamist ei loeta tehtud tööks; ülevaatamise kuupäev ei ole üle tähtaja kohustus.",
+  "Nädala ülevaate numbrid avavad lehe «Minu asjad → nädal» täpselt nende kirjetega, mida nad loevad; selle saab eemaldada lingiga «Eemalda eelseadistus». Salvestatud vaateid see ei muuda.",
+  "Osakond (osakonnajuhile): kompaktne «Selle nädala ülevaade» (arvamused, tegevused, jõustumiskuupäevad, eelmine nädal, sissetulev seire); lähimad 7 päeva on «Eesolev» pealkirjas, uued teemad külgribal. Jõustumisi näidatakse kuupäevadena: «Kuupäev saabunud», «Eesolevad», «Ligikaudsed».",
+  "Minu statistika: diagrammi tulba saab valida (ka tulba, kus tulemus on mõõdetud null) ja näha selle päeva kirjeid; «Eemalda valik» jätab perioodi alles.",
+]
+
 # r96 — turvavoor 26.11.2026 ja omaniku kasutajaliidese parandused (#731 #733 #734 #735 #736, ühendatud
 # #737, lõppvoor sama PR-i sees; ADR 0230–0234). AJUTINE KUUPÄEV 2026-11-28: muuda
 # see väljalaske tegelikuks paigalduspäevaks enne ühendamist/paigaldust (väljalaskekomplekt kontrollib seda

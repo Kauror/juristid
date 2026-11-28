@@ -452,12 +452,26 @@ def _current_steps(user: Any, matter_ids: set[Any]) -> dict[Any, str]:
     return steps
 
 
-def deadline_rows(user: Any, today: date) -> list[DeadlineRow]:
-    """Every dated row of the signed-in person's own work, chronologically.
+_OWN = object()
+
+
+def deadline_rows(
+    user: Any,
+    today: date,
+    *,
+    responsible: Any = _OWN,
+    items: list[wi.WorkItem] | None = None,
+) -> list[DeadlineRow]:
+    """Every dated row of one person's work (default: the signed-in person's), chronologically.
 
     The work model with ``responsible=user`` — the Minu asjad call, unchanged.
+    ``responsible=None`` is the whole department's (Osakond, r97); ``items`` is a
+    read the page already made, so the overview does not read the model again.
     """
-    items = wi.work_items(user, today=today, responsible=user)
+    if items is None:
+        items = wi.work_items(
+            user, today=today, responsible=user if responsible is _OWN else responsible
+        )
     steps = _current_steps(user, {item.matter_id for item in items if item.when is not None})
     rows = []
     for item in items:
@@ -698,7 +712,7 @@ class EffectiveRow:
         return self.record.description or "Jõustumine"
 
 
-def my_effective_records(user: Any) -> Any:
+def my_effective_records(user: Any, *, owner: Any = _OWN) -> Any:
     """Active commencements on Teemad the person owns, open or closed.
 
     The Minu asjad calendar's population (`calendar._carried_matters` with the
@@ -707,7 +721,10 @@ def my_effective_records(user: Any) -> Any:
     ``owner=user``, the record through its own ``visible_to``. Cancelled and
     superseded records are not commencements anybody expects any more.
     """
-    matters = Matter.objects.visible_to(user).filter(owner=user).order_by().values("pk")
+    scoped = Matter.objects.visible_to(user)
+    if owner is not None:
+        scoped = scoped.filter(owner=user if owner is _OWN else owner)
+    matters = scoped.order_by().values("pk")
     return (
         MatterEffectiveDate.objects.visible_to(user)
         .filter(status=FactStatus.ACTIVE, matter__in=matters)
@@ -715,9 +732,9 @@ def my_effective_records(user: Any) -> Any:
     )
 
 
-def effective_rows(user: Any, today: date) -> list[EffectiveRow]:
+def effective_rows(user: Any, today: date, *, owner: Any = _OWN) -> list[EffectiveRow]:
     rows = []
-    for record in my_effective_records(user):
+    for record in my_effective_records(user, owner=owner):
         start, end = record.date_value, record.period_end
         rows.append(
             EffectiveRow(

@@ -310,7 +310,12 @@ def test_an_expired_grant_is_remembered_as_absent_not_as_present(
 PAGE_BUDGETS = [
     # +3: the rail's department calendar (commencements, estimates) and the
     # remembered Eesolev windows (one read of the reader's blocks).
-    ("/osakond/", 51),
+    # +13, then +8 for the department's five incoming sources (one `incoming_series` read)
+    # and the coverage reads, on «Selle nädala ülevaade» on the head's page (r97,
+    # docs/adr/0235): the department
+    # scope's bounded reads — the week's ended actions (once, memoised), reviews, requests,
+    # commencements, the previews — fixed whatever the department holds.
+    ("/osakond/", 72),
     # +4: the Aruandlus rail counts sent opinions from one read of the one reader
     # (docs/adr/0214 §6) — fixed, whatever the areas hold.
     ("/osakond/?vaade=valdkonniti", 34),

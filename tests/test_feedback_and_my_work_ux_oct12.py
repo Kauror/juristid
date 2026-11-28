@@ -255,18 +255,28 @@ def test_the_opinion_captions_are_short_and_agree_with_their_number(specialist, 
     assert len(listed(specialist, figures["opinions_drafting"].url)) == count
 
 
-def test_the_order_tone_and_keys_of_the_strip_are_unchanged(specialist):
+def test_the_order_tone_and_keys_of_the_strip(specialist):
+    """r97 §6: the four primary figures lead; the older three keep their meaning."""
     work = build_my_work(specialist, today=FRIDAY)
 
     assert [figure.key for figure in work.seis] == [
-        "open",
         "overdue",
+        "attention",
+        "opinions_drafting",
+        "open",
         "week",
         "no_action",
         "opinions_week",
-        "opinions_drafting",
     ]
-    assert [figure.tone for figure in work.seis] == ["", "danger", "warning", "warning", "", ""]
+    assert [figure.tone for figure in work.seis] == [
+        "danger",
+        "warning",
+        "",
+        "",
+        "warning",
+        "warning",
+        "",
+    ]
 
 
 def test_the_page_says_the_new_captions_and_never_the_old_ones(client, specialist):
@@ -355,7 +365,10 @@ def test_the_explanation_is_a_neighbour_of_the_link_never_inside_it(client, spec
 
     # Every figure drawn but «tegevust sel nädalal» is explained; the first is this one.
     assert body.count("data-seishelp") == _figures_with_help(body) >= 1
-    item = body[body.index('<span class="seis__item" data-seishelp>') :]
+    # r97 put «vajab tähelepanu» ahead of this figure, so pick the item that holds
+    # «teema menetluses» rather than the first one drawn.
+    caption = body.index('<span class="seis__caption">teema menetluses</span>')
+    item = body[body.rindex('<span class="seis__item" data-seishelp>', 0, caption) :]
     item = item[: item.index('<span class="seis__tip"')]
     link = item[item.index('<a class="seis__figure"') : item.index("</a>") + len("</a>")]
     # The figure is still exactly its link…

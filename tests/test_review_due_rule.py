@@ -542,7 +542,10 @@ def test_a_review_dated_today_is_offered_for_review_on_minu_asjad(client, specia
     )
     client.force_login(specialist)
 
+    # Below «Selle nädala ülevaade» (r97), whose seven-day table links the same
+    # Teema earlier on the page: the row this test is about is in the bands.
     body = client.get(reverse("matters:my_work")).content.decode()
+    body = body.split("<!--/week-overview-->")[-1]
 
     # The row, from its own opening tag to the next one: ripe-styled, and its
     # menu offers the review. Where the link lands is ENG-021's, and is held by
