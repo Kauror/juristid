@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import ast
 import json
-import socket
 import shutil
+import socket
 import sys
 import tempfile
 import threading
