@@ -634,11 +634,17 @@ reaches_others() {
 # reading a dump of that database exposes nothing it could not read; the rest of
 # the backup root stays private. Returns non-zero if any change could not be made
 # (the engine then refuses the set: fail-closed stays where it was).
+#
+# A symbolic link is never followed: chgrp and chmod act on the TARGET, so a
+# link standing in for one of the three names would open whatever it points at.
+# A set is written by this repository's scripts and holds only regular files, so
+# a link there is reported as a failure (the engine then refuses the set).
 share_set_proof() {
   local dir="$1" group="$2" name failed=0
-  [ -d "$dir" ] || return 1
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
   if ! { chgrp -- "$group" "$dir" 2>/dev/null && chmod 0750 -- "$dir"; }; then failed=1; fi
   for name in VERIFIED-L2 SHA256SUMS database.dump; do
+    if [ -L "$dir/$name" ]; then failed=1; continue; fi
     [ -f "$dir/$name" ] || continue
     if ! { chgrp -- "$group" "$dir/$name" 2>/dev/null && chmod 0640 -- "$dir/$name"; }; then
       failed=1

@@ -421,3 +421,332 @@ def test_the_lovable_lane_opens_the_proof_after_verifying_and_before_mounting_it
     mounted = text.index('proof=(-v "$SET_DIR:/backup-set:ro"')
     assert verified < shared < mounted
     assert "APP_GID=${JURISTID_SYNC_APP_GID:-10001}" in text
+
+
+# -- r96 final (K): exactly what the Lovable proof check opens, and who gains nothing ------
+
+#: The three objects `lovable_sync.backup_proof_problem` opens, and nothing else.
+PROOF_OBJECTS = ("VERIFIED-L2", "SHA256SUMS", "database.dump")
+OTHER_OBJECTS = ("manifest.json", "evidence.files0", "legacy-source.files0")
+
+
+def _proof_set(base: Path, *, minutes_ago: int = 10) -> Path:
+    """A synthetic set with the three proof objects and some other objects."""
+    import datetime as dt
+
+    from tests.backup_proof import write_backup_set
+
+    taken = dt.datetime.now(dt.UTC).replace(microsecond=0) - dt.timedelta(minutes=minutes_ago)
+    set_dir = write_backup_set(base, taken=taken, verified=taken + dt.timedelta(minutes=2))
+    for extra in OTHER_OBJECTS:
+        (set_dir / extra).write_bytes(b"synthetic, never read by the check")
+    return set_dir
+
+
+def test_the_proof_check_opens_exactly_the_three_objects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The list `share_set_proof` opens to the application's group is the list the
+    engine reads: if the check ever reads another object of the set, this fails and
+    the share must be widened on purpose (or the check changed back)."""
+    import datetime as dt
+    import pathlib
+
+    from app.legacy_import import lovable_sync
+
+    set_dir = _proof_set(tmp_path)
+    opened: list[str] = []
+    real_open = pathlib.Path.open
+
+    def recording_open(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        opened.append(self.name)
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "open", recording_open)
+    problem = lovable_sync.backup_proof_problem(
+        f"sets/{set_dir.name}", dt.datetime.now(dt.UTC), set_dir=str(set_dir)
+    )
+    assert problem == ""
+    assert sorted(set(opened)) == sorted(PROOF_OBJECTS)
+
+
+@pytest.mark.parametrize("missing", PROOF_OBJECTS)
+def test_a_set_whose_proof_object_is_not_there_is_refused_with_a_code(tmp_path: Path, missing: str):
+    """The fail-closed side: when `share_set_proof` failed (or never ran) the run
+    cannot open the object and refuses the set with a named code."""
+    import datetime as dt
+
+    from app.legacy_import import lovable_sync
+
+    set_dir = _proof_set(tmp_path)
+    (set_dir / missing).unlink()
+    problem = lovable_sync.backup_proof_problem(
+        f"sets/{set_dir.name}", dt.datetime.now(dt.UTC), set_dir=str(set_dir)
+    )
+    assert problem == ("PROOF_DUMP" if missing == "database.dump" else "PROOF_MISSING")
+
+
+def _private_set(base: Path, name: str) -> Path:
+    set_dir = base / "sets" / name
+    set_dir.mkdir(parents=True)
+    set_dir.chmod(0o700)
+    for object_name in (*PROOF_OBJECTS, *OTHER_OBJECTS):
+        (set_dir / object_name).write_bytes(b"synthetic " + object_name.encode())
+        (set_dir / object_name).chmod(0o600)
+    return set_dir
+
+
+@posix_modes
+def test_a_share_that_cannot_be_made_leaves_the_set_private(tmp_path: Path):
+    """Fail closed: a group the caller can neither give nor belongs to changes
+    nothing and returns non-zero, so `take_backup` logs the WARN and the engine
+    refuses the set (PROOF_MISSING) rather than anything being half opened."""
+    if os.geteuid() == 0:
+        pytest.skip("root can give any group; the failure is only reachable unprivileged")
+    set_dir = _private_set(tmp_path, "20261127T220008Z")
+    stranger = 54321
+    assert stranger not in os.getgroups()
+    done = _lib(f'share_set_proof "{set_dir.as_posix()}" {stranger}', tmp_path)
+    assert done.returncode != 0
+    assert _mode(set_dir) == 0o700
+    for name in PROOF_OBJECTS:
+        assert _mode(set_dir / name) == 0o600, name
+
+
+@posix_modes
+def test_a_linked_proof_object_is_refused_and_its_target_untouched(tmp_path: Path):
+    """chgrp and chmod follow links; a link standing in for a proof object must
+    not open whatever it points at."""
+    set_dir = _private_set(tmp_path, "20261127T220008Z")
+    secret = tmp_path / "unrelated-secret"
+    secret.write_bytes(b"synthetic")
+    secret.chmod(0o600)
+    (set_dir / "VERIFIED-L2").unlink()
+    (set_dir / "VERIFIED-L2").symlink_to(secret)
+
+    done = _lib(f'share_set_proof "{set_dir.as_posix()}" {os.getgid()}', tmp_path)
+    assert done.returncode != 0
+    assert _mode(secret) == 0o600
+
+
+@posix_modes
+def test_sharing_one_set_changes_no_other_set_pool_or_parent(tmp_path: Path):
+    target = _private_set(tmp_path, "20261127T220008Z")
+    _private_set(tmp_path, "20261126T220008Z")
+    pool = tmp_path / "evidence"
+    pool.mkdir()
+    pool.chmod(0o700)
+    (pool / "object").write_bytes(b"synthetic")
+    (pool / "object").chmod(0o600)
+    (tmp_path / "sets").chmod(0o700)
+
+    def snapshot() -> dict[str, tuple[int, int]]:
+        return {
+            str(p.relative_to(tmp_path)): (_mode(p), p.stat().st_gid)
+            for p in sorted(tmp_path.rglob("*"))
+            if target not in p.parents and p != target
+        }
+
+    before = snapshot()
+    done = _lib(f'share_set_proof "{target.as_posix()}" {os.getgid()}', tmp_path)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert snapshot() == before
+    for name in OTHER_OBJECTS:
+        assert _mode(target / name) == 0o600, name
+
+
+SUDO = shutil.which("sudo") or "sudo"
+SETPRIV = shutil.which("setpriv") or "setpriv"
+
+
+def _sudo_can_become_the_application() -> bool:
+    if os.name != "posix" or not shutil.which("sudo") or not shutil.which("setpriv"):
+        return False
+    if not Path("/usr/bin/python3").exists():
+        return False
+    probe = subprocess.run(  # noqa: S603 - fixed argv
+        [SUDO, "-n", "true"], capture_output=True, check=False, timeout=30
+    )
+    return probe.returncode == 0
+
+
+#: Run as the account under test. Reports what it can read, write and list.
+ACCOUNT_PROBE = """
+import json, os, sys
+target, other, pool = sys.argv[1:4]
+def ok(action, path):
+    try:
+        action(path)
+        return True
+    except OSError:
+        return False
+def read(path):
+    open(path, "rb").read(1)
+def write(path):
+    open(path, "ab").close()
+print(json.dumps({
+    "proof": {n: ok(read, os.path.join(target, n)) for n in sys.argv[4].split(",")},
+    "rest": {n: ok(read, os.path.join(target, n)) for n in sys.argv[5].split(",")},
+    "other_set": ok(read, os.path.join(other, "database.dump")),
+    "pool": ok(read, os.path.join(pool, "object")),
+    "write_dump": ok(write, os.path.join(target, "database.dump")),
+    "create": ok(write, os.path.join(target, "planted")),
+    "list_set": ok(os.listdir, target),
+    "list_sets": ok(os.listdir, os.path.dirname(target)),
+}))
+"""
+
+
+@posix_modes
+@pytest.mark.skipif(
+    not _sudo_can_become_the_application(),
+    reason="needs passwordless sudo, setpriv and /usr/bin/python3 (the Linux CI runner has them)",
+)
+def test_the_application_account_reads_the_proof_and_nothing_else(tmp_path: Path):
+    """As the real uid/gid of the one-off container (10001) and as a stranger: the
+    three proof objects open, nothing else of the set, no other set, no pool, and
+    nothing can be written. `sets/` is searchable (0711) only to stand in for the
+    bind mount, which hands the container the set directory itself."""
+    import json
+    import tempfile
+
+    base = Path(tempfile.mkdtemp(prefix="juristid-proof-", dir="/tmp"))
+    try:
+        base.chmod(0o711)
+        target = _private_set(base, "20261127T220008Z")
+        other = _private_set(base, "20261126T220008Z")
+        (base / "sets").chmod(0o711)
+        pool = base / "evidence"
+        pool.mkdir()
+        pool.chmod(0o700)
+        (pool / "object").write_bytes(b"synthetic")
+        (pool / "object").chmod(0o600)
+
+        shared = subprocess.run(  # noqa: S603 - fixed argv; synthetic paths
+            [
+                SUDO,
+                "-n",
+                BASH,
+                "-c",
+                f'. "{LIB.as_posix()}"; share_set_proof "{target.as_posix()}" 10001',
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        assert shared.returncode == 0, shared.stdout + shared.stderr
+
+        def as_account(uid: int, gid: int) -> dict[str, object]:
+            run = subprocess.run(  # noqa: S603 - fixed argv; synthetic paths
+                [
+                    SUDO,
+                    "-n",
+                    SETPRIV,
+                    f"--reuid={uid}",
+                    f"--regid={gid}",
+                    "--clear-groups",
+                    "/usr/bin/python3",
+                    "-I",
+                    "-c",
+                    ACCOUNT_PROBE,
+                    str(target),
+                    str(other),
+                    str(pool),
+                    ",".join(PROOF_OBJECTS),
+                    ",".join(OTHER_OBJECTS),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            assert run.returncode == 0, run.stdout + run.stderr
+            return json.loads(run.stdout.strip().splitlines()[-1])  # type: ignore[no-any-return]
+
+        application = as_account(10001, 10001)
+        assert application["proof"] == dict.fromkeys(PROOF_OBJECTS, True)
+        assert application["rest"] == dict.fromkeys(OTHER_OBJECTS, False)
+        assert application["other_set"] is False
+        assert application["pool"] is False
+        assert application["write_dump"] is False
+        assert application["create"] is False
+        assert application["list_sets"] is False
+
+        stranger = as_account(10002, 10002)
+        assert stranger["proof"] == dict.fromkeys(PROOF_OBJECTS, False)
+        assert stranger["rest"] == dict.fromkeys(OTHER_OBJECTS, False)
+        assert stranger["other_set"] is False
+        assert stranger["pool"] is False
+        assert stranger["write_dump"] is False
+        assert stranger["create"] is False
+    finally:
+        subprocess.run(  # noqa: S603 - fixed argv
+            [SUDO, "-n", "rm", "-rf", str(base)], check=False, timeout=60
+        )
+
+
+@posix_modes
+@needs_rsync
+def test_a_set_taken_verified_shared_and_restored_end_to_end(tmp_path: Path):
+    """The sync's own sequence on a private set: backup under umask 022, verify to
+    level 2 with `--record`, `share_set_proof`, the engine's real proof check on the
+    result (nothing mocked), then the production restore of that same set."""
+    import datetime as dt
+
+    from app.legacy_import import lovable_sync
+
+    world = World(tmp_path)
+    assert world.backup().returncode == 0
+    [set_dir] = world.sets()
+    assert _mode(set_dir) == 0o700
+
+    verified = world.run(
+        VERIFY,
+        "--project",
+        "juristid-recovery-rehearsal",
+        "--compose-file",
+        str(world.compose),
+        "--set",
+        str(set_dir),
+        "--backup-root",
+        str(world.backups),
+        "--level",
+        "2",
+        "--record",
+    )
+    assert verified.returncode == 0, verified.stdout + verified.stderr
+    assert _mode(set_dir / "VERIFIED-L2") == 0o600  # as written: private, before the share
+
+    # Before the share the application's account (here: the same user, so only the
+    # modes can be compared) would see a 0600 marker in a 0700 directory.
+    shared = _lib(f'share_set_proof "{set_dir.as_posix()}" {os.getgid()}', tmp_path)
+    assert shared.returncode == 0, shared.stdout + shared.stderr
+    assert _mode(set_dir) == 0o750
+    assert {n for n in os.listdir(set_dir) if _mode(set_dir / n) & 0o040} == set(PROOF_OBJECTS)
+    assert not any(_mode(set_dir / n) & 0o007 for n in os.listdir(set_dir))
+
+    problem = lovable_sync.backup_proof_problem(
+        f"sets/{set_dir.name}",
+        dt.datetime.now(dt.UTC) + dt.timedelta(seconds=1),
+        set_dir=str(set_dir),
+    )
+    assert problem == "", problem
+
+    target = tmp_path / "restored"
+    target.mkdir()
+    restored = world.run(
+        RESTORE,
+        "--project",
+        "juristid-recovery-rehearsal",
+        "--compose-file",
+        str(world.compose),
+        "--set",
+        str(set_dir),
+        "--backup-root",
+        str(world.backups),
+        "--data-root",
+        str(target),
+    )
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+    assert (target / "evidence" / "ab" / "first.pdf").read_bytes() == b"synthetic evidence one"
