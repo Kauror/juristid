@@ -48,7 +48,9 @@ from app.matters.my_statistics import (
     Cell,
     Coverage,
     SeriesData,
+    arrivals_series,
     cell,
+    created_since,
     credit_opinion,
     load_series,
     recording_since,
@@ -83,7 +85,10 @@ ACTION_LABELS: dict[str, str] = {
 ACTION_UNITS: dict[str, str] = {REVIEWED: "ülevaatust"}
 
 SENT, NEW, OWED, LATE = "saadetud-arvamused", "uued-teemad", "taitmata-nouded", "tahtaja-ulatanud"
-ARRIVED, UPCOMING, PLANNED = "joustunud", "joustuvad", "eeldatavad"
+#: What the record *says*, never that the act came into force
+#: (`my_dates.COMMENCEMENT_PASSED`): an exact date that has come, an exact date still
+#: ahead, and an approximate one (past or future, never presented as confirmed).
+ARRIVED, UPCOMING, PLANNED = "kuupaev-saabunud", "eesolevad-joustumised", "ligikaudsed-joustumised"
 HISTORY_KINDS = (DONE, REVIEWED, POSTPONED, DATE_CHANGED, SUPERSEDED, CANCELLED)
 COMMENCEMENT_KINDS = (ARRIVED, UPCOMING, PLANNED)
 RECORD_TITLES: dict[str, str] = {
@@ -92,9 +97,9 @@ RECORD_TITLES: dict[str, str] = {
     NEW: "Uued teemad",
     OWED: "Täitmata arvamuse nõuded sel nädalal",
     LATE: "Varasemast üle tähtaja arvamuse nõuded",
-    ARRIVED: "Jõustunud",
-    UPCOMING: "Jõustuvad",
-    PLANNED: "Eeldatavad jõustumised",
+    ARRIVED: "Kuupäev saabunud",
+    UPCOMING: "Eesolevad jõustumised",
+    PLANNED: "Ligikaudsed jõustumised",
 }
 
 PREVIEW = 3
@@ -407,6 +412,11 @@ def outstanding_recs(ctx: Ctx, items: list[wi.WorkItem]) -> list[Rec]:
 # ---------------------------------------------------------------------------
 
 
+def _opinion_key(fact: Any) -> str:
+    """The opinion's own identity: its Submission, answered request or imported outcome."""
+    return f"opinion:{fact.record_id or f'{fact.matter.matter_id}:{fact.sent_on}:{fact.source}'}"
+
+
 def sent_recs(ctx: Ctx, span: Any) -> list[Rec]:
     """Opinions sent in ``span``: one person's by Minu statistika's credit, or all of them."""
     from app.reporting import opinions
@@ -431,7 +441,7 @@ def sent_recs(ctx: Ctx, span: Any) -> list[Rec]:
     }
     out = [
         Rec(
-            key=f"opinion:{fact.matter.matter_id}:{fact.sent_on}:{fact.source}",
+            key=_opinion_key(fact),
             matter=matters[fact.matter.matter_id],
             day=fact.sent_on,
             what=fact.matter.title,
@@ -487,7 +497,19 @@ def new_recs(ctx: Ctx, span: Any) -> list[Rec]:
     Teemad received in the span, closed ones included.
     """
     if ctx.scope == SELF and ctx.data is not None:
-        found = ctx.data.series["uued"].within(span)
+        # The arrival events themselves, for any window: the ownership trail is
+        # complete, and the creation events are read for this span by the one
+        # definition `my_statistics.created_since`. An arrival is a Teema and a
+        # day, so a Teema that returns to the person later is a second arrival.
+        key = ("arrivals", span.start)
+        if key not in ctx.memo:
+            ctx.memo[key] = arrivals_series(
+                ctx.data.ownership,
+                created_since(ctx.subject, span.start),
+                ctx.person_id,
+                ctx.reliable.get("trail"),
+            )
+        found = ctx.memo[key].within(span)
         matters = {
             m.pk: m
             for m in Matter.objects.visible_to(ctx.viewer).filter(
@@ -497,9 +519,10 @@ def new_recs(ctx: Ctx, span: Any) -> list[Rec]:
         return sorted(
             (
                 Rec(
-                    key=f"matter:{r.matter_id}",
+                    key=f"arrival:{r.matter_id}:{r.day}",
                     matter=matters[r.matter_id],
                     day=r.day,
+                    what=r.what,
                     url=_matter_url(r.matter_id),
                 )
                 for r in found
@@ -737,7 +760,11 @@ def build_week_overview(ctx: Ctx, *, items: list[wi.WorkItem]) -> WeekOverview:
 
     # --- Jõustumised -------------------------------------------------------
     buckets = commencement_buckets(ctx, eff_rows)
-    for key, label in ((ARRIVED, "Jõustunud"), (UPCOMING, "Jõustuvad"), (PLANNED, "Eeldatavad")):
+    for key, label in (
+        (ARRIVED, "Kuupäev saabunud"),
+        (UPCOMING, "Eesolevad"),
+        (PLANNED, "Ligikaudsed"),
+    ):
         overview.commencements.append(
             WeekFigure(
                 key,

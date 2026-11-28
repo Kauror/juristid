@@ -616,3 +616,143 @@ def test_a_column_nobody_measured_or_in_the_future_is_not_selectable(client, spe
 def test_a_made_up_selection_is_ignored(client, specialist) -> None:
     stats = _statistics(client, specialist, naitaja="uued", valik="1999-01-01")
     assert stats.selection == "" and stats.clear_url == ""
+
+
+# --- final acceptance round: identities, terminology -----------------------------
+
+
+def test_two_native_opinions_on_one_teema_on_one_day_are_two_separate_records(
+    specialist, organisation
+) -> None:
+    from tests.follow_ups import send_koja_arvamus
+
+    today = timezone.localdate()
+    matter = a_matter(specialist, "Kaks arvamust")
+    first = send_koja_arvamus(matter, specialist, [organisation], today)
+    second = send_koja_arvamus(matter, specialist, [organisation], today)
+    assert first.pk != second.pk
+    ctx = ctx_of(specialist, today)
+    found = wo.records(ctx, wo.SENT, ctx.week.counted)
+    assert {r.key for r in found} == {
+        f"opinion:submission:{first.pk}",
+        f"opinion:submission:{second.pk}",
+    }
+    figure = next(f for f in wo.build_week_overview(ctx, items=[]).opinions if f.key == "sent")
+    assert (figure.cell.value or 0) == 2
+
+
+def test_an_exact_date_that_has_come_is_never_called_a_commencement() -> None:
+    """The record says a date; nothing on it confirms the act came into force."""
+    labels = {wo.RECORD_TITLES[k] for k in wo.COMMENCEMENT_KINDS}
+    assert labels == {"Kuupäev saabunud", "Eesolevad jõustumised", "Ligikaudsed jõustumised"}
+    assert not any(label.startswith("Jõustunud") for label in labels)
+
+
+# --- recent Teemad: independent fixtures, events at controlled times --------------
+
+
+class _At:
+    """Make every audit event and timestamp written inside the block carry ``day``."""
+
+    def __init__(self, monkeypatch: Any) -> None:
+        self.monkeypatch = monkeypatch
+
+    def __call__(self, day: dt.date) -> _At:
+        moment = at(day)
+        from app.audit.models import ChangeEvent
+
+        self.monkeypatch.setattr(timezone, "now", lambda: moment)
+        # `Field.get_default` calls the cached `_get_default`; the instance attribute wins.
+        self.monkeypatch.setattr(
+            ChangeEvent._meta.get_field("occurred_at"),
+            "_get_default",
+            lambda: moment,
+            raising=False,
+        )
+        return self
+
+
+def test_the_recent_teema_preview_and_list_hold_exactly_the_independently_listed_arrivals(
+    monkeypatch, specialist, other_specialist
+) -> None:
+    from app.matters.enums import MatterOrigin
+    from app.matters.services import assign_matter, close_matter
+    from app.workflow.enums import Disposition
+
+    today = timezone.localdate()
+    day = lambda back: today - dt.timedelta(days=back)  # noqa: E731
+    clock = _At(monkeypatch)
+
+    clock(day(30))
+    t1 = create_matter(owner=specialist, actor=specialist, title="T1 loodud 30 p tagasi")
+    clock(day(25))
+    t2 = create_matter(owner=other_specialist, actor=other_specialist, title="T2 teise loodud")
+    clock(day(10))
+    assign_matter(matter=t2, owner=specialist, actor=other_specialist)
+    clock(day(40))
+    t3 = create_matter(owner=specialist, actor=specialist, title="T3 läheb ja tuleb tagasi")
+    clock(day(35))
+    assign_matter(matter=t3, owner=other_specialist, actor=specialist)
+    clock(day(5))
+    assign_matter(matter=t3, owner=specialist, actor=other_specialist)
+    clock(day(2))
+    t4 = create_matter(owner=specialist, actor=specialist, title="T4 hiljuti suletud")
+    clock(day(1))
+    close_matter(matter=t4, disposition=Disposition.MONITORING_STOPPED, actor=specialist)
+    clock(day(15))
+    t5 = create_matter(
+        owner=other_specialist,
+        actor=other_specialist,
+        title="T5 imporditud",
+        origin=MatterOrigin.LEGACY_IMPORT,
+    )
+    assign_matter(matter=t5, owner=specialist, actor=other_specialist)
+    clock(day(28))
+    t6 = create_matter(owner=other_specialist, actor=other_specialist, title="T6 ainult teisele")
+    monkeypatch.undo()
+
+    # Expected, enumerated by hand from the story above — not read from the resolver.
+    expected_for_specialist = {
+        f"arrival:{t1.pk}:{day(30)}",
+        f"arrival:{t2.pk}:{day(10)}",
+        f"arrival:{t3.pk}:{day(40)}",
+        f"arrival:{t3.pk}:{day(5)}",  # the same Teema returned on a different day
+        f"arrival:{t4.pk}:{day(2)}",  # closed since, still an arrival
+        f"arrival:{t5.pk}:{day(15)}",  # an imported Teema, handed over
+    }
+
+    def with_trail(who: Any) -> wo.Ctx:
+        """The context as if recording of the ownership trail had begun long before."""
+        import dataclasses
+
+        from app.matters.my_statistics import load_ownership
+
+        began = dt.date(2026, 1, 1)
+        built = ctx_of(who, today)
+        assert built.data is not None
+        built.data = dataclasses.replace(
+            built.data, ownership=load_ownership(who, today, began, began)
+        )
+        built.reliable["trail"] = began
+        return built
+
+    ctx = with_trail(specialist)
+    window = wo.preview_window(today)
+    found = wo.records(ctx, wo.NEW, window)
+    assert {r.key for r in found} == expected_for_specialist
+    assert [r.key for r in found][:3] == [
+        f"arrival:{t4.pk}:{day(2)}",
+        f"arrival:{t3.pk}:{day(5)}",
+        f"arrival:{t2.pk}:{day(10)}",
+    ]
+    preview = wo.build_week_overview(ctx, items=[]).new_matters
+    assert [p.matter.pk for p in preview] == [t4.pk, t3.pk, t2.pk]
+    # None in the last two weeks except T4 and T3's return — so the preview reaches
+    # arrivals the two-week series never loaded.
+    assert t1.pk in {r.matter.pk for r in found if r.matter}
+
+    # A person whose only arrivals are older than the loaded weeks still sees them.
+    other_ctx = with_trail(other_specialist)
+    others = {r.key for r in wo.records(other_ctx, wo.NEW, window)}
+    assert f"arrival:{t6.pk}:{day(28)}" in others
+    assert f"arrival:{t1.pk}:{day(30)}" not in others

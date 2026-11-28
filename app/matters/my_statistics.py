@@ -871,6 +871,32 @@ def _matter_url(pk: Any) -> str:
     return reverse("matters:matter_detail", args=[pk])
 
 
+def created_since(person: Any, first: date) -> list[tuple[Any, date]]:
+    """(Teema, day) of every Teema created in Juristid itself from ``first`` on.
+
+    The one definition of «created here» — `load_series` and the week overview's
+    recent-Teema list both read it, so a window longer than the loaded series does
+    not change what counts (r97).
+    """
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
+    from app.matters.enums import MatterOrigin
+    from app.matters.models import Matter
+
+    window = timezone.make_aware(datetime(first.year, first.month, first.day))
+    out: list[tuple[Any, date]] = []
+    for matter_id, moment in ChangeEvent.objects.filter(
+        event_type=ChangeEventType.MATTER_CREATED,
+        occurred_at__gte=window,
+        matter_id__in=Matter.objects.visible_to(person).values("pk"),
+        matter__origin=MatterOrigin.NATIVE,
+    ).values_list("matter_id", "occurred_at"):
+        day = _day(moment)
+        if day is not None:
+            out.append((matter_id, day))
+    return out
+
+
 @dataclass(frozen=True)
 class SeriesData:
     """Everything one person's figures are read from, loaded once (r97).
@@ -891,7 +917,6 @@ def load_series(person: Any, today: date, first: date, until: date) -> SeriesDat
     """Read the person's records from ``first`` to ``until`` into dated series."""
     from app.audit.enums import ChangeEventType
     from app.audit.models import ChangeEvent
-    from app.matters.enums import MatterOrigin
     from app.matters.models import Entry, Matter
     from app.matters.my_statistics_incoming import incoming_series
     from app.reporting import opinions
@@ -940,16 +965,7 @@ def load_series(person: Any, today: date, first: date, until: date) -> SeriesDat
         if sent_on is None or sent_on > day:
             unanswered.records.append(Record(day, matter_id, "Lõpetatud arvamuseta", reason))
 
-    created: list[tuple[Any, date]] = []
-    for matter_id, moment in ChangeEvent.objects.filter(
-        event_type=ChangeEventType.MATTER_CREATED,
-        occurred_at__gte=window,
-        matter_id__in=visible,
-        matter__origin=MatterOrigin.NATIVE,
-    ).values_list("matter_id", "occurred_at"):
-        day = _day(moment)
-        if day is not None:
-            created.append((matter_id, day))
+    created = created_since(person, first)
 
     series: dict[str, Series] = {
         "saadetud": sent_series(facts, ownership, person.pk, reliable["sent"]),
