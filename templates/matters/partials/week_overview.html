@@ -33,7 +33,7 @@ summed into work.
   </div>
   {% endif %}
   <section class="wo__block wo__days" aria-labelledby="wo-7">
-    <h2 class="wo__h" id="wo-7">{% if ov.is_department %}Osakonna 7 päeva tähtajad{% else %}Minu 7 päeva tähtajad{% endif %} <span class="wo__range">{{ ov.seven_days|length }}</span>
+    <h2 class="wo__h" id="wo-7">{% if ov.is_department %}Osakonna 7 päeva tähtajad{% else %}Minu 7 päeva tähtajad{% endif %} <span class="wo__count">{{ ov.seven_days|length }}</span>
       {% if ov.seven_days_url %}<a class="wo__more" href="{{ ov.seven_days_url }}">Kõik tähtajad</a>{% endif %}</h2>
     {% if ov.seven_days %}
     <div class="wo__scroll" tabindex="0" role="region" aria-label="7 päeva tähtajad">
@@ -45,7 +45,7 @@ summed into work.
           <th scope="row" class="wo__matter"><a href="{{ row.url }}" title="{{ row.matter.title }}">{{ row.matter.title }}</a></th>
           {% if ov.is_department %}<td>{{ row.owner }}</td>{% endif %}
           <td>{{ row.what }}{% if row.category and row.what != row.category %} <span class="wo__muted">· {{ row.category }}</span>{% endif %}</td>
-          <td class="wo__date"><time datetime="{{ row.when|date:'Y-m-d' }}">{{ row.when|date:"d.m" }}</time> <span class="wo__muted">{{ row.relative }}</span></td>
+          <td class="wo__date">{{ row.when|date:"j.n" }} {{ row.relative }}</td>
           <td>{% if row.status %}<span class="wo__status{% if row.is_late %} wo__status--late{% endif %}">{{ row.status }}</span>{% endif %}</td>
         </tr>
       {% endfor %}

@@ -40,3 +40,6 @@
   .wo__table tbody th, .wo__table tbody td { border-bottom: 0; padding: 0; }
   .wo__table tbody th { grid-column: 1 / -1; }
 }
+.wo--single { grid-template-columns: minmax(0, 1fr); }
+.wo__count { color: var(--text-secondary); font-weight: 400; font-size: 0.875rem; }
+.wo__when { font-variant-numeric: tabular-nums; }
