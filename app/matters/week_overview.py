@@ -36,7 +36,6 @@ from django.utils import timezone
 from app.core.dates import format_estonian_date, local_day_range
 from app.matters import stat_periods
 from app.matters import work_items as wi
-from app.matters.dashboard import drafting_matters
 from app.matters.models import Matter
 from app.matters.my_dates import (
     CERTAINTY_EXACT,
@@ -56,6 +55,7 @@ from app.matters.my_statistics import (
     recording_since,
     reliable_since,
 )
+from app.matters.register_filters import OPEN_FULL, register_url
 from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 
@@ -85,6 +85,7 @@ ACTION_LABELS: dict[str, str] = {
 ACTION_UNITS: dict[str, str] = {REVIEWED: "ülevaatust"}
 
 SENT, NEW, OWED, LATE = "saadetud-arvamused", "uued-teemad", "taitmata-nouded", "tahtaja-ulatanud"
+CLOSED = "lopetatud-teemad"
 #: What the record *says*, never that the act came into force
 #: (`my_dates.COMMENCEMENT_PASSED`): an exact date that has come, an exact date still
 #: ahead, and an approximate one (past or future, never presented as confirmed).
@@ -95,6 +96,7 @@ RECORD_TITLES: dict[str, str] = {
     **ACTION_LABELS,
     SENT: "Saadetud arvamused",
     NEW: "Uued teemad",
+    CLOSED: "Lõpetatud teemad",
     OWED: "Täitmata arvamuse nõuded sel nädalal",
     LATE: "Varasemast üle tähtaja arvamuse nõuded",
     ARRIVED: "Kuupäev saabunud",
@@ -103,6 +105,7 @@ RECORD_TITLES: dict[str, str] = {
 }
 
 PREVIEW = 3
+MONITORING_PREFIX = "seire-"
 HORIZON_DAYS = 7
 SCOPE_PARAM = "ulatus"
 DEPARTMENT_VALUE = "osakond"
@@ -110,7 +113,7 @@ DEPARTMENT_VALUE = "osakond"
 PREVIEW_DAYS = 365
 
 #: Incoming-monitoring figures of Minu statistika, in its order.
-_MONITORING = (
+MONITORING = (
     ("registrid", "Registrite dokumendid"),
     ("kutsed", "Riigikogu kutsed"),
     ("arutelud", "Riigikogu arutelud"),
@@ -196,6 +199,18 @@ class WeekOverview:
     commencements_url: str = ""
     statistics_url: str = ""
     previous_statistics_url: str = ""
+
+    @property
+    def seven_day_deadlines(self) -> int:
+        return sum(1 for r in self.seven_days if not r.is_review and not r.is_late)
+
+    @property
+    def seven_day_reviews(self) -> int:
+        return sum(1 for r in self.seven_days if r.is_review)
+
+    @property
+    def seven_day_late(self) -> int:
+        return sum(1 for r in self.seven_days if r.is_late)
 
     @property
     def has_history(self) -> bool:
@@ -455,6 +470,72 @@ def sent_recs(ctx: Ctx, span: Any) -> list[Rec]:
     return sorted(out, key=lambda r: (r.day or date.min, r.key), reverse=True)
 
 
+def department_incoming(ctx: Ctx) -> dict[str, Any]:
+    """The five incoming series over the department's Teemad, loaded once per request."""
+    from app.matters.my_statistics import Ownership
+    from app.matters.my_statistics_incoming import incoming_series
+    from app.riigikogu.bills import switched_on
+
+    if "incoming" not in ctx.memo:
+        ctx.memo["incoming"] = incoming_series(
+            ctx.viewer,
+            Ownership(),
+            ctx.last.start,
+            ctx.week.until,
+            riigikogu_on=switched_on(),
+            everyone=True,
+        )
+    return ctx.memo["incoming"]
+
+
+def monitoring_recs(ctx: Ctx, key: str, span: Any) -> list[Rec]:
+    """The findings of one incoming source in ``span``, department scope, head only."""
+    if ctx.scope != DEPARTMENT or key not in dict(MONITORING):
+        return []
+    series = department_incoming(ctx).get(key)
+    if series is None:
+        return []
+    matters = {
+        m.pk: m
+        for m in Matter.objects.visible_to(ctx.viewer)
+        .filter(pk__in={r.matter_id for r in series.within(span)})
+        .select_related("owner")
+    }
+    return [
+        Rec(
+            key=f"{key}:{r.matter_id}:{r.day}:{r.what}",
+            matter=matters[r.matter_id],
+            day=r.day,
+            what=r.what,
+            note=r.detail,
+            url=r.source_url or _matter_url(r.matter_id),
+            owner=_name(matters[r.matter_id].owner),
+        )
+        for r in sorted(series.within(span), key=lambda r: r.day, reverse=True)
+        if r.matter_id in matters
+    ]
+
+
+def closed_recs(ctx: Ctx, span: Any) -> list[Rec]:
+    """Teemad closed in ``span`` (department scope): the Osakond strip's own selector."""
+    from app.matters import department_dashboard as dd
+
+    if ctx.scope != DEPARTMENT:
+        return []  # a person's own closed Teemad are Minu statistika's «Lõpetatud teemad»
+    rows = dd.closed_matters(ctx.viewer, since=span.start, until=span.end)
+    return [
+        Rec(
+            key=f"closed:{m.pk}:{timezone.localtime(m.closed_at).date()}",
+            matter=m,
+            day=timezone.localtime(m.closed_at).date(),
+            url=_matter_url(m.pk),
+            owner=_name(m.owner),
+        )
+        for m in rows.select_related("owner").order_by("-closed_at", "pk")
+        if m.closed_at is not None
+    ]
+
+
 def owed_recs(ctx: Ctx, *, before_week: bool) -> list[Rec]:
     """Open opinion requests (an open `Arvamuse tähtaeg`) that have not been answered.
 
@@ -465,14 +546,13 @@ def owed_recs(ctx: Ctx, *, before_week: bool) -> list[Rec]:
     request, and is not counted here.
     """
     if "requests" not in ctx.memo:
-        rows = drafting_matters(ctx.viewer).filter(
-            response_deadline__isnull=False, response_deadline__lte=ctx.week.end
-        )
-        if ctx.scope == SELF:
-            rows = rows.filter(owner=ctx.subject)
-        ctx.memo["requests"] = list(
-            rows.select_related("owner").order_by("response_deadline", "pk")
-        )
+        # The canonical open `Arvamuse tähtaeg` obligation (`work_items.response_obligations`),
+        # not the drafting workload: a draft with no request is not a request, and a
+        # later request after an earlier opinion is one again.
+        rows = wi.response_obligations(
+            ctx.viewer, owner=ctx.subject if ctx.scope == SELF else None
+        ).filter(response_deadline__lte=ctx.week.end)
+        ctx.memo["requests"] = list(rows.order_by("response_deadline", "pk"))
     found = [
         m for m in ctx.memo["requests"] if (m.response_deadline < ctx.week.start) == before_week
     ]
@@ -624,10 +704,14 @@ def _records(
 ) -> list[Rec]:
     if kind in HISTORY_KINDS:
         return action_recs(ctx, kind, span)
+    if kind.startswith(MONITORING_PREFIX):
+        return monitoring_recs(ctx, kind[len(MONITORING_PREFIX) :], span)
     if kind == SENT:
         return sent_recs(ctx, span)
     if kind == NEW:
         return new_recs(ctx, span)
+    if kind == CLOSED:
+        return closed_recs(ctx, span)
     if kind == OWED:
         return owed_recs(ctx, before_week=False)
     if kind == LATE:
@@ -728,7 +812,7 @@ def build_week_overview(ctx: Ctx, *, items: list[wi.WorkItem]) -> WeekOverview:
             unit="arvamust",
         )
     else:
-        sent = figure("sent", "Saadetud", SENT, span_now, unit="arvamust")
+        sent = figure("sent", "Saadetud", SENT, span_now, history="sent", unit="arvamust")
     overview.opinions = [
         sent,
         figure("owed", "Täitmata nõuded sel nädalal", OWED, span_now, unit="nõuet"),
@@ -777,7 +861,11 @@ def build_week_overview(ctx: Ctx, *, items: list[wi.WorkItem]) -> WeekOverview:
     overview.upcoming_commencements = [
         r for r in eff_rows if r.start is not None and r.end is not None and r.end >= ctx.today
     ][:PREVIEW]
-    overview.commencements_url = reverse("matters:my_effective_dates") if not dept else ""
+    overview.commencements_url = (
+        register_url(**OPEN_FULL, joustumine="on")
+        if dept
+        else reverse("matters:my_effective_dates")
+    )
 
     # --- Eelmine nädal -----------------------------------------------------
     if ctx.scope == SELF and ctx.data is not None:
@@ -810,7 +898,7 @@ def build_week_overview(ctx: Ctx, *, items: list[wi.WorkItem]) -> WeekOverview:
         ]
         overview.statistics_url = week.url(stats_path)
         overview.previous_statistics_url = last.url(stats_path)
-        for key, label in _MONITORING:
+        for key, label in MONITORING:
             found = series[key].cell(week.counted) if key in series else None
             if found is not None and found.value:
                 overview.monitoring.append(
@@ -818,12 +906,33 @@ def build_week_overview(ctx: Ctx, *, items: list[wi.WorkItem]) -> WeekOverview:
                 )
     else:
         overview.previous = [
-            figure("p-sent", "Saadetud arvamused", SENT, span_last, unit="arvamust"),
-            figure("p-new", "Uued teemad", NEW, span_last, unit="teemat"),
+            figure(
+                "p-sent", "Saadetud arvamused", SENT, span_last, history="sent", unit="arvamust"
+            ),
+            figure("p-new", "Uued teemad", NEW, span_last, history="trail", unit="teemat"),
+            figure(
+                "p-closed", "Lõpetatud teemad", CLOSED, span_last, history="closed", unit="teemat"
+            ),
             figure(
                 "p-done", "Tehtud tegevused", DONE, span_last, history="actions", unit="tegevust"
             ),
         ]
+
+    if dept:
+        incoming = department_incoming(ctx)
+        for key, label in MONITORING:
+            found_cell = incoming[key].cell(week.counted) if key in incoming else None
+            if found_cell is not None and (
+                found_cell.value or found_cell.coverage is Coverage.VERIFIED
+            ):
+                overview.monitoring.append(
+                    WeekFigure(
+                        key,
+                        label,
+                        found_cell,
+                        records_url(MONITORING_PREFIX + key, week.start, department=True),
+                    )
+                )
 
     # --- 7 päeva -----------------------------------------------------------
     _seven_days(ctx, overview, items)
@@ -883,7 +992,11 @@ def _seven_days(ctx: Ctx, overview: WeekOverview, items: list[wi.WorkItem]) -> N
         )
     out.sort(key=lambda r: (not r.is_late, r.when, str(r.matter.title)))
     overview.seven_days = out
-    overview.seven_days_url = reverse("matters:my_deadlines") if ctx.scope == SELF else ""
+    if ctx.scope == SELF:
+        overview.seven_days_url = reverse("matters:my_deadlines")
+    elif ctx.scope == DEPARTMENT:
+        # The department's own longer-term list: Osakond's *Eesolev* «Kõik tähtajad».
+        overview.seven_days_url = register_url(**OPEN_FULL, too="tahtaeg-vahemik")
 
 
 __all__ = [

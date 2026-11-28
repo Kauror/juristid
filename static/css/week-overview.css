@@ -58,3 +58,7 @@
   .wk__table tbody th, .wk__table tbody td { display: block; border-bottom: 0; padding: 0 var(--spacing-2); }
 }
 .wo a, .wo__table th, .wo__table td, .wo__list li, .wo__block { overflow-wrap: anywhere; min-width: 0; }
+.wo--dept { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+.ovsection__note { color: var(--text-secondary); font-size: var(--typography-size-sm); }
+.railblock__recent { margin-block: var(--spacing-2); }
+@media (max-width: 64rem) { .wo--dept { grid-template-columns: minmax(0, 1fr); } }

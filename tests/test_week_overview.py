@@ -526,7 +526,7 @@ def test_the_department_overview_exists_for_the_head_only(
 ) -> None:
     client.force_login(department_head)
     body = client.get(reverse("matters:department")).content.decode()
-    assert "Osakonna 7 päeva tähtajad" in body and "Selle nädala ülevaade" in body
+    assert "Järgmised 7 päeva:" in body and "Selle nädala ülevaade" in body
     client.force_login(specialist)
     body = client.get(reverse("matters:department")).content.decode()
     assert "Selle nädala ülevaade" not in body
@@ -756,3 +756,65 @@ def test_the_recent_teema_preview_and_list_hold_exactly_the_independently_listed
     others = {r.key for r in wo.records(other_ctx, wo.NEW, window)}
     assert f"arrival:{t6.pk}:{day(28)}" in others
     assert f"arrival:{t1.pk}:{day(30)}" not in others
+
+
+# --- department: coverage, monitoring, navigation -----------------------------------
+
+
+def test_department_history_carries_the_coverage_the_statistics_use(
+    specialist, department_head
+) -> None:
+    today = timezone.localdate()
+    ctx = ctx_of(specialist, today, wo.DEPARTMENT, department_head)
+    ctx.reliable.update({"sent": today + dt.timedelta(days=30), "trail": None, "closed": None})
+    view = wo.build_week_overview(ctx, items=[])
+    by_key = {f.key: f for f in (*view.opinions, *view.previous)}
+    # Coverage that begins after the week, or is not established: unknown, never 0.
+    for key in ("sent", "p-sent", "p-new", "p-closed"):
+        assert by_key[key].cell.coverage in (wo.Coverage.UNKNOWN, wo.Coverage.AT_LEAST), key
+        assert by_key[key].text != "0", key
+
+
+def test_every_department_figure_and_preview_has_a_destination_the_head_may_open(
+    client, specialist, other_specialist, department_head
+) -> None:
+    _world(specialist, other_specialist)
+    today = timezone.localdate()
+    ctx = ctx_of(specialist, today, wo.DEPARTMENT, department_head)
+    view = wo.build_week_overview(ctx, items=[])
+    client.force_login(department_head)
+    urls = [
+        f.url
+        for g in (view.opinions, view.actions, view.commencements, view.previous, view.monitoring)
+        for f in g
+    ]
+    urls += [
+        view.seven_days_url,
+        view.commencements_url,
+        view.new_matters_url,
+        view.recent_opinions_url,
+    ]
+    for url in urls:
+        assert url, "a department figure or preview without a destination"
+        assert "/minu-asjad/nadal/" not in url or "ulatus=osakond" in url, (
+            url
+        )  # never a personal list
+        assert client.get(url).status_code == 200, url
+
+
+def test_department_monitoring_reads_distinct_findings_of_every_teema_the_head_may_see(
+    client, department_head, specialist
+) -> None:
+    from app.register_watch.models import WatchFinding  # noqa: F401  (the model the series reads)
+
+    today = timezone.localdate()
+    ctx = ctx_of(specialist, today, wo.DEPARTMENT, department_head)
+    incoming = wo.department_incoming(ctx)
+    assert set(incoming) >= {"registrid", "kutsed", "arutelud", "mainimised", "valitsus"}
+    client.force_login(department_head)
+    for key, _ in wo.MONITORING:
+        url = wo.records_url(wo.MONITORING_PREFIX + key, ctx.week.start, department=True)
+        assert client.get(url).status_code == 200
+    client.force_login(specialist)
+    url = wo.records_url(wo.MONITORING_PREFIX + "registrid", ctx.week.start, department=True)
+    assert client.get(url).status_code == 403

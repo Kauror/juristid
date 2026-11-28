@@ -1,0 +1,49 @@
+{% comment %}
+«Selle nädala ülevaade» for the department head — one compact band under the strip
+(r97). Not a second dashboard: the 7-day deadlines live in *Eesolev* (a count line
+in its heading), the recent Teemad in the rail's *Uued teemad*, and the sent
+opinions in *Tehtud*; what is left here is what no other block shows — the week's
+outcomes, the previous week, the incoming monitoring and the nearest
+commencements. Every figure opens exactly the records it counted
+(`week_overview.records`, `?ulatus=osakond`).
+{% endcomment %}
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/week-overview.css' %}">
+<!--week-overview-->
+<section class="wo wo--dept" aria-label="Nädala ülevaade">
+  <section class="wo__block" aria-labelledby="wo-week">
+    <h2 class="wo__h" id="wo-week">Selle nädala ülevaade <span class="wo__range">{{ ov.start|date:"j.n" }}–{{ ov.end|date:"j.n" }}</span></h2>
+    <div class="wo__group"><h3 class="wo__sub">Arvamused</h3>
+      {% include "matters/partials/week_figures.html" with figures=ov.opinions %}
+    </div>
+    <div class="wo__group"><h3 class="wo__sub">Muud tegevused</h3>
+      {% include "matters/partials/week_figures.html" with figures=ov.actions %}
+    </div>
+    <div class="wo__group"><h3 class="wo__sub">Jõustumiskuupäevad</h3>
+      {% include "matters/partials/week_figures.html" with figures=ov.commencements %}
+    </div>
+    <div class="wo__group"><h3 class="wo__sub">Eelmine nädal <span class="wo__range">{{ ov.previous_start|date:"j.n" }}–{{ ov.previous_end|date:"j.n" }}</span></h3>
+      {% include "matters/partials/week_figures.html" with figures=ov.previous %}
+    </div>
+  </section>
+  <div class="wo__main">
+    {% if ov.monitoring %}
+    <section class="wo__block" aria-labelledby="wo-mon">
+      <h2 class="wo__h" id="wo-mon">Sissetulev seire <span class="wo__range">sel nädalal</span><a class="wo__more" href="{% url 'register_watch:review' %}">Monitooring</a></h2>
+      {% include "matters/partials/week_figures.html" with figures=ov.monitoring %}
+    </section>
+    {% endif %}
+    <section class="wo__block" aria-labelledby="wo-com">
+      <h2 class="wo__h" id="wo-com">Lähimad jõustumiskuupäevad <a class="wo__more" href="{{ ov.commencements_url }}">Vaata kõiki</a></h2>
+      {% if ov.upcoming_commencements %}
+        <ul class="wo__list">
+        {% for row in ov.upcoming_commencements %}
+          <li><a href="{{ row.matter_url }}" title="{{ row.matter.title }}">{{ row.matter.title }}</a>
+            <span class="wo__muted">{{ row.display_date }} · {{ row.certainty_label }}</span></li>
+        {% endfor %}
+        </ul>
+      {% else %}<p class="wo__empty">Jõustumisi pole.</p>{% endif %}
+    </section>
+  </div>
+</section>
+<!--/week-overview-->

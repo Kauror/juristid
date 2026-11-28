@@ -39,7 +39,7 @@ from app.matters import week_overview as wo
 
 #: Figures whose history is the person's own, and so does not exist for «Osakond»
 #: unless the head asks for it.
-WEEKLY = (*wo.HISTORY_KINDS, wo.OWED, wo.LATE, *wo.COMMENCEMENT_KINDS, wo.OUTSTANDING)
+WEEKLY = (*wo.HISTORY_KINDS, wo.CLOSED, wo.OWED, wo.LATE, *wo.COMMENCEMENT_KINDS, wo.OUTSTANDING)
 TITLES = wo.RECORD_TITLES
 
 
@@ -88,8 +88,14 @@ def build_records(request: HttpRequest, kind: str, today: date) -> tuple[list[wo
 def my_week_records(request: HttpRequest) -> HttpResponse:
     today = timezone.localdate()
     kind = request.GET.get("naitaja", "")
-    if kind not in TITLES:
-        kind = wo.SENT
+    if kind.startswith(wo.MONITORING_PREFIX) and kind[len(wo.MONITORING_PREFIX) :] in dict(
+        wo.MONITORING
+    ):
+        title = "Sissetulev seire · " + dict(wo.MONITORING)[kind[len(wo.MONITORING_PREFIX) :]]
+    elif kind in TITLES:
+        title = TITLES[kind]
+    else:
+        kind, title = wo.SENT, TITLES[wo.SENT]
     rows, period, department = build_records(request, kind, today)
     back = reverse("matters:department") if department else reverse("matters:my_work")
     return render(
@@ -97,7 +103,7 @@ def my_week_records(request: HttpRequest) -> HttpResponse:
         "matters/week_records.html",
         {
             "kind": kind,
-            "title": TITLES[kind],
+            "title": title,
             "rows": rows,
             "period": period,
             "is_action": kind in (*wo.HISTORY_KINDS, wo.OUTSTANDING),
