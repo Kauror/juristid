@@ -206,7 +206,11 @@ class NightlyStepRecord(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["cycle_start", "step"], name="nightly_step_once")
+            # A person's recovery run is a row of its own: it never replaces the scheduled
+            # night's verdict for the same step.
+            models.UniqueConstraint(
+                fields=["cycle_start", "step", "manual"], name="nightly_step_once"
+            )
         ]
         indexes = [models.Index(fields=["-cycle_start"])]
         ordering = ["-cycle_start", "step"]

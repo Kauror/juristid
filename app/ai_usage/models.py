@@ -48,6 +48,17 @@ class UsageStatus(models.TextChoices):
     NOT_APPLICABLE = "NOT_APPLICABLE", "Ei kohaldu"
 
 
+class AttemptCoverage(models.TextChoices):
+    """What is known about the physical HTTP attempts of one logical operation."""
+
+    OBSERVED = "observed", "Katsed jälgitud"
+    #: The client sent no HTTP request (prompt building, client set-up, nothing to do):
+    #: a logical operation WITHOUT a physical attempt, which is not a gap.
+    NONE = "none", "HTTP-katset ei tehtud"
+    #: No hook watched the client, so how many requests were sent is not known.
+    UNAVAILABLE = "unavailable", "Katsete jälgimine puudus"
+
+
 class Service(models.TextChoices):
     WATCH_FINDINGS = "watch_findings", "Registrite jälgimine: leiud"
     CANDIDATES = "candidates", "Uute eelnõude otsing"
@@ -74,6 +85,9 @@ class AiOperation(models.Model):
     items_classified = models.PositiveIntegerField(null=True, blank=True)
     #: A kind from `recorder.ERROR_KINDS`, never a message.
     error_kind = models.CharField(max_length=40, blank=True)
+    attempt_coverage = models.CharField(
+        max_length=12, choices=AttemptCoverage.choices, default=AttemptCoverage.OBSERVED
+    )
 
     class Meta:
         indexes = [models.Index(fields=["service", "started_at"])]
@@ -89,7 +103,12 @@ class AiAttempt(models.Model):
     sequence = models.PositiveSmallIntegerField()
     started_at = models.DateTimeField(db_index=True)
     ended_at = models.DateTimeField(null=True, blank=True)
-    duration_ms = models.PositiveIntegerField(null=True, blank=True)
+    #: Milliseconds from sending the request to the arrival of the RESPONSE HEADERS (the
+    #: httpx response hook). It is not the time to read the whole answer.
+    headers_ms = models.PositiveIntegerField(null=True, blank=True)
+    #: False when this row was inferred from an answer because nothing watched the client
+    #: (the request is certain, its start time and retries are not).
+    observed = models.BooleanField(default=True)
     outcome = models.CharField(max_length=20, choices=AttemptOutcome.choices)
     http_status = models.PositiveSmallIntegerField(null=True, blank=True)
     #: "" none, "retried" (a later attempt followed), "final".
@@ -152,6 +171,20 @@ class AiPrice(models.Model):
     class Meta:
         indexes = [models.Index(fields=["provider", "model", "effective_from"])]
         ordering = ["model", "-effective_from"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(input_per_mtok__gte=0, output_per_mtok__gte=0),
+                name="ai_price_rates_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gte=models.F("effective_from")),
+                name="ai_price_range_ordered",
+            ),
+            models.UniqueConstraint(
+                fields=["provider", "model", "tier", "effective_from"], name="ai_price_one_per_day"
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.model} {self.effective_from}"
@@ -167,7 +200,8 @@ class AiFxRate(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["currency", "on_date"], name="ai_fx_currency_day")
+            models.UniqueConstraint(fields=["currency", "on_date"], name="ai_fx_currency_day"),
+            models.CheckConstraint(condition=models.Q(per_eur__gt=0), name="ai_fx_positive"),
         ]
 
     def __str__(self) -> str:

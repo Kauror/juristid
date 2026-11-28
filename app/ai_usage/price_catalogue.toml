@@ -24,10 +24,17 @@ cache_read_per_mtok = "0.20"
 effective_from = "2026-11-28"
 source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
 verified_on = "2026-11-28"
-# The page names the model «Claude Opus 5.5» and does not print the API identifier; the
-# mapping to `claude-opus-5-5` comes from the session's model list, not from the page.
-# The page is undated and states nothing about server-side fallback billing or whether
-# input_tokens includes cache tokens (the usage fields are shown as separate counters).
+# Reconfirmed on 2026-11-28 by a second, independent reading of both official pages:
+# the pricing page row «Claude Opus 5.5» reads $4 input / $20 output / $0.20 cache hits
+# (0.05x base, footnote 2), $5 five-minute and $8 one-hour cache writes; the models overview
+# prints «Claude API ID» and «Claude API alias» as `claude-opus-5-5` (a pinned snapshot, no
+# dated id). The pricing page itself prints no API identifier, is undated, says nothing about
+# server-side fallback billing, and does not state whether input_tokens includes cache
+# tokens (its usage example shows them as separate fields; Juristid sends no cache_control).
+# Other tiers exist and are NOT applied, because an attempt carries no tier: batch ($2/$10),
+# fast mode ($8/$40) and US-only inference (1.1x). Juristid sets none of them (no speed or
+# inference_geo parameter), so the standard price is the one that applies; if that ever
+# changes this catalogue and the recorder must change first.
 
 [[fx]]
 currency = "USD"

@@ -40,6 +40,30 @@ STEP_LABELS = {
 
 # -- nightly history ------------------------------------------------------------------------------
 
+#: What one expected cycle came to. «missing» = a cycle was due and left no record at all;
+#: «pending» = it has not been due yet; «running» = inside its window with steps still due.
+RUNNING, COMPLETED, PARTIAL, FAILED, MISSING, DISABLED, PENDING = (
+    "running",
+    "completed",
+    "partial",
+    "failed",
+    "missing",
+    "disabled",
+    "pending",
+)
+CYCLE_LABELS = {
+    RUNNING: "Käib",
+    COMPLETED: "Lõpetatud",
+    PARTIAL: "Osaline",
+    FAILED: "Ebaõnnestunud",
+    MISSING: "Tsükkel puudub täielikult",
+    DISABLED: "Tahtlikult vahele jäetud",
+    PENDING: "Pole veel aeg",
+}
+_FAILURES = frozenset(
+    {nightly_outcome.FAILED, nightly_outcome.INTERRUPTED, nightly_outcome.SKIPPED_UNEXPECTED}
+)
+
 
 @dataclass
 class NightStep:
@@ -47,7 +71,7 @@ class NightStep:
     label: str
     record: NightlyStepRecord | None
     expected_by: dt.datetime
-    #: «no record» for a night the application has records for but not for this step.
+    #: «no record» for a step that was due on a night the application has records for.
     missing: bool
 
     @property
@@ -57,8 +81,14 @@ class NightStep:
 
 @dataclass
 class Night:
+    """One expected cycle (a Tallinn midnight), whether or not it left records."""
+
     start: dt.datetime
     steps: list[NightStep]
+    state: str = PENDING
+    #: A person's recovery runs for this night: shown beside the scheduled verdict, never over it.
+    recoveries: list[NightlyStepRecord] = field(default_factory=list)
+    #: Approximate: model requests started inside the cycle's window (the ledger has no cycle id).
     ai_operations: int = 0
     ai_failed: int = 0
     rk_cycle: str = ""
@@ -68,36 +98,100 @@ class Night:
         return self.start.astimezone(nightly_schedule.TALLINN).date()
 
     @property
+    def label(self) -> str:
+        return CYCLE_LABELS[self.state]
+
+    @property
     def problems(self) -> int:
         return sum(1 for s in self.steps if s.problem or s.missing)
 
 
-def history(nights: int = 30, now: dt.datetime | None = None) -> list[Night]:
-    """The last ``nights`` cycles that left at least one record, newest first.
+@dataclass
+class History:
+    nights: list[Night]
+    #: The first night the application kept records for; nothing before it is reconstructed.
+    recording_since: dt.datetime | None
+    next_start: dt.datetime
 
-    A cycle is one `cycle_start`; the cycle script writes the same start for each of its
-    steps, so the correlation is the script's own, not inferred. AI operations are matched
-    to a night by **time window** (the cycle's start to its latest allowed finish) because
-    the ledger has no cycle id — the page says so. Nights before records existed are absent.
+
+def _slot_day(cycle_start: dt.datetime) -> dt.date:
+    """The Tallinn date of the cycle a start belongs to (a start a little before midnight is
+    still that midnight's cycle)."""
+    return (cycle_start.astimezone(nightly_schedule.TALLINN) + dt.timedelta(hours=6)).date()
+
+
+def _state(
+    rows: dict[str, NightlyStepRecord], steps: list[NightStep], start: dt.datetime, now: dt.datetime
+) -> str:
+    window_open = now < nightly_schedule.after_start(start, nightly_schedule.CYCLE_COMPLETE_BY)
+    if not rows:
+        if now < start:
+            return PENDING
+        return RUNNING if window_open else MISSING
+    if window_open and any(s.record is None for s in steps):
+        return RUNNING
+    outcomes = {r.outcome for r in rows.values()}
+    if len(rows) == len(steps) and outcomes == {nightly_outcome.SKIPPED_DELIBERATE}:
+        return DISABLED
+    if outcomes & _FAILURES:
+        return FAILED
+    if nightly_outcome.PARTIAL in outcomes or any(s.record is None for s in steps):
+        return PARTIAL
+    return COMPLETED
+
+
+def history(nights: int = 30, now: dt.datetime | None = None) -> History:
+    """The last ``nights`` EXPECTED cycles since records began, newest first.
+
+    Each night is a Tallinn midnight; a night that left no record is shown as such (state
+    «missing»), not skipped. The scheduled verdict of a step is the cycle script's own; a
+    person's recovery run is kept apart (`Night.recoveries`). Nothing before the first
+    record is reconstructed. AI operations are matched by **time window**, approximately.
     """
     from app.ai_usage.models import AiOperation, Outcome
     from app.riigikogu.models import StageRun
 
     now = now or timezone.now()
-    starts = list(
-        NightlyStepRecord.objects.order_by("-cycle_start")
+    first = (
+        NightlyStepRecord.objects.order_by("cycle_start")
         .values_list("cycle_start", flat=True)
-        .distinct()[:nights]
+        .first()
     )
+    next_start = nightly_schedule.next_cycle_start(now)
+    if first is None:
+        return History([], None, next_start)
+    first_day = _slot_day(first)
+    today = now.astimezone(nightly_schedule.TALLINN).date()
+    days = [first_day + dt.timedelta(days=n) for n in range((today - first_day).days + 1)]
+    days = [d for d in days if nightly_schedule.cycle_start_on(d) <= now][-nights:]
+    if not days:
+        return History([], first, next_start)
+    lo = nightly_schedule.cycle_start_on(days[0]) - dt.timedelta(hours=6)
+    scheduled: dict[dt.date, dict[str, NightlyStepRecord]] = {}
+    recoveries: dict[dt.date, list[NightlyStepRecord]] = {}
+    for row in NightlyStepRecord.objects.filter(cycle_start__gte=lo).order_by("cycle_start"):
+        day = _slot_day(row.cycle_start)
+        if row.manual:
+            recoveries.setdefault(day, []).append(row)
+        else:
+            scheduled.setdefault(day, {})[row.step] = row
     found: list[Night] = []
-    for start in starts:
-        rows = {r.step: r for r in NightlyStepRecord.objects.filter(cycle_start=start)}
+    for day in reversed(days):
+        slot = nightly_schedule.cycle_start_on(day)
+        rows = scheduled.get(day, {})
+        start = min((r.cycle_start for r in rows.values()), default=slot)
         steps = []
         for step in nightly_outcome.STEPS:
             due = nightly_schedule.after_start(start, nightly_schedule.FINISH_BY[step])
             record = rows.get(step)
             steps.append(
-                NightStep(step, STEP_LABELS[step], record, due, record is None and due < now)
+                NightStep(
+                    step,
+                    STEP_LABELS[step],
+                    record,
+                    due,
+                    record is None and due < now and bool(rows),
+                )
             )
         end = start + nightly_schedule.CYCLE_COMPLETE_BY
         ops = AiOperation.objects.filter(started_at__gte=start, started_at__lt=end)
@@ -110,6 +204,8 @@ def history(nights: int = 30, now: dt.datetime | None = None) -> list[Night]:
             Night(
                 start,
                 steps,
+                state=_state(rows, steps, start, now),
+                recoveries=recoveries.get(day, []),
                 ai_operations=ops.count(),
                 ai_failed=ops.exclude(
                     outcome__in=(Outcome.SUCCEEDED, Outcome.SUCCEEDED_AFTER_RETRY)
@@ -119,7 +215,7 @@ def history(nights: int = 30, now: dt.datetime | None = None) -> list[Night]:
                 rk_cycle=str(cycle)[:8] if cycle else "",
             )
         )
-    return found
+    return History(found, first, next_start)
 
 
 # -- per-source freshness -------------------------------------------------------------------------
@@ -133,12 +229,18 @@ class Source:
     state: str
     line: str
     last_attempt: dt.datetime | None = None
+    #: The last check with NO source error and nothing cut short: the only one that makes a
+    #: source «fresh». A run that finished with read errors or partial coverage is a
+    #: completed run (`last_completed`), not a complete check.
     last_success: dt.datetime | None = None
     #: The newest publication seen at the source and the newest stored here (None = not tracked).
     observed: str = ""
     stored: str = ""
     pending: list[str] = field(default_factory=list)
     limits: list[str] = field(default_factory=list)
+    #: The last run that FINISHED, errors or not (see `last_success`). Keyword-only in effect:
+    #: it follows the lists so the positional arguments of every `Source(...)` are unchanged.
+    last_completed: dt.datetime | None = None
 
 
 def _daily(last_success: dt.datetime | None, now: dt.datetime) -> tuple[str, str]:
@@ -157,6 +259,11 @@ def _watch(now: dt.datetime) -> Source:
 
     attempt = WatchRun.objects.order_by("-started_at").first()
     success = (
+        WatchRun.objects.filter(finished_at__isnull=False, errors=[])
+        .order_by("-finished_at")
+        .first()
+    )
+    completed = (
         WatchRun.objects.filter(finished_at__isnull=False)
         .exclude(errors__contains=[{"katkes": True}])
         .order_by("-finished_at")
@@ -170,6 +277,7 @@ def _watch(now: dt.datetime) -> Source:
         "",
         attempt.started_at if attempt else None,
         success.finished_at if success else None,
+        last_completed=completed.finished_at if completed else None,
     )
     if not getattr(settings, "REGISTER_WATCH_FETCH", False):
         source.state, source.line = DISABLED, "Välja lülitatud"
@@ -179,6 +287,9 @@ def _watch(now: dt.datetime) -> Source:
         source.state, source.line = ATTENTION, health.problem or health.detail
     else:
         source.state, source.line = _daily(source.last_success, now)
+        if completed is not None and completed.errors:
+            source.state = ATTENTION
+            source.line = f"Viimane käivitus lõppes {len(completed.errors)} lugemisveaga: kontroll oli osaline"
     unjudged = WatchFinding.objects.filter(
         status=FindingStatus.PENDING, relevance=Relevance.UNJUDGED
     ).count()
@@ -186,6 +297,10 @@ def _watch(now: dt.datetime) -> Source:
     if attempt is not None and attempt.errors:
         source.pending.append(f"viimasel käivitusel {len(attempt.errors)} lugemisviga")
     source.limits.append("Allikate avaldamiskuupäeva ei jälgita; vaadatakse viimast lugemist.")
+    source.limits.append(
+        "Värskus loeb ainult vigadeta käivitust; allikate kaupa katvust käivitus ei salvesta, "
+        f"vaid vigade loendi{' (viimasel: ' + str(attempt.targets_checked) + ' sihti)' if attempt else ''}."
+    )
     return source
 
 
@@ -196,6 +311,11 @@ def _sweep(now: dt.datetime) -> Source:
 
     attempt = SweepRun.objects.order_by("-started_at").first()
     success = (
+        SweepRun.objects.filter(finished_at__isnull=False, errors=[])
+        .order_by("-finished_at")
+        .first()
+    )
+    completed = (
         SweepRun.objects.filter(finished_at__isnull=False)
         .exclude(errors__contains=[{"katkes": True}])
         .order_by("-finished_at")
@@ -209,11 +329,21 @@ def _sweep(now: dt.datetime) -> Source:
         "",
         attempt.started_at if attempt else None,
         success.finished_at if success else None,
+        last_completed=completed.finished_at if completed else None,
     )
     if not getattr(settings, "REGISTER_SWEEP", False):
         source.state, source.line = DISABLED, "Välja lülitatud"
         return source
     source.state, source.line = _daily(source.last_success, now)
+    if completed is not None and completed.errors:
+        source.state = ATTENTION
+        source.line = (
+            f"Viimane käivitus lõppes {len(completed.errors)} lugemisveaga: kontroll oli osaline"
+        )
+    source.limits.append(
+        "Värskus loeb ainult vigadeta käivitust; allikate kaupa katvust käivitus ei salvesta, "
+        "vaid vigade loendi."
+    )
     waiting = TopicCandidate.objects.filter(status=CandidateStatus.NEW)
     source.pending.append(
         f"{waiting.count()} uut kandidaati ootab inimese otsust, "
@@ -393,4 +523,4 @@ def attention(items: list[Source]) -> list[Source]:
     return [s for s in items if s.state in {ATTENTION, UNKNOWN}]
 
 
-__all__: list[Any] = ["Night", "Source", "attention", "history", "sources"]
+__all__: list[Any] = ["History", "Night", "Source", "attention", "history", "sources"]

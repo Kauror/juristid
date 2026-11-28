@@ -128,15 +128,27 @@ def _ai_usage(request: HttpRequest) -> Signal:
         text = f"Arvestus on puudulik: {gaps} päringu tulemus on salvestamata."
         return Signal("AI kasutus", PROBLEM, text, url)
     month = report.budget()
+    known = report.money(month.known_eur)
     if month.level in {"warn", "escalate"}:
-        return Signal("AI kasutus", PROBLEM, "Kuu hinnanguline maksumus ületab hoiatuspiiri.", url)
-    if month.level == "ok" and not month.complete:
         text = (
-            f"Maksumus on {month.unknown_cost_attempts} päringu kohta teadmata; "
-            "piirist allpool olemist ei saa kinnitada."
+            f"Kuu teadaolev maksumus ({known}) ületab hoiatuspiiri"
+            + ("" if month.complete else "; arvestus on lisaks puudulik")
+            + "."
         )
+        return Signal("AI kasutus", PROBLEM, text, url)
+    if not month.complete:
+        why = "; ".join(f"{n} × {report.REASONS[k]}" for k, n in month.reasons.items())
+        policy = (
+            "Piiri ületamist ei saa kinnitada ega välistada."
+            if month.level == "unproven"
+            else "Hoiatuspiire pole seatud."
+        )
+        text = f"Arvestus on puudulik: {why}. Teadaolev alamsumma {known}. {policy}"
         return Signal("AI kasutus", UNKNOWN, text, url)
-    return Signal("AI kasutus", OK, "Korras", url)
+    if not report.AiOperation.objects.exists():
+        return Signal("AI kasutus", OK, "Päringuid pole registreeritud.", url)
+    policy = "piirist allpool" if month.level == "ok" else "hoiatuspiire pole seatud"
+    return Signal("AI kasutus", OK, f"Arvestus täielik: kuu maksumus {known}; {policy}.", url)
 
 
 def _nightly(request: HttpRequest) -> Signal:
@@ -144,15 +156,24 @@ def _nightly(request: HttpRequest) -> Signal:
     from app.core import integration_status
 
     url = reverse("haldus:nightly_history")
-    nights = integration_status.history(1)
-    if not nights:
-        return Signal("Öine tsükkel", UNKNOWN, "Öiseid kirjeid ei ole veel salvestatud.", url)
-    night = nights[0]
-    if night.problems:
-        day = f"{night.start.day}.{night.start.month}"
-        text = f"Viimane tsükkel ({day}): {night.problems} sammu vajab tähelepanu."
+    found = integration_status.history(3)
+    due = [n for n in found.nights if n.state != integration_status.PENDING]
+    if not due:
+        return Signal(
+            "Öine tsükkel", UNKNOWN, "Ajastatud tsükli kirjeid ei ole veel salvestatud.", url
+        )
+    night = due[0]
+    day = f"{night.start.day}.{night.start.month}"
+    if night.state in {integration_status.FAILED, integration_status.PARTIAL}:
+        text = f"Tsükkel {day}: {night.label.lower()}, {night.problems} sammu vajab tähelepanu."
         return Signal("Öine tsükkel", PROBLEM, text, url)
-    return Signal("Öine tsükkel", OK, "Viimane tsükkel korras", url)
+    if night.state == integration_status.MISSING:
+        return Signal("Öine tsükkel", PROBLEM, f"Tsükkel {day} ei jätnud ühtegi kirjet.", url)
+    if night.state == integration_status.RUNNING:
+        return Signal("Öine tsükkel", UNKNOWN, f"Tsükkel {day} käib või ootab veel samme.", url)
+    if night.state == integration_status.DISABLED:
+        return Signal("Öine tsükkel", UNKNOWN, f"Tsükkel {day} jäeti tahtlikult vahele.", url)
+    return Signal("Öine tsükkel", OK, f"Tsükkel {day} lõpetatud", url)
 
 
 def _freshness(request: HttpRequest) -> Signal:

@@ -21,14 +21,14 @@ from app.haldus.views import _context, _require
 @require_http_methods(["GET"])
 def nightly_history(request: HttpRequest) -> HttpResponse:
     _require(request, "oised_tsuklid")
-    nights = integration_status.history(30)
+    found = integration_status.history(30)
     return render(
         request,
         "haldus/nightly_history.html",
         _context(
             request,
             "oised_tsuklid",
-            nights=nights,
+            history=found,
             steps=[(s, STEP_LABELS[s]) for s in nightly_outcome.STEPS],
             outcome_labels=NIGHTLY_OUTCOME_LABELS,
         ),

@@ -71,12 +71,12 @@ def test_history_marks_a_step_with_no_record_and_never_a_night_without_records()
         _result("lovable", nightly_outcome.SUCCEEDED), rc=0, seconds=30, cycle_start=START
     )
     after = START + dt.timedelta(days=1)  # every step's finish-by has passed
-    nights = integration_status.history(30, now=after)
-    assert len(nights) == 1  # nothing is invented for other nights
+    nights = integration_status.history(30, now=after).nights
+    assert len(nights) == 1  # only the recorded night: nothing is invented for other nights
     by_step = {s.step: s for s in nights[0].steps}
     assert by_step["lovable"].record is not None and not by_step["lovable"].missing
     assert by_step["register-watch"].missing  # a step with no record is «kirje puudub», not green
-    early = integration_status.history(30, now=START + dt.timedelta(minutes=10))[0]
+    early = integration_status.history(30, now=START + dt.timedelta(minutes=10)).nights[0]
     assert not any(s.missing for s in early.steps)  # not yet due
 
 
@@ -146,7 +146,8 @@ def test_the_pages_are_for_the_technical_administrator_only(client):
     for name in ("haldus:nightly_history", "haldus:freshness"):
         page = client.get(reverse(name))
         assert page.status_code == 200
-    assert "Kirje puudub" in client.get(reverse("haldus:nightly_history")).content.decode()
+    shown = client.get(reverse("haldus:nightly_history")).content.decode()
+    assert "Kirje puudub" in shown and "ligikaudu" in shown
 
 
 def _request():
@@ -160,7 +161,9 @@ def test_the_overview_says_unknown_before_any_night_is_recorded_and_flags_a_prob
 
     assert overview._nightly(_request()).state == overview.UNKNOWN
     nightly_outcome.remember(
-        _result("register-watch", nightly_outcome.FAILED, "rc 1"), rc=1, cycle_start=START
+        _result("register-watch", nightly_outcome.FAILED, "rc 1"),
+        rc=1,
+        cycle_start=timezone.now() - dt.timedelta(days=2),
     )
     signal = overview._nightly(_request())
     assert signal.state == overview.PROBLEM  # a failed (and missing) step is never «korras»

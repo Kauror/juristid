@@ -33,6 +33,7 @@ from django.utils import timezone
 
 from app.ai_usage.models import (
     AiAttempt,
+    AttemptCoverage,
     AiLedgerGap,
     AiOperation,
     AttemptOutcome,
@@ -86,7 +87,7 @@ class _Event:
     started_at: Any
     t0: float
     ended_at: Any = None
-    duration_ms: int | None = None
+    headers_ms: int | None = None
     status: int | None = None
     request_id: str = ""
 
@@ -102,8 +103,12 @@ class Recorder:
     operation_id: uuid.UUID = field(default_factory=uuid.uuid4)
     run_ref: str = field(default_factory=lambda: _run_ref.get())
     started_at: Any = field(default_factory=timezone.now)
+    #: Set by `ai_call.make_client` when the httpx hooks watch the client: without it the
+    #: number of physical requests is not known (see `AttemptCoverage`).
+    hooked: bool = False
     _events: list[_Event] = field(default_factory=list)
     _done: bool = False
+    _opened: bool = False
 
     @property
     def attempts_seen(self) -> int:
@@ -111,7 +116,35 @@ class Recorder:
 
     # -- the httpx event hooks (one request event = one physical attempt) ----------
     def on_request(self, request: Any) -> None:
-        self._events.append(_Event(started_at=timezone.now(), t0=time.monotonic()))
+        event = _Event(started_at=timezone.now(), t0=time.monotonic())
+        self._events.append(event)
+        self._record_started(len(self._events), event)
+
+    def _record_started(self, sequence: int, event: _Event) -> None:
+        """The request is about to leave: keep a durable trace of it NOW, so a hard kill
+        leaves a confirmed (outcome unknown) attempt instead of nothing. It is one INSERT in
+        its own savepoint; a failure leaves a gap row and the in-memory event still counts."""
+        if not self._opened or not enabled():
+            return
+        try:
+            with transaction.atomic():
+                AiAttempt.objects.bulk_create(
+                    [
+                        AiAttempt(
+                            id=uuid.uuid5(self.operation_id, str(sequence)),
+                            operation_id=self.operation_id,
+                            sequence=sequence,
+                            started_at=event.started_at,
+                            requested_model=self.requested_model[:80],
+                            usage_status=UsageStatus.UNAVAILABLE,
+                            outcome=AttemptOutcome.UNKNOWN,
+                        )
+                    ],
+                    ignore_conflicts=True,
+                )
+        except Exception:
+            logger.warning("ai usage: could not save a started attempt")
+            _gap(self.service, "attempt_start_not_saved")
 
     def on_response(self, response: Any) -> None:
         if not self._events:
@@ -119,7 +152,7 @@ class Recorder:
         event = self._events[-1]
         event.status = int(response.status_code)
         event.ended_at = timezone.now()
-        event.duration_ms = int((time.monotonic() - event.t0) * 1000)
+        event.headers_ms = int((time.monotonic() - event.t0) * 1000)
         headers = getattr(response, "headers", None)
         raw = headers.get("request-id", "") if headers else ""
         event.request_id = raw if _REQUEST_ID.match(raw or "") else ""
@@ -132,11 +165,17 @@ class Recorder:
         try:
             reconcile_stale()
             self._save_operation(Outcome.IN_PROGRESS, None, None, None)
+            self._opened = True
         except Exception:  # accounting never stops the work
             logger.warning("ai usage: could not open the ledger row")
 
     def _save_operation(
-        self, outcome: str, finished: Any, classified: int | None, kind: str | None
+        self,
+        outcome: str,
+        finished: Any,
+        classified: int | None,
+        kind: str | None,
+        coverage: str | None = None,
     ) -> None:
         defaults: dict[str, Any] = {
             "service": self.service,
@@ -151,6 +190,8 @@ class Recorder:
             defaults.update(
                 finished_at=finished, items_classified=classified, error_kind=kind or ""
             )
+        if coverage is not None:
+            defaults["attempt_coverage"] = coverage
         AiOperation.objects.update_or_create(id=self.operation_id, defaults=defaults)
 
     def finish(
@@ -167,26 +208,53 @@ class Recorder:
         self._done = True
         now = timezone.now()
         try:
-            attempts = [] if skipped else self._attempts(response, error, now)
+            if skipped:
+                attempts, coverage = [], AttemptCoverage.NONE
+            else:
+                attempts, coverage = self._attempts(response, error, now)
             with transaction.atomic():
                 self._save_operation(
-                    outcome, now, classified, error_kind(error) if error is not None else ""
+                    outcome,
+                    now,
+                    classified,
+                    error_kind(error) if error is not None else "",
+                    coverage,
                 )
-                AiAttempt.objects.bulk_create(attempts, ignore_conflicts=True)
+                AiAttempt.objects.bulk_create(
+                    attempts,
+                    update_conflicts=True,
+                    unique_fields=["id"],
+                    update_fields=_UPSERT_FIELDS,
+                )
         except Exception:
             logger.warning("ai usage: could not save a result")
             _gap(self.service, "write_failed")
 
-    def _attempts(self, response: Any, error: BaseException | None, now: Any) -> list[AiAttempt]:
+    def _attempts(
+        self, response: Any, error: BaseException | None, now: Any
+    ) -> tuple[list[AiAttempt], str]:
+        """The attempt rows and what is known about them.
+
+        Hook events are physical attempts. With none: a watched client sent no HTTP request
+        (a failure before the request is a logical operation WITHOUT an attempt, not an
+        attempt); an unwatched client (a test double) with an answer proves one request but
+        not its timing, so one inferred row (`observed=False`) is kept and the coverage says
+        the observation was unavailable."""
         events = list(self._events)
         answered = response is not None
-        if not events:  # a client with no hook (a test double): one attempt, timed as a whole
-            elapsed = int((now - self.started_at).total_seconds() * 1000)
+        coverage = AttemptCoverage.OBSERVED
+        inferred = False
+        if not events:
+            if self.hooked and not answered:
+                return [], AttemptCoverage.NONE
+            coverage = AttemptCoverage.UNAVAILABLE
+            if not answered:
+                return [], coverage
             single = _Event(started_at=self.started_at, t0=0.0)
             single.ended_at = now
-            single.duration_ms = max(elapsed, 0)
-            single.status = 200 if answered else None
+            single.status = 200
             events = [single]
+            inferred = True
         rows: list[AiAttempt] = []
         last = len(events) - 1
         for index, event in enumerate(events):
@@ -197,7 +265,8 @@ class Recorder:
                 sequence=index + 1,
                 started_at=event.started_at,
                 ended_at=event.ended_at,
-                duration_ms=event.duration_ms,
+                headers_ms=event.headers_ms,
+                observed=not inferred,
                 http_status=event.status,
                 provider_request_id=event.request_id,
                 requested_model=self.requested_model[:80],
@@ -208,7 +277,31 @@ class Recorder:
             if is_last and answered:
                 _read_usage(row, response)
             rows.append(row)
-        return rows
+        return rows, coverage
+
+
+_UPSERT_FIELDS = [
+    "started_at",
+    "ended_at",
+    "headers_ms",
+    "observed",
+    "http_status",
+    "provider_request_id",
+    "requested_model",
+    "actual_model",
+    "retry_class",
+    "usage_status",
+    "outcome",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_creation_tokens",
+    "stop_reason",
+    "fallback_observed",
+    "fallback_model",
+    "fallback_input_tokens",
+    "fallback_output_tokens",
+]
 
 
 def _attempt_outcome(event: _Event, is_last: bool, error: BaseException | None) -> str:

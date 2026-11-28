@@ -69,12 +69,15 @@ def make_client(timeout: float, recorder: Any = None) -> Any:
 
     hooked = getattr(anthropic, "DefaultHttpxClient", None)
     if recorder is None or hooked is None:
+        if recorder is not None:
+            recorder.hooked = False  # nothing watches this client: its requests are not counted
         return anthropic.Anthropic(timeout=timeout, max_retries=2)
     # The same client and retries; the hooks only watch each physical request (r98).
     http_client = hooked(
         timeout=timeout,
         event_hooks={"request": [recorder.on_request], "response": [recorder.on_response]},
     )
+    recorder.hooked = True  # from here on «no hook event» means «no request was sent»
     return anthropic.Anthropic(timeout=timeout, max_retries=2, http_client=http_client)
 
 
@@ -119,6 +122,10 @@ def call_items(
         rec.begin()
     response: Any = None
     try:
+        if client is None and rec is not None:
+            rec.hooked = (
+                True  # our own client carries the hooks; a failure before it sends is no attempt
+            )
         client = client or make_client(timeout, rec)
         if left is not None:
             client = _within(client, timeout, left)

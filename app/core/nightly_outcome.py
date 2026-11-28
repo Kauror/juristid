@@ -486,16 +486,17 @@ def _keep_history(
     from app.core.models import NightlyStepRecord
 
     try:
+        # `manual` is part of the key: a recovery run never overwrites the scheduled verdict.
         NightlyStepRecord.objects.update_or_create(
             cycle_start=cycle_start,
             step=result.step,
+            manual=manual,
             defaults={
                 "outcome": result.outcome,
                 "reason": result.reason[:200],
                 "counts": result.counts,
                 "rc": rc,
                 "seconds": seconds,
-                "manual": manual,
                 "recorded_at": timezone.now(),
             },
         )

@@ -58,7 +58,7 @@ def _attempts(op: AiOperation, plan: list[tuple[str, int | None, int | None, int
             output_tokens=tout,
             cache_read_tokens=0 if measured else None,
             cache_creation_tokens=0 if measured else None,
-            duration_ms=ms,
+            headers_ms=ms,
         )
 
 

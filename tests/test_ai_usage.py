@@ -261,7 +261,7 @@ def _attempt(day: dt.date, **kw: Any) -> AiAttempt:
         "output_tokens": 100_000,
         "cache_read_tokens": 0,
         "cache_creation_tokens": 0,
-        "duration_ms": 1000,
+        "headers_ms": 1000,
         "retry_class": "final",
     }
     fields.update(kw)
@@ -407,9 +407,10 @@ def test_a_supervisor_termination_is_recorded_as_interrupted_and_still_propagate
     with pytest.raises(StepTerminated):
         _call(FakeClient(terminate))
     op = AiOperation.objects.get()
-    attempt = op.attempts.get()
     assert (op.outcome, op.error_kind) == (Outcome.INTERRUPTED, "interrupted")
-    assert attempt.outcome == AttemptOutcome.INTERRUPTED and attempt.input_tokens is None
+    # a test double sends no httpx event: whether it sent a request is not known, so no
+    # attempt is invented and the operation says the observation was unavailable
+    assert op.attempts.count() == 0 and op.attempt_coverage == "unavailable"
 
 
 def test_a_request_still_inside_its_window_is_not_called_interrupted():

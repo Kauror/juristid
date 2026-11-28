@@ -125,7 +125,7 @@ def test_a_first_try_success_is_one_measured_attempt(monkeypatch, sleeps):
     )
     assert (attempt.input_tokens, attempt.output_tokens) == (12, 3)
     assert (attempt.cache_read_tokens, attempt.cache_creation_tokens) == (5, 0)
-    assert attempt.duration_ms is not None and not sleeps
+    assert attempt.headers_ms is not None and not sleeps
     assert AiOperation.objects.get().outcome == Outcome.SUCCEEDED
 
 

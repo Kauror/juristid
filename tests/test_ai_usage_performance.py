@@ -89,7 +89,7 @@ def _fill(days: int, per_day: int) -> int:
                     usage_status=UsageStatus.MEASURED,
                     input_tokens=5000,
                     output_tokens=800,
-                    duration_ms=4000 + n,
+                    headers_ms=4000 + n,
                     retry_class="final",
                 )
             )
