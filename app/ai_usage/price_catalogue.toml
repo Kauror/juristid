@@ -1,0 +1,36 @@
+# Verified list prices for the models Juristid uses (r98, docs/adr/0236).
+#
+# Applied with:  python manage.py seed_ai_prices          (dry run: prints what it would do)
+#                python manage.py seed_ai_prices --apply  (writes; idempotent)
+#
+# Only what an official page stated is here. A price that was not stated is absent, and
+# the cost of any request that needs it stays «Maksumus teadmata». Nothing is copied from
+# another model or an earlier release. List prices are not invoices.
+
+[[price]]
+provider = "anthropic"
+# The identifier the application requests and the API returns (config/settings.py
+# REGISTER_WATCH_AI_MODEL / REGISTER_SWEEP_AI_MODEL default; production sets no override,
+# and the run ledgers on the host show `claude-opus-5-5` as the returned model).
+model = "claude-opus-5-5"
+tier = "standard"
+currency = "USD"
+input_per_mtok = "4"
+output_per_mtok = "20"
+cache_read_per_mtok = "0.20"
+# 5-minute cache writes are $5 and 1-hour writes $8 on the page; the TTL of a created
+# cache entry is not recorded per request, so a billed cache-creation token is left
+# unpriced (unknown) rather than guessed. Juristid sends no cache_control, so none is expected.
+effective_from = "2026-11-28"
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+verified_on = "2026-11-28"
+# The page names the model «Claude Opus 5.5» and does not print the API identifier; the
+# mapping to `claude-opus-5-5` comes from the session's model list, not from the page.
+# The page is undated and states nothing about server-side fallback billing or whether
+# input_tokens includes cache tokens (the usage fields are shown as separate counters).
+
+[[fx]]
+currency = "USD"
+on_date = "2026-11-27"
+per_eur = "1.0957"
+source = "ECB euro foreign exchange reference rates, https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml (read once on 2026-11-28)"

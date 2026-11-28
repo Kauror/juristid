@@ -1,0 +1,25 @@
+{% comment %}
+  One AI-usage trend: the reporting charts' own geometry and classes (app/reporting/charts.py,
+  reporting/_trend.html), fed by the ledger's day rows. The table below the charts gives the
+  exact values; a single day is shown as text, never as a line.
+{% endcomment %}
+<section class="chart" aria-labelledby="aitrend-{{ chart.key }}">
+  <div class="chart__head"><h3 class="chart__title" id="aitrend-{{ chart.key }}">{{ chart.title }}</h3></div>
+  <p class="chart__summary">{{ chart.summary }}</p>
+  {% if chart.trend.is_drawable %}
+    <svg class="trend" viewBox="0 0 {{ chart.trend.width }} {{ chart.trend.height }}" role="img" aria-labelledby="aitrend-{{ chart.key }}">
+      <line class="trend__axis" x1="44" y1="{{ chart.trend.baseline_css }}" x2="{{ chart.trend.width }}" y2="{{ chart.trend.baseline_css }}"></line>
+      <text class="trend__tick" x="4" y="20">{{ chart.trend.maximum }}</text>
+      <text class="trend__tick" x="4" y="{{ chart.trend.baseline_css }}">0</text>
+      <polyline class="trend__line" points="{{ chart.trend.polyline }}"></polyline>
+      {% for point in chart.trend.points %}
+        <circle class="trend__point" cx="{{ point.cx }}" cy="{{ point.cy }}" r="4"><title>{{ point.label }}: {{ point.value }}</title></circle>
+      {% endfor %}
+      {% for point in chart.trend.axis_labels %}
+        <text class="trend__tick" x="{{ point.cx }}" y="{{ chart.trend.height }}" text-anchor="middle">{{ point.label }}</text>
+      {% endfor %}
+    </svg>
+  {% else %}
+    <p class="notyet">Joonist ei ole: vaja on vähemalt kaks päeva. Täpsed arvud on allolevas tabelis.</p>
+  {% endif %}
+</section>

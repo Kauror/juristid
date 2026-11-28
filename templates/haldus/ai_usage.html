@@ -65,13 +65,18 @@
     </dl>
   </section>
 
+  <section class="panel" aria-labelledby="aiusage-charts">
+    <h2 class="acctsection__title" id="aiusage-charts">Graafikud</h2>
+    {% for chart in charts %}{% include "haldus/_ai_trend.html" with chart=chart %}{% endfor %}
+  </section>
+
   <section class="panel" aria-labelledby="aiusage-days">
     <h2 class="acctsection__title" id="aiusage-days">Päevade kaupa</h2>
     {% if day_rows %}
       <div class="accttable"><table class="data-table">
         <thead><tr><th scope="col">Päev</th><th scope="col">Hinnanguline maksumus</th><th scope="col"><span class="visually-hidden">Võrdlus</span></th><th scope="col">Päringuid</th><th scope="col">Katseid</th><th scope="col">Ebaõnnestunud katseid</th><th scope="col">Korduskatseid</th></tr></thead>
         <tbody>{% for day, t, cost in day_rows %}
-          <tr><td class="regwatchlog__nowrap">{{ day|date:"j.n.Y" }}</td><td>{{ cost }}{% if t.unknown_cost_attempts %} (+{{ t.unknown_cost_attempts }} teadmata){% endif %}</td><td><progress max="{{ peak }}" value="{{ t.cost_eur }}" aria-label="Päeva maksumus">{{ cost }}</progress></td><td>{{ t.operations }}</td><td>{{ t.attempts }}</td><td>{{ t.failed_attempts }}</td><td>{{ t.retried_attempts }}</td></tr>
+          <tr><td class="regwatchlog__nowrap"><a href="?periood=custom&amp;alates={{ day|date:'Y-m-d' }}&amp;kuni={{ day|date:'Y-m-d' }}">{{ day|date:"j.n.Y" }}</a></td><td>{{ cost }}{% if t.unknown_cost_attempts %} (+{{ t.unknown_cost_attempts }} teadmata){% endif %}</td><td><progress max="{{ peak }}" value="{{ t.cost_eur }}" aria-label="Päeva maksumus">{{ cost }}</progress></td><td>{{ t.operations }}</td><td>{{ t.attempts }}</td><td>{{ t.failed_attempts }}</td><td>{{ t.retried_attempts }}</td></tr>
         {% endfor %}</tbody>
       </table></div>
     {% else %}<p class="regwatch__meta">Sellel perioodil ei ole registreeritud ühtegi päringut.</p>{% endif %}

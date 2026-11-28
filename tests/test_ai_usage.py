@@ -440,3 +440,58 @@ def test_a_killed_request_is_not_active_forever():
     assert recorder.reconcile_stale() == 1  # and stored so by the next request
     killed.refresh_from_db()
     assert killed.outcome == Outcome.INTERRUPTED and not killed.attempts.exists()
+
+
+# -- the verified catalogue (R98-C03) --
+
+
+def test_the_catalogue_command_is_a_dry_run_then_idempotent():
+    from django.core.management import call_command
+
+    call_command("seed_ai_prices")
+    assert not AiPrice.objects.exists()  # dry run writes nothing
+    call_command("seed_ai_prices", "--apply")
+    call_command("seed_ai_prices", "--apply")
+    assert AiPrice.objects.count() == 1 and AiFxRate.objects.count() == 1
+
+
+def test_the_seeded_price_gives_an_independently_calculated_estimate():
+    from django.core.management import call_command
+
+    call_command("seed_ai_prices", "--apply")
+    # 1,000,000 input + 100,000 output tokens: $4 + $2 = $6; ÷ 1.0957 (ECB, 27.11.2026)
+    attempt = _attempt(dt.date(2026, 11, 30))
+    cost = report.attempt_cost(report.PriceBook.load(), attempt)
+    assert (cost.original, cost.currency) == (Decimal("6"), "USD")
+    assert cost.eur is not None and cost.eur.quantize(Decimal("0.0001")) == Decimal("5.4760")
+    # a day before the verified price took effect has no price: unknown, not extrapolated
+    assert report.attempt_cost(report.PriceBook.load(), _attempt(dt.date(2026, 11, 20))).eur is None
+    # a billed cache-creation token has no price in the catalogue: unknown
+    created = _attempt(dt.date(2026, 11, 30), cache_creation_tokens=10)
+    assert report.attempt_cost(report.PriceBook.load(), created).eur is None
+
+
+def test_charts_and_the_day_drill_down_reconcile_with_the_detail_rows(client):
+    from app.ai_usage.models import AiAttempt
+
+    tech, secret = technical_admin()
+    full_admin()
+    verified(client, tech, secret)
+    from django.core.management import call_command
+
+    call_command("seed_ai_prices", "--apply")
+    for day, count in ((dt.date(2026, 11, 30), 3), (dt.date(2026, 12, 1), 2)):
+        for _ in range(count):
+            _attempt(day)  # one operation + attempt each
+    params = {"periood": "custom", "alates": "2026-11-30", "kuni": "2026-12-01"}
+    page = client.get(reverse("haldus:ai_usage"), params)
+    body = page.content.decode()
+    assert page.status_code == 200 and body.count('class="trend"') == 4
+    assert page.context["summary"].totals.attempts == 5
+    for day, expected in (("2026-11-30", 3), ("2026-12-01", 2)):
+        drilled = client.get(
+            reverse("haldus:ai_usage"), {"periood": "custom", "alates": day, "kuni": day}
+        )
+        assert drilled.context["page"].paginator.count == expected
+        assert drilled.context["summary"].totals.attempts == expected
+    assert AiAttempt.objects.count() == 5

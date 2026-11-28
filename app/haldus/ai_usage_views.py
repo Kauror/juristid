@@ -82,6 +82,34 @@ def _attempts(f: dict[str, Any]) -> Any:
     return found.order_by("-started_at", "-sequence")
 
 
+def _series(key: str, title: str, pairs: list[tuple[str, int]]) -> dict[str, Any]:
+    """A trend in the reporting charts' geometry from (label, whole-number value) pairs."""
+    from app.reporting import charts
+
+    maximum = max((value for _, value in pairs), default=0) or 1
+    span = charts.TREND_WIDTH - charts.TREND_PAD_LEFT - charts.TREND_PAD_RIGHT
+    plot = charts.TREND_HEIGHT - charts.TREND_PAD_TOP - charts.TREND_PAD_BOTTOM
+    divisor = max(len(pairs) - 1, 1)
+    points = tuple(
+        charts.Point(
+            x=charts.TREND_PAD_LEFT + span * i / divisor,
+            y=charts.TREND_PAD_TOP + plot * (1 - value / maximum),
+            label=label,
+            value=value,
+            url="",
+        )
+        for i, (label, value) in enumerate(pairs)
+    )
+    line = " ".join(f"{p.x:.1f},{p.y:.1f}" for p in points)
+    total = sum(value for _, value in pairs)
+    return {
+        "key": key,
+        "title": title,
+        "summary": f"{len(pairs)} päeva, kokku {total}.",
+        "trend": charts.Trend(points=points, polyline=line, maximum=maximum),
+    }
+
+
 def _row(book: report.PriceBook, attempt: AiAttempt) -> dict[str, Any]:
     cost = report.attempt_cost(book, attempt)
     return {
@@ -130,6 +158,31 @@ def ai_usage(request: HttpRequest) -> HttpResponse:
             page=page,
             rows=rows,
             peak=peak,
+            charts=[
+                _series(
+                    "cost",
+                    "Hinnanguline maksumus päevas (eurosenti, teadmata maksumusega päringuta)",
+                    [
+                        (f"{d.day}.{d.month}", int(t.cost_eur * 100))
+                        for d, t in summary.by_day.items()
+                    ],
+                ),
+                _series(
+                    "volume",
+                    "Päringute maht päevas (füüsilised katsed)",
+                    [(f"{d.day}.{d.month}", t.attempts) for d, t in summary.by_day.items()],
+                ),
+                _series(
+                    "failures",
+                    "Ebaõnnestunud katsed päevas",
+                    [(f"{d.day}.{d.month}", t.failed_attempts) for d, t in summary.by_day.items()],
+                ),
+                _series(
+                    "retries",
+                    "Korduskatsed päevas",
+                    [(f"{d.day}.{d.month}", t.retried_attempts) for d, t in summary.by_day.items()],
+                ),
+            ],
             query=query.urlencode(),
             day_rows=[(d, t, report.money(t.cost_eur)) for d, t in summary.by_day.items()],
             service_rows=[
