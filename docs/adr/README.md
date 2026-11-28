@@ -247,6 +247,8 @@ consequences and reversibility.
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
 
+- 0235 — reserved for r97's «The week overview counts recorded outcomes and a postponement is not a completion».
+  It is on `feat/r97-operational-overview` and lands with that release.
 - 0157 — reserved for «Lovable data is mirrored for comparison, never canonical».
   It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
   the architecture only on 2026-10-13, with activation not approved. The record
