@@ -102,6 +102,28 @@ ordinary and 400-page PDFs, scanned PDF and PNG through Tesseract, DOCX, XLSX, E
 MSG with attachments, a malformed PDF and EML, a ZIP bomb presented as DOCX — finishes
 far inside every limit; the test fails if one does not.
 
+**Measured in real Docker (r96 final review, 28.11.2026).** The release image and the
+two parser services as `deploy/unraid-main/compose.yml` defines them were run on a
+throwaway Linux runner (2 vCPU, cgroup v2; `Kauror/juristid-kit-verify`, branch
+`r96f-parser-docker`, synthetic fixtures only), with `cpus: 1.0` and `mem_limit` 2560 MiB
+in force, one fresh container per class. Peak = the container's `memory.peak`.
+
+| Class | Wall | Child peak RSS | Container peak |
+|---|---|---|---|
+| plain text, DOCX, XLSX, EML, MSG, malformed PDF/EML, ZIP bomb | 0.7–1.5 s | 46–73 MiB | 67–85 MiB |
+| 400-page text PDF; 4000-paragraph DOCX; 20 000-row XLSX | 0.9–1.5 s | 60–72 MiB | 77–85 MiB |
+| one dense A4 scan (PNG, 200 dpi, OCR) | 6.2 s | 72 MiB | 156 MiB |
+| 60-megapixel PNG (decoded, OCR) | 3.3 s | 340 MiB | 383 MiB |
+| scanned PDF, 10 / 25 / 100 dense A4 pages (OCR) | 62 / 152 / 592 s | 139 / 173 / 383 MiB | 265 / 317 / 627 MiB |
+
+OCR costs about 6 s per dense page on one core, and memory grows about 3 MiB per page.
+Consequences: the 120 s intake budget reads a scan of about 19 pages; the 1200 s batch
+budget about 200 pages (≈ 0.8 GiB child), so raising the batch wall to cover the 500-page
+extraction ceiling would also need a higher address-space limit (about 1.9 GiB at 500
+pages against `RLIMIT_AS` 2 GiB). A 25-page scan on `Uus teema` was stopped at 120 s with
+`parser_timeout`, the next file was read by the same service, and nothing was left in
+the scratch directory.
+
 **What the limits affect.** A file somebody adds on `Uus teema` that takes longer than
 120 s to read — in practice a long scan that needs OCR page by page — gets no
 suggestions and reads «Faili lugemine katkestati, sest see kestis üle 120 sekundi.

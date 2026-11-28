@@ -18,6 +18,44 @@ tmpfs 256 MiB, `mem_limit`/`memswap_limit` 2560 MiB, `cpus: 1.0`, `pids_limit: 3
 `cap_drop: ALL`, `no-new-privileges`, `init: true`. Idle cost: one Python process each
 (≈ 40–60 MiB RSS); under load at most `mem_limit`.
 
+## Sizing on KOCORP (read-only inspection 28.11.2026; numbers in docs/adr/0230 §Limits)
+
+| | |
+|---|---|
+| Host | 31.0 GiB RAM, **no swap**, 16 threads (Ryzen 7 5825U), load 1.4 / 0.8 / 0.5, cgroup v2 |
+| In use before the parsers | 14.6 GiB used, 16.4 GiB available (containers add up to about 11.7 GiB) |
+| Worst case added | 2 × 2560 MiB = 5.0 GiB, only if both parsers reach their ceiling at once |
+| Margin at that worst case | about 11.4 GiB (37 % of RAM) still available |
+| Measured per file | at most 0.63 GiB for a 100-page scan; ordinary documents 0.07–0.09 GiB |
+
+The ceilings stay as they are: they are ceilings, not reservations, and nothing
+measured comes within a factor of four of them. A parser that does hit its container
+ceiling loses its **child**, not itself: the child carries `oom_score_adj` 1000, the
+cgroup's `memory.oom.group` is 0, so the kernel kills the child; the caller gets
+`parser_memory_limit`, the service answers the next file and the container is not
+restarted (verified in Docker, a 600 MiB cgroup). Expect `docker inspect` to show
+`OOMKilled=true` on a parser that is still running after such an event. It is not a
+restart; read `RestartCount` and `StartedAt`.
+
+Conditions to know at the deploy:
+
+* KOCORP's Docker reports `SwapLimit=false` (no swap exists). `memswap_limit: 2560m`
+  then produces a warning from the daemon (memory limited without swap) and
+  `docker inspect` shows `MemorySwap=-1`. The memory limit itself applies.
+* A parser killed from inside (`kill -9` of the service) is restarted by the restart
+  policy (about 3 s in the test); `docker kill` is a manual stop and is **not** restarted:
+  `docker start` it.
+* OCR is the only heavy case: about 6 s per dense A4 page on one core, memory about
+  3 MiB per page. The 120 s intake budget therefore reads a scan of about 19 pages; a
+  longer one is stopped with `parser_timeout`, shows «… Originaal on alles ja avatav.»,
+  and the Teema is created as usual. The 1200 s batch budget reads about 200 pages.
+  Raise `DOCUMENT_PARSER_INTAKE_WALL_SECONDS` only together with
+  `DOCUMENT_PARSER_QUEUE_SECONDS` so that wall + queue + 15 s stays under the reader's
+  300 s stale window (system check `documents.E001`); raise the batch wall only with a
+  higher `JURISTID_PARSER_MAX_MEMORY_BYTES` (and `mem_limit`). Both are owner decisions.
+* `/dev/shm` (64 MiB, Docker's default) is the one writable place the Compose file does
+  not name; it is bounded and counted against the container's memory.
+
 ## Before the deploy
 
 1. Host memory: confirm the two ceilings fit next to what runs today
