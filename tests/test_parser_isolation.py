@@ -248,7 +248,9 @@ def test_the_intake_defaults_are_the_owner_decision_of_28_11_and_inside_the_clai
     assert settings.DOCUMENT_PARSER_INTAKE_WALL_SECONDS == 240
     assert settings.DOCUMENT_PARSER_QUEUE_SECONDS == 30
     assert settings.DOCUMENT_PARSER_BATCH_WALL_SECONDS == 1200
-    held = settings.DOCUMENT_PARSER_INTAKE_WALL_SECONDS + settings.DOCUMENT_PARSER_QUEUE_SECONDS + 15
+    held = (
+        settings.DOCUMENT_PARSER_INTAKE_WALL_SECONDS + settings.DOCUMENT_PARSER_QUEUE_SECONDS + 15
+    )
     assert held == 285 < settings.INTAKE_READER_STALE_CLAIM_MINUTES * 60
     assert check_parser_isolation() == []
 
