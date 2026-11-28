@@ -258,7 +258,8 @@ def test_my_work_query_count_is_bounded(signed_in, specialist):
     # not a precise budget. 40 until «Viimased tegevused» (2026-10-28), which
     # reads each of its sources once, capped (`MINU_ASJAD_BUDGET`). +5 since the
     # person figures count sent opinions from the one reader (docs/adr/0214 §6).
-    assert len(captured) < 55
+    # +29 for «Selle nädala ülevaade» (r97, docs/adr/0235): bounded reads, no N+1.
+    assert len(captured) < 84
 
 
 def test_matter_detail_query_count_is_bounded(signed_in, specialist):

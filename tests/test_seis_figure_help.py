@@ -104,6 +104,7 @@ def test_every_minu_asjad_figure_carries_its_explanation(specialist) -> None:
     assert helps == {
         "open": seis_help.IN_PROGRESS_HELP,
         "overdue": seis_help.MY_OVERDUE_HELP,
+        "attention": seis_help.MY_ATTENTION_HELP,
         # The owner removed this one on 2026-10-30.
         "week": None,
         "no_action": seis_help.MY_NO_ACTION_HELP,
@@ -134,6 +135,7 @@ def test_the_slugs_never_collide_between_the_two_strips(specialist, department_h
 ALL_HELPS = [
     seis_help.IN_PROGRESS_HELP,
     seis_help.MY_OVERDUE_HELP,
+    seis_help.MY_ATTENTION_HELP,
     seis_help.MY_NO_ACTION_HELP,
     seis_help.MY_OPINIONS_DUE_HELP,
     seis_help.MY_OPINIONS_DRAFTING_HELP,

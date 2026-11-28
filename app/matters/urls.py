@@ -8,6 +8,7 @@ from app.matters import (
     preview_views,
     saved_view_views,
     views,
+    week_views,
 )
 
 urlpatterns = [
@@ -52,6 +53,9 @@ urlpatterns = [
         name="my_work_legacy",
     ),
     # The signed-in person's own dates; self only, no person in the path.
+    # The rows behind one figure of «Selle nädala ülevaade» (r97): a preset held
+    # in the query string, never saved.
+    path("minu-asjad/nadal/", week_views.my_week_records, name="my_week_records"),
     path("minu-asjad/tahtajad/", my_dates_views.my_deadlines, name="my_deadlines"),
     path("minu-asjad/joustumised/", my_dates_views.my_effective_dates, name="my_effective_dates"),
     # One person's desk. Keyed on the id and never on a display name: a name

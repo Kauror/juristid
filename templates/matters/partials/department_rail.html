@@ -58,6 +58,16 @@ by HTMX under its own id and keeps `vaade` on every link.
         <span class="railrow__value{% if row.tone and row.count %} railrow__value--{{ row.tone }}{% endif %}">{{ row.count }}</span>
       </a>
     {% endfor %}
+    {% if page.overview.new_matters %}
+      {% comment %}The latest Teemad received (r97), here rather than in a block of their own.{% endcomment %}
+      <ul class="wo__list railblock__recent">
+      {% for row in page.overview.new_matters %}
+        <li><a href="{{ row.url }}" title="{{ row.matter.title }}">{{ row.matter.title }}</a>
+          <span class="wo__muted">{{ row.day|date:"j.n.Y" }}{% if row.owner %} · {{ row.owner }}{% endif %}</span></li>
+      {% endfor %}
+      </ul>
+      <a class="railblock__more" href="{{ page.overview.new_matters_url }}">Vaata kõiki saabunud teemasid →</a>
+    {% endif %}
     <a class="railblock__more" href="{% url 'matters:inbox' %}">Ava Saabunud →</a>
   </section>
 

@@ -75,6 +75,8 @@ RECORDED_BY: dict[str, tuple[tuple[str, str], ...]] = {
     "sent": (("submissions", "0001_initial"), ("matters", "0045_response_deadline_history")),
     "entries": (("matters", "0003_entry"),),
     "closed": (("audit", "0001_initial"),),
+    # `NextAction.ended_by` and the NEXT_ACTION_* events (week overview, r97).
+    "actions": (("audit", "0001_initial"),),
     # MATTER_ASSIGNED, MATTER_CLOSED and MATTER_REOPENED: the ownership and
     # open/closed trail.
     "trail": (("audit", "0001_initial"),),
@@ -88,6 +90,7 @@ RELIABLE_BY: dict[str, str] = {
     "sent": "SUBMISSION_SENT",
     "entries": "ENTRY_ADDED",
     "closed": "MATTER_CLOSED",
+    "actions": "NEXT_ACTION_COMPLETED",
     "trail": "MATTER_ASSIGNED",
 }
 
@@ -777,6 +780,12 @@ class Column:
     future: bool = False
     #: The value is a lower bound or unknown: drawn faint.
     partial: bool = False
+    #: Selecting this column narrows the list under the chart to its days (r97).
+    #: Empty for a column nobody measured and for one in the future: a click there
+    #: would promise records for a span the product cannot speak about. A column
+    #: that *was* measured and holds a genuine 0 is selectable.
+    url: str = ""
+    selected: bool = False
 
 
 @dataclass(frozen=True)
@@ -822,6 +831,10 @@ class MyStatistics:
     #: reliable coverage begins (``None``: not established).
     recording: dict[str, date | None] = field(default_factory=dict)
     reliable: dict[str, date | None] = field(default_factory=dict)
+    #: The chart column the list is narrowed to (its label), and the link that
+    #: clears only that — the period and the figure stay.
+    selection: str = ""
+    clear_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -858,44 +871,66 @@ def _matter_url(pk: Any) -> str:
     return reverse("matters:matter_detail", args=[pk])
 
 
-def my_statistics(
-    person: Any,
-    today: date,
-    period: Any = None,
-    selected: str = "",
-    *,
-    show_all: bool = False,
-    path: str = "",
-) -> MyStatistics:
-    """The page for ``person``, read as ``person``, for ``period`` (default: this week).
+def created_since(person: Any, first: date) -> list[tuple[Any, date]]:
+    """(Teema, day) of every Teema created in Juristid itself from ``first`` on.
 
-    A bounded number of queries whatever the portfolio: the trail, the opinions,
-    the person's own entries and closings, the Teemad created here, the
-    incoming sources, and — for the current period only — Minu asjad's work.
+    The one definition of «created here» — `load_series` and the week overview's
+    recent-Teema list both read it, so a window longer than the loaded series does
+    not change what counts (r97).
     """
     from app.audit.enums import ChangeEventType
     from app.audit.models import ChangeEvent
-    from app.matters import stat_periods
     from app.matters.enums import MatterOrigin
+    from app.matters.models import Matter
+
+    window = timezone.make_aware(datetime(first.year, first.month, first.day))
+    out: list[tuple[Any, date]] = []
+    for matter_id, moment in ChangeEvent.objects.filter(
+        event_type=ChangeEventType.MATTER_CREATED,
+        occurred_at__gte=window,
+        matter_id__in=Matter.objects.visible_to(person).values("pk"),
+        matter__origin=MatterOrigin.NATIVE,
+    ).values_list("matter_id", "occurred_at"):
+        day = _day(moment)
+        if day is not None:
+            out.append((matter_id, day))
+    return out
+
+
+@dataclass(frozen=True)
+class SeriesData:
+    """Everything one person's figures are read from, loaded once (r97).
+
+    Both `my_statistics` and Minu asjad's week overview take their cells from
+    these series, so a week figure on either surface is the same read — and the
+    overview asks for the current and the previous week from one load.
+    """
+
+    recording: dict[str, date | None]
+    reliable: dict[str, date | None]
+    ownership: Ownership
+    facts: list[Any]
+    series: dict[str, Series]
+
+
+def load_series(person: Any, today: date, first: date, until: date) -> SeriesData:
+    """Read the person's records from ``first`` to ``until`` into dated series."""
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
     from app.matters.models import Entry, Matter
     from app.matters.my_statistics_incoming import incoming_series
     from app.reporting import opinions
     from app.riigikogu.bills import switched_on
     from app.workflow.enums import closure_reason_label
 
-    period = period or stat_periods.current(today)
-    selected = selected if selected in FIGURES else DEFAULT_FIGURE
-    counted, compared = period.counted, period.comparison
-    first = min(period.start, compared.start)
     window = timezone.make_aware(datetime(first.year, first.month, first.day))
-
     recording = recording_since()
     reliable = reliable_since(person, recording)
     ownership = load_ownership(person, today, recording["trail"], reliable["trail"])
     visible = Matter.objects.visible_to(person).values("pk")
 
     all_facts = opinions.opinion_facts(person)
-    facts = [fact for fact in all_facts if first <= fact.sent_on <= period.until]
+    facts = [fact for fact in all_facts if first <= fact.sent_on <= until]
     first_sent: dict[Any, date] = {}
     for fact in all_facts:
         known = first_sent.get(fact.matter.matter_id)
@@ -930,16 +965,7 @@ def my_statistics(
         if sent_on is None or sent_on > day:
             unanswered.records.append(Record(day, matter_id, "Lõpetatud arvamuseta", reason))
 
-    created: list[tuple[Any, date]] = []
-    for matter_id, moment in ChangeEvent.objects.filter(
-        event_type=ChangeEventType.MATTER_CREATED,
-        occurred_at__gte=window,
-        matter_id__in=visible,
-        matter__origin=MatterOrigin.NATIVE,
-    ).values_list("matter_id", "occurred_at"):
-        day = _day(moment)
-        if day is not None:
-            created.append((matter_id, day))
+    created = created_since(person, first)
 
     series: dict[str, Series] = {
         "saadetud": sent_series(facts, ownership, person.pk, reliable["sent"]),
@@ -947,8 +973,43 @@ def my_statistics(
         "lopetatud": closed,
         "arvamuseta": unanswered,
         "sissekanded": entries,
-        **incoming_series(person, ownership, first, period.until, riigikogu_on=switched_on()),
+        **incoming_series(person, ownership, first, until, riigikogu_on=switched_on()),
     }
+
+    return SeriesData(recording, reliable, ownership, all_facts, series)
+
+
+def my_statistics(
+    person: Any,
+    today: date,
+    period: Any = None,
+    selected: str = "",
+    *,
+    show_all: bool = False,
+    path: str = "",
+    selected_bucket: str = "",
+) -> MyStatistics:
+    """The page for ``person``, read as ``person``, for ``period`` (default: this week).
+
+    A bounded number of queries whatever the portfolio: the trail, the opinions,
+    the person's own entries and closings, the Teemad created here, the
+    incoming sources, and — for the current period only — Minu asjad's work.
+    """
+    from app.matters import stat_periods
+
+    period = period or stat_periods.current(today)
+    selected = selected if selected in FIGURES else DEFAULT_FIGURE
+    counted, compared = period.counted, period.comparison
+    first = min(period.start, compared.start)
+    timezone.make_aware(datetime(first.year, first.month, first.day))
+
+    data = load_series(person, today, first, period.until)
+    recording, reliable, ownership, series = (
+        data.recording,
+        data.reliable,
+        data.ownership,
+        data.series,
+    )
 
     present: dict[str, tuple[list[DrillRow], int]] = {}
     if period.is_current:
@@ -987,8 +1048,16 @@ def my_statistics(
     ]
     chosen = next(card for group in groups for card in group.cards if card.selected)
 
-    columns, note = _chart(chosen, period, series, ownership, person.pk)
-    drill = _drill(chosen, period, series, ownership, person.pk, present, show_all, path)
+    bucket = next(
+        (
+            b
+            for b in period.buckets()
+            if not b.future and b.span.start.isoformat() == selected_bucket
+        ),
+        None,
+    )
+    columns, note = _chart(chosen, period, series, ownership, person.pk, path, bucket)
+    drill = _drill(chosen, period, series, ownership, person.pk, present, show_all, path, bucket)
 
     bar = []
     for key, label in stat_periods.KINDS:
@@ -1004,6 +1073,10 @@ def my_statistics(
         today=today,
         groups=groups,
         selected=chosen,
+        selection=(bucket.label + (" " + bucket.sublabel if bucket.sublabel else ""))
+        if bucket
+        else "",
+        clear_url=period.url(path, naitaja=chosen.figure.key) if bucket else "",
         columns=columns,
         chart_note=note,
         drill=drill,
@@ -1055,7 +1128,13 @@ def _present_state(person: Any, today: date) -> dict[str, tuple[list[DrillRow], 
 
 
 def _chart(
-    card: Card, period: Any, series: dict[str, Series], ownership: Ownership, person_id: Any
+    card: Card,
+    period: Any,
+    series: dict[str, Series],
+    ownership: Ownership,
+    person_id: Any,
+    path: str = "",
+    chosen: Any = None,
 ) -> tuple[list[Column], str]:
     """The selected figure by day, week or month (`Period.grain`); future columns empty."""
     figure = card.figure
@@ -1085,6 +1164,9 @@ def _chart(
             columns.append(Column(bucket.label, bucket.sublabel, span_text, "", 0.0, future=True))
             continue
         height = 100.0 * (found.value or 0) / top if top else 0.0
+        # A measured column — a real count, a lower bound above 0 or a genuine 0 —
+        # can be opened; an unmeasured one (UNKNOWN) has no records to open.
+        openable = found.coverage is not Coverage.UNKNOWN and figure.mode == SERIES
         columns.append(
             Column(
                 bucket.label,
@@ -1093,6 +1175,13 @@ def _chart(
                 found.text,
                 height,
                 partial=not found.exact,
+                url=(
+                    period.url(path, naitaja=figure.key, valik=bucket.span.start.isoformat())
+                    + "#mystats-joonis"
+                    if openable and path
+                    else ""
+                ),
+                selected=chosen is not None and chosen.span.start == bucket.span.start,
             )
         )
     return columns, ""
@@ -1107,8 +1196,9 @@ def _drill(
     present: dict[str, tuple[list[DrillRow], int]],
     show_all: bool,
     path: str,
+    bucket: Any = None,
 ) -> Drill:
-    """The records behind the selected figure for the period, newest first."""
+    """The records behind the selected figure for the period (or one chart column), newest first."""
     figure = card.figure
     rows: list[DrillRow]
     if figure.mode == PRESENT:
@@ -1126,7 +1216,9 @@ def _drill(
     else:
         rows = []
         for record in sorted(
-            series[figure.key].within(period.counted), key=lambda r: r.day, reverse=True
+            series[figure.key].within(bucket.span if bucket is not None else period.counted),
+            key=lambda r: r.day,
+            reverse=True,
         ):
             reference, title = ownership.names.get(record.matter_id, ("", ""))
             rows.append(

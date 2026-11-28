@@ -7,11 +7,29 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
-# r98 (osa I) — AI kasutuse arvestus. AJUTINE KUUPÄEV 2026-11-29: muuda tegelikuks paigalduspäevaks enne ühendamist.
+# r97 — ülevaade, nädala töö ja statistika sügavamad lingid (#740; ADR 0235, ilma andmebaasi muudatuseta).
+# PAIGALDUSPÄEV 2026-11-29 (pühapäev) — kontrolli enne paigaldust; kui paigaldus nihkub, muuda
+# see kuupäev tegelikuks paigalduspäevaks (väljalaskekomplekt kontrollib seda ja eraldi päevad ei tohi kattuda).
+# Kasutajale nähtamatu: päringute eelarved, ühised lugemised, lingid ilma salvestatud olekuta.
 [[day]]
 date = 2026-11-29
 basis = "deployment"
-prs = []
+prs = [740]
+changes = [
+  "Minu asjad: ülal on neli põhinäitajat (tähtaja ületanud, vajavad tähelepanu, arvamused koostamisel, menetluses teemad); iga number avab täpselt need kirjed, mida ta loeb.",
+  "Minu asjad: uus «Selle nädala ülevaade» (arvamused, muud tegevused, jõustumised), «Eelmine nädal», «Minu 7 päeva tähtajad», «Saadetud arvamused», «Uued teemad», «Lähimad jõustumised» ja «Sissetulev seire». Tähtaja edasilükkamist ei loeta tehtud tööks; ülevaatamise kuupäev ei ole üle tähtaja kohustus.",
+  "Nädala ülevaate numbrid avavad lehe «Minu asjad → nädal» täpselt nende kirjetega, mida nad loevad; selle saab eemaldada lingiga «Eemalda eelseadistus». Salvestatud vaateid see ei muuda.",
+  "Osakond (osakonnajuhile): kompaktne «Selle nädala ülevaade» (arvamused, tegevused, jõustumiskuupäevad, eelmine nädal, sissetulev seire); lähimad 7 päeva on «Eesolev» pealkirjas, uued teemad külgribal. Jõustumisi näidatakse kuupäevadena: «Kuupäev saabunud», «Eesolevad», «Ligikaudsed».",
+  "Minu statistika: diagrammi tulba saab valida (ka tulba, kus tulemus on mõõdetud null) ja näha selle päeva kirjeid; «Eemalda valik» jätab perioodi alles.",
+]
+
+# r98 — AI kasutuse arvestus, öised tsüklid, allikate värskus, dokumentide töötlus. AJUTINE KUUPÄEV 2026-11-30
+# (r97 on 2026-11-29 oma kirjes): muuda tegelikuks paigalduspäevaks; kui r97 ja r98 paigaldatakse samal päeval,
+# ühenda need kaks kirjet üheks (üks kirje päeva kohta) ja jäta mõlema muudatused alles.
+[[day]]
+date = 2026-11-30
+basis = "deployment"
+prs = [741]
 changes = [
   "Haldus → Integratsioonid → AI kasutus (tehnilisele haldurile): mudelipäringute arv, korduskatsed, vead, tokenid ja hinnanguline maksumus perioodide kaupa. Maksumus on hinnang hinnakirja järgi, mitte arve; teadmata hind või tokenid on märgitud «Maksumus teadmata».",
   "Haldus → Integratsioonid → Öised tsüklid: viimase 30 öö sammud ja tulemused; puuduv kirje on märgitud «Kirje puudub».",

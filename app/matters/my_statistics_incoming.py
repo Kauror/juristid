@@ -73,6 +73,13 @@ class _Mine:
         return owner == self.person
 
 
+class _EveryTeema:
+    """Every Teema the reader may see, on every day: the department's reading (r97)."""
+
+    def __call__(self, matter_id: Any, day: date) -> bool:
+        return True
+
+
 def _first_stage_reading(stages: list[str]) -> date | None:
     """The first day a Riigikogu stage was ever read: where its figure's coverage begins."""
     from django.db.models import Min
@@ -110,9 +117,20 @@ def _stage_readings(stages: list[str], start: date, end: date) -> set[date]:
 
 
 def incoming_series(
-    person: Any, ownership: Ownership, start: date, end: date, *, riigikogu_on: bool
+    person: Any,
+    ownership: Ownership,
+    start: date,
+    end: date,
+    *,
+    riigikogu_on: bool,
+    everyone: bool = False,
 ) -> dict[str, Series]:
-    """The five incoming figures from ``start`` to ``end``, read as ``person``. ~8 queries."""
+    """The five incoming figures from ``start`` to ``end``, read as ``person``. ~8 queries.
+
+    ``everyone`` reads the department's: every Teema ``person`` may see rather than
+    only theirs, from the same records — distinct findings, items and calls, never a
+    sum of personal figures (Osakond's overview, r97).
+    """
     from app.matters.models import Matter
     from app.register_watch.models import (
         AgendaItem,
@@ -125,7 +143,7 @@ def incoming_series(
     )
     from app.riigikogu.bills import SWITCHED_OFF
 
-    mine = _Mine(ownership, person.pk)
+    mine: Any = _EveryTeema() if everyone else _Mine(ownership, person.pk)
     visible = Matter.objects.visible_to(person).real_data().values("pk")
     first, after = _bounds(start, end)
     out: dict[str, Series] = {}
@@ -193,7 +211,7 @@ def incoming_series(
     return out
 
 
-def _riigikogu(mine: _Mine, visible: Any, start: date, end: date) -> dict[str, Series]:
+def _riigikogu(mine: Any, visible: Any, start: date, end: date) -> dict[str, Series]:
     from app.register_watch.models import WatchSource, WatchTarget
     from app.riigikogu.enums import InvitationReview, ResponseCheck, Stage
     from app.riigikogu.models import CommitteeAgendaItem, Invitation, StenogramMention

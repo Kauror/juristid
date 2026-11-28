@@ -491,6 +491,7 @@ def my_statistics(request: HttpRequest) -> HttpResponse:
         request.GET.get("naitaja", ""),
         show_all=request.GET.get("kaik") == "1",
         path=request.path,
+        selected_bucket=request.GET.get("valik", ""),
     )
     return render(
         request,

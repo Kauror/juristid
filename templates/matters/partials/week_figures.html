@@ -1,0 +1,8 @@
+<ul class="wo__figs">
+  {% for f in figures %}
+    <li class="wo__fig{% if f.tone %} wo__fig--{{ f.tone }}{% endif %}">
+      {% if f.url %}<a href="{{ f.url }}" aria-label="{{ f.accessible }}"><b>{{ f.text }}</b> {{ f.label }}</a>
+      {% else %}<span aria-label="{{ f.accessible }}"><b>{{ f.text }}</b> {{ f.label }}</span>{% endif %}
+    </li>
+  {% endfor %}
+</ul>
