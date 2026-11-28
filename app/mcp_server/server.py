@@ -5,8 +5,9 @@ eight tools of docs/adr/0185 §2, the five Lovable synchronisation tools of docs
 and nothing else — no resources, prompts or
 subscriptions. With MCP_WRITES_ENABLED it also lists the write tools of
 `app.mcp_server.write_tools` (docs/adr/0189): they only *prepare* proposals
-and *commit* ones the person approved in Juristid, through the separate write
-gateway; this process still writes nothing. `build_app()` is what
+and fetch the receipt of ones the person approved with «Kinnita» on Juristid's own
+page (which saves them at once), through the separate write gateway; this process
+still writes nothing. `build_app()` is what
 `manage.py run_mcp_server` serves:
 
     GET  /healthz                                       {"status": "ok"}, no token, no data
@@ -749,7 +750,7 @@ class JuristidMCPServer(MCPServer):
 READ_ONLY_DESCRIPTION = "The Estonian Chamber of Commerce's legal-policy register, read-only."
 WRITES_DESCRIPTION = (
     "The Estonian Chamber of Commerce's legal-policy register. Reading is direct; a change is "
-    "only prepared here and is saved after the person approves it in Juristid."
+    "only prepared here and is saved the moment the person approves it on Juristid's own page."
 )
 
 

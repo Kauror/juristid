@@ -14,7 +14,7 @@ the procedure.
 | Every later release (step 9 replaces a running `mcp`) | [`../../deploy/unraid-main/README.md`](../../deploy/unraid-main/README.md) §"Deploying a release" |
 | Reaching the host safely, keeping secrets out of the transcript | [`../../deploy/unraid-main/OPERATOR.md`](../../deploy/unraid-main/OPERATOR.md) |
 | Operating AI access | **this file** |
-| AI writes: why prepare → approve → commit, and the gateway | ADR 0189; *Phase 2: AI writes* below |
+| AI writes: why prepare → «Kinnita» saves → receipt, and the gateway | ADR 0189; *Phase 2: AI writes* below |
 
 Every command below runs **on the host, from the checkout**, exactly as the
 release runbook's do:
@@ -704,6 +704,17 @@ name, description or schema is not seen by anybody until a workspace admin:
 
 A release whose notes do not mention the MCP tools needs none of this.
 
+**r96 changes the descriptions** (titles, the prepare paragraph, the receipt
+tool's description, the status lines and the server instructions: «Kinnita» on
+the Juristid page saves at once; `commit_prepared_action` only fetches the
+receipt). Tool names, input schemas and annotations are unchanged, so nothing
+breaks without a refresh — but ChatGPT keeps showing the **r94 wording** («Save
+an approved change», «complete a change the user approved») from its frozen
+snapshot until a workspace admin does steps 2 and 4 above. The repository text
+and the deployed `mcp` image do not update that snapshot; record the refresh
+(who, when, the description shown afterwards) in the release log — until it is
+recorded, the connector is *not* updated.
+
 **The release with the five Lovable tools** (docs/adr/0201 §9, migration
 `legacy_import` 0020) mentions them, so after deploying it:
 
@@ -740,8 +751,11 @@ owner. **Nothing is written because a model asked.** Every change is:
    authenticator. In the same transaction, under the record locks and after
    checking everything again, `web` writes the approval row and runs the
    canonical service the page runs — once;
-3. **reported** — the client calls `commit_prepared_action` and gets the saved
-   record's receipt (or `awaiting_approval`). The gateway executes nothing.
+3. **reported** — the client calls `commit_prepared_action` (the name is kept
+   for compatibility; it does not approve, authorise or execute anything) and
+   gets the saved record's receipt, `awaiting_approval` with the link, or an
+   error for a declined, expired, failed or stale proposal. The gateway
+   executes nothing.
 
 No delete, no file upload, no URL fetched, no mail or notification sent, no
 SQL, no account, credential or settings change, no «opinion sent». A technical
@@ -998,8 +1012,8 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp py
 Then, with the owner, one end-to-end change on a test Teema the owner names:
 prepare a note from ChatGPT, open the link, check the preview, approve with the
 code — the note is saved then, once, its history row says «ChatGPT kaudu,
-isiklikult kinnitatud»; commit from ChatGPT answers the receipt; commit again —
-`replayed`, still one note.
+isiklikult kinnitatud»; the receipt call (`commit_prepared_action`) from
+ChatGPT answers the receipt; again — `replayed`, still one note.
 
 ### Switching AI writes off — four switches, any one is enough
 
@@ -1008,7 +1022,7 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml stop mcp-write
 ```
 
 **Stopping `mcp-writer` disables every AI write at once while reading goes
-on**: prepare and commit answer «writes unavailable», the read tools are
+on**: prepare and receipt requests answer «writes unavailable», the read tools are
 untouched, nothing depends on the gateway. It stays stopped through releases,
 restores and reboots until somebody starts it by name.
 
@@ -1021,7 +1035,7 @@ then the flags. Pending proposals simply expire (`MCP_WRITE_PROPOSAL_SECONDS`).
 
 ### Budgets (docs/adr/0234 §4)
 
-Every prepare and commit call is counted per user, grant, token family and
+Every prepare and receipt (`commit_prepared_action`) call is counted per user, grant, token family and
 client and for the deployment, in 10-minute and one-day windows; over a limit
 the gateway answers `rate_limited` (HTTP 429, `retry_after_seconds`) and says
 nothing was saved. Limits are `MCP_WRITE_*` settings in `juristid-mcp-writer.env`

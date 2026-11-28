@@ -12,7 +12,7 @@ docs/adr/0189.
 | scope | setting | what it allows |
 |---|---|---|
 | `juristid.read` | `MCP_SCOPE` | the eight read tools. Every connection gets it. `/mcp` requires it and nothing more. |
-| `juristid.write` | `MCP_WRITE_SCOPE` | *preparing* changes: a write tool may create a pending proposal, and commit one **after the person approved it in Juristid with their personal authenticator code**. The scope alone never changes a record. |
+| `juristid.write` | `MCP_WRITE_SCOPE` | *preparing* changes: a write tool may create a pending proposal and fetch the receipt of one; a change is saved only when **the person presses «Kinnita» on Juristid's own page with their personal authenticator code**. The scope alone never changes a record. |
 
 A token's scope is decided once, at the consent step, and can afterwards only
 shrink.

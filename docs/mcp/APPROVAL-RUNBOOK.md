@@ -53,14 +53,17 @@ cd /mnt/user/appdata/juristid-main/repo
    preview is still the one shown), writes the approval and runs the canonical
    service — once. The page says «Kinnitatud ja salvestatud». There is no
    «Tühista kinnitus» any more: there is no approved-but-unsaved state.
-3. **Report.** Back in ChatGPT the colleague (or ChatGPT on their word) calls
-   `commit_prepared_action`. The gateway (`POST /v1/commit`) checks it is the
-   same person, grant, client and token family and answers the saved
-   record's receipt; it executes nothing. A second call returns the same
+3. **Receipt.** Back in ChatGPT the colleague (or ChatGPT on their word) calls
+   `commit_prepared_action` — a name kept for compatibility: it does not
+   approve, authorise or execute anything, it only fetches the receipt. The
+   gateway (`POST /v1/commit`) checks it is the same person, grant, client and
+   token family and answers the saved record's receipt (executed), the link
+   again (waiting for approval), or an error for a declined, expired, failed
+   or stale proposal; it executes nothing. A second call returns the same
    receipt (`replayed`) and saves nothing more.
 
-A model's tool call alone never saves anything. Without step 2 the commit
-answers `awaiting_approval`. Repeated calls are budgeted (docs/adr/0234 §4):
+A model's tool call alone never saves anything. Without step 2 the receipt
+request answers `awaiting_approval`. Repeated calls are budgeted (docs/adr/0234 §4):
 past a limit ChatGPT is told `rate_limited` with how long to wait; the
 approval page itself is never limited, and the receipt of a saved change is
 always answered.
@@ -99,9 +102,9 @@ by the `correlation_id` `show` prints.
 What the codes mean: `stale` — the record moved on after preparing or
 approval; `approval_mismatch` — the stored arguments or the approval do not
 match the digest (treat as tampering; check database access); `expired` — not
-approved, or not committed, in time; `forbidden` at commit — the account lost
-its write right between approval and commit; `internal_error` with
-`retryable=True` — nothing was saved and the approval still stands;
+approved in time; `forbidden` on a receipt request or at «Kinnita» — the account
+lost its write right; `internal_error` with `retryable=True` on the approval
+page — nothing was saved and the proposal is still waiting for approval;
 `principal_mismatch` on `COMMIT_REFUSED` — somebody else's token tried this
 proposal id.
 

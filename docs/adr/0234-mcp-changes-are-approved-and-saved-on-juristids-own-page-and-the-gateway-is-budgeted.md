@@ -67,10 +67,23 @@ person's approval**, never by the gateway.
   «approval waits for its commit» window and «Tühista kinnitus» no longer exist; an
   approval's `expires_at` equals its `approved_at`.
 
-`commit_prepared_action` keeps its name, input, annotations and answers: it reports the
-stored receipt (`executed`, `replayed` false the first time and true afterwards),
-`awaiting_approval` with the link, or the refusal code. A client following the r94 tool
-descriptions behaves correctly (it is told to call commit after the person approved).
+`commit_prepared_action` keeps its name, input schema, annotations and answer shapes, but
+its role is now the **receipt**, not the commit: it neither authorises nor executes
+anything. It reports the stored receipt (`executed`, `replayed` false the first time and
+true afterwards), `awaiting_approval` with the link, or — for a declined, expired, failed
+or stale proposal — the refusal code (`declined`, `expired`, `already_failed`, `stale`),
+always saying nothing was saved. A client following the r94 descriptions still behaves
+correctly (it calls the tool after the person approved, and gets the receipt).
+
+Every description of the workflow was updated to say so (r96 final): the tool titles
+and status lines («Get the receipt of a prepared change»), the prepare paragraph, the
+receipt tool's description, the prepared / awaiting instructions and the server
+instructions in `app/mcp_server`, the gateway's refusal texts, `schemas.py` field
+descriptions, the approval page (shorter; it states that «Kinnita» saves the change at
+once) and `docs/mcp/*`. A connector that already holds the r94 descriptions keeps
+showing them until a workspace admin refreshes and publishes it (`OPERATIONS.md`,
+«Updating the tools and refreshing the connector»); the repository text does not update
+that snapshot.
 
 ### 2. The gateway's role cannot write business data or rewrite a proposal
 
@@ -107,7 +120,17 @@ later (the column default is 1).
 Every prepare and commit call is counted, in fixed 10-minute and one-day windows, for
 each stable principal the call has — the user, the grant, the token family and the
 client (a SHA-256 prefix of its id) — and for the deployment, with one atomic
-`INSERT … ON CONFLICT DO UPDATE … RETURNING` per window. A refresh keeps user, grant,
+`INSERT … ON CONFLICT DO UPDATE … RETURNING` per window. **The stored-bytes allowance
+is claimed, not read and added:** the deployment-wide day counter is taken with one
+conditional statement (`INSERT … ON CONFLICT DO UPDATE … WHERE count + n <= limit
+RETURNING`, `budgets.claim`), inside the prepare's own transaction and after the user
+lock, so two users near the limit queue on the counter row and the second re-evaluates
+the first's committed total. A refusal claims nothing; a rolled-back preparation
+releases its claim. Lock order, always: the user's advisory lock, then the global
+counter row (the per-user counter follows under the user lock); nothing takes them the
+other way round, so there is no deadlock. (Before the r96 final round the check read the
+counter and the add happened separately, so overlapping preparations by different
+users could pass the same check and exceed the allowance; `tests/test_mcp_write_global_quota_race.py`.) A refresh keeps user, grant,
 client and family; a re-authorization keeps user, grant and client. Over a limit the
 gateway answers `rate_limited` (HTTP 429) with `retry_after_seconds`, the budget and the
 principal *kind*, and says nothing was saved.
