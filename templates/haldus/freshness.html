@@ -1,0 +1,28 @@
+{% extends "haldus/base.html" %}
+{% block title %}Allikate värskus · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  r98 (docs/adr/0237): per source — last attempt, last success, newest seen and newest stored,
+  work waiting. An «ok» is that source's own rule (daily 36 h, weekly agenda, Riigikogu stages),
+  never one shared threshold. No source is called to draw this page.
+{% endcomment %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="fr-title">
+    <h2 class="acctsection__title" id="fr-title">Allikate värskus</h2>
+    {% if attention %}<p><span class="statechip statechip--problem">{{ attention|length }} allikat vajab tähelepanu või on teadmata</span></p>{% endif %}
+    <div class="accttable"><table class="data-table">
+      <thead><tr><th scope="col">Allikas</th><th scope="col">Seis</th><th scope="col">Viimane katse</th><th scope="col">Viimane õnnestunud</th><th scope="col">Allikas / salvestatud</th><th scope="col">Ootel</th></tr></thead>
+      <tbody>{% for s in sources %}
+        <tr>
+          <td>{{ s.label }}<br><span class="regwatch__meta">{{ s.cadence }}</span></td>
+          <td>{% if s.state == "ok" %}<span class="statechip statechip--ok">{{ s.line }}</span>{% elif s.state == "expected" or s.state == "disabled" %}<span class="statechip">{{ s.line }}</span>{% else %}<span class="statechip statechip--problem">{{ s.line }}</span>{% endif %}</td>
+          <td class="regwatchlog__nowrap">{{ s.last_attempt|date:"j.n.Y H:i"|default:"—" }}</td>
+          <td class="regwatchlog__nowrap">{{ s.last_success|date:"j.n.Y H:i"|default:"—" }}</td>
+          <td>{% if s.observed or s.stored %}istung {{ s.observed|default:"—" }} / {{ s.stored|default:"—" }}{% else %}—{% endif %}</td>
+          <td>{% for line in s.pending %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}{% for line in s.limits %}<br><span class="regwatch__meta">{{ line }}</span>{% endfor %}</td>
+        </tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </section>
+{% endblock %}

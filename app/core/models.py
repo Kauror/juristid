@@ -183,3 +183,33 @@ class RemovableQuerySet(models.QuerySet):
         operator's tooling), so that they spell «not removed» one way.
         """
         return self.filter(removed_at__isnull=True)
+
+
+class NightlyStepRecord(models.Model):
+    """One step of one nightly cycle, as `app.core.nightly_outcome` classified it (r98).
+
+    Written beside the cache entry `remember()` keeps, from the same `StepOutcome`, so
+    there is exactly one definition of what a step's outcome is. Counts and codes only —
+    never a title. Nothing before the release that added it is invented: a night with no
+    row is «no record», not a failure and not a success.
+    """
+
+    cycle_start = models.DateTimeField()
+    step = models.CharField(max_length=24)
+    outcome = models.CharField(max_length=24)
+    reason = models.CharField(max_length=200, blank=True)
+    counts = models.JSONField(default=dict, blank=True)
+    rc = models.SmallIntegerField(null=True, blank=True)
+    seconds = models.PositiveIntegerField(null=True, blank=True)
+    manual = models.BooleanField(default=False)
+    recorded_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["cycle_start", "step"], name="nightly_step_once")
+        ]
+        indexes = [models.Index(fields=["-cycle_start"])]
+        ordering = ["-cycle_start", "step"]
+
+    def __str__(self) -> str:
+        return f"{self.cycle_start:%Y-%m-%d} {self.step} {self.outcome}"

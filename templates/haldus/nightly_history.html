@@ -1,0 +1,41 @@
+{% extends "haldus/base.html" %}
+{% block title %}Öised tsüklid · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  r98 (docs/adr/0237): the last thirty nights, one row per cycle, one column per step, as
+  `nightly_outcome` classified them. A night the application has no record for is absent;
+  a step with no record on a night that has some reads «kirje puudub», never green.
+{% endcomment %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="nh-title">
+    <h2 class="acctsection__title" id="nh-title">Öised tsüklid</h2>
+    <p class="regwatch__meta">Tulemused on öise tsükli enda hinnang, mitte väljumiskood. AI päringud on seotud ööga ajavahemiku järgi, sest AI registris puudub tsükli tunnus. Varukoopia ja hommikuse seire tulemus on hostis ega ole rakenduses salvestatud. Enne selle väljalaset kirjeid ei ole.</p>
+    {% if nights %}
+      <div class="accttable"><table class="data-table">
+        <thead><tr><th scope="col">Tsükli algus</th>{% for key, label in steps %}<th scope="col">{{ label }}</th>{% endfor %}<th scope="col">AI päringud</th><th scope="col">Riigikogu tsükkel</th></tr></thead>
+        <tbody>{% for night in nights %}
+          <tr>
+            <td class="regwatchlog__nowrap">{{ night.start|date:"j.n.Y H:i" }}</td>
+            {% for step in night.steps %}
+              <td>
+                {% if step.record %}
+                  {% if step.problem %}<span class="statechip statechip--problem">{{ step.record.outcome }}</span>{% elif step.record.outcome == "SKIPPED_DELIBERATE" %}<span class="statechip">{{ step.record.outcome }}</span>{% else %}<span class="statechip statechip--ok">{{ step.record.outcome }}</span>{% endif %}
+                  <br><span class="regwatch__meta">{% if step.record.seconds is not None %}{{ step.record.seconds }} s{% endif %}{% if step.record.reason %} · {{ step.record.reason }}{% endif %}</span>
+                {% elif step.missing %}
+                  <span class="statechip statechip--problem">Kirje puudub</span><br><span class="regwatch__meta">oodati {{ step.expected_by|date:"H:i" }}</span>
+                {% else %}
+                  <span class="statechip">Veel pole aeg</span>
+                {% endif %}
+              </td>
+            {% endfor %}
+            <td>{{ night.ai_operations }}{% if night.ai_failed %} · {{ night.ai_failed }} mitteõnnestunud{% endif %}</td>
+            <td class="mono">{{ night.rk_cycle|default:"—" }}</td>
+          </tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% else %}
+      <p class="regwatch__meta">Öiseid kirjeid ei ole veel salvestatud. Esimene tekib pärast järgmist öist tsüklit; varasemat ajalugu ei looda.</p>
+    {% endif %}
+  </section>
+{% endblock %}

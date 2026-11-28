@@ -448,6 +448,20 @@ GROUPS: tuple[Group, ...] = (
                 ),
             ),
             Item(
+                "oised_tsuklid",
+                "Öised tsüklid",
+                "haldus:nightly_history",
+                may_open_system,
+                "Iga öise tsükli sammud, tulemused ja kestus; kirjeta samm on «kirje puudub».",
+            ),
+            Item(
+                "varskus",
+                "Allikate värskus",
+                "haldus:freshness",
+                may_open_system,
+                "Iga allika viimane katse ja õnnestunud kontroll, ootel töö ja lahknevused.",
+            ),
+            Item(
                 "ai_kasutus",
                 "AI kasutus",
                 "haldus:ai_usage",

@@ -67,7 +67,12 @@ class Command(BaseCommand):
         if options["record"]:
             try:
                 nightly_outcome.remember(
-                    result, rc=options["rc"], seconds=options["seconds"], night=options["night"]
+                    result,
+                    rc=options["rc"],
+                    seconds=options["seconds"],
+                    night=options["night"],
+                    cycle_start=since,
+                    manual=options["manual"],
                 )
             except Exception as error:  # the verdict still reaches the host's ledger
                 self.stderr.write(f"could not keep the verdict for Haldus: {type(error).__name__}")
