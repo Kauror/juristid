@@ -142,13 +142,87 @@ rules are unchanged.
 2. Monthly warning / escalation thresholds (or none).
 3. Approve the 13-month detail retention before any deletion job is written.
 
-## Measured (R98-C07, synthetic, local PostgreSQL)
+## Final corrections (28.11.2026) — what changed after the coordinator's review
 
-4 database writes per one-attempt operation (the begin upsert, its reconcile update, the finish upsert and the
-attempt insert); the page runs 18 queries from 300 to 12,000 attempts; `summarise` over 10,950 attempts (a
-year at ten times the expected volume) takes ≈ 0.6 s; the page renders 12,000 attempts in ≈ 0.8 s. Concurrent
-finalization of one operation by eight threads leaves one row each and no gap. An accounting failure is shown
-on the AI page and as a Haldus overview line; a database that is down cannot record its own absence.
+**One completeness definition (`report.Totals.incomplete`).** A figure is a *total* only when
+none of these holds, and the same rule serves the day, service and model tables, the selected
+period, the cost per classified item, the charts, the monthly budget and the Haldus overview:
+unknown cost (no usage, no price, no rate, fallback); cache tokens not reported; a price whose
+page was last verified more than 120 days before the day it prices, or a rate more than 5 days
+older than that day; a request still running or interrupted (its result is unknown); an
+interrupted request with no stored attempt (it may have sent one); a request whose HTTP
+attempts were not watched; a request whose result could not be saved (`AiLedgerGap`); a period
+that starts before the ledger does. Anything else is a **known subtotal**, shown as «vähemalt»
+(at least). Accounting health and budget policy are separate: the budget level is
+`none` (no threshold), `ok` (a complete total below it), `unproven` (a known subtotal below it
+while the total is incomplete — proves nothing), `warn`/`escalate` (the known subtotal alone
+reaches the threshold, which is proof). «Korras» is no longer said because no threshold is set.
+
+**Attempt accounting.** A request's start is stored the moment it leaves (one INSERT in its own
+savepoint, `attempt_start_not_saved` gap on failure), so a hard kill leaves a confirmed attempt
+of unknown outcome and the cost is unknown for it. A failure before any request (prompt
+building, client set-up) is a logical operation **without** an attempt (`attempt_coverage =
+none`), not a synthesised attempt. A client nothing watches (a test double) with an answer
+stores one row marked `observed = false` and the operation says `unavailable`; without an
+answer it stores no attempt. The latency the hook measures is the time to the **response
+headers** (`headers_ms`), labelled so everywhere; it is not the time to read the whole answer.
+
+**Populations.** A request belongs to the Tallinn day it started; its attempts and costs go
+there (a request crossing midnight is counted once). Filters act on the logical request: service
+= its service, outcome = its effective outcome (a still-running request past its window is
+*interrupted*), model = the model that answered an attempt (else the one requested) — with a
+model filter only matching attempts are counted and only requests having one are listed. The
+summary, charts, tables, detail rows and CSV read one selection (`summarise` →
+`attempts_of`). The CSV carries up to 20,000 rows and says «KATKESTATUD» if the selection is
+larger; the page states the limit. Daily links keep every applicable filter.
+
+**Prices.** `app/ai_usage/prices.py` is the only writer: non-negative finite rates, an
+upper-case three-letter currency, an https source, a verification date not in the future, no
+revision that starts before or overlaps the latest of the same provider, model and tier, the
+closing of the predecessor and the insert in one transaction, rates never rewritten (the same
+day with a different value is refused). The database also refuses negative rates, a backwards
+range and a second price for one day. Only the standard tier is applied to attempts (they carry
+no tier); fast mode ($8/$40), batch ($2/$10) and US-only inference (1.1x) are not used by
+Juristid. Each estimate names the price row and the rate date it used. The catalogue was
+re-read on 28.11.2026 from the pricing page and the models overview (`claude-opus-5-5`; $4 /
+$20 / $0.20 per million) and the ECB reference rate of 27.11.2026 (1.0957 USD per EUR); the
+`seed_ai_prices` dry run validates through the same code and prints what `--apply` would enter.
+
+**Retention.** 13 months of detail is accepted as the proposal. `ai_usage_retention` stays a
+dry run; no deletion job exists and none is authorised.
+
+## Measured (28.11.2026, local PostgreSQL 18 on the developer machine, synthetic data)
+
+Routine CI runs small fixtures (`test_ai_usage_performance.py`, `test_ai_usage_concurrency.py`)
+so a runner stays inside its time limit; the figures below come from
+`R98_SCALE=1 pytest tests/test_ai_usage_scale.py -s` at the sizes the ledger can reach, on the
+**final code**. Timings are machine-dependent; the shape is the point.
+
+| Dataset | AI page | `summarise` | CSV (≤ 20,000 rows) | Storage |
+|---|---|---|---|---|
+| 1,095 attempts (a year at the expected 3 requests a night) | 0.24 s, 18 queries | 0.05 s | 0.13 s | ≈ 0.83 KB per attempt incl. its operation and indexes |
+| 10,950 attempts (a year at ten times the volume) | 0.88 s, 18 queries | 0.47 s | 1.4 s | same |
+| 54,750 attempts (five years at ten times) | 4.8 s, 18 queries | 3.2 s | 5.8 s | same |
+
+The query count is flat (18) at every size; the time grows **linearly with the attempt rows in
+the selected period** because the aggregation is done in memory over that period's rows. At the
+expected volume a year costs 0.24 s (a month, about a twelfth of it, was not measured separately), so no index or
+pre-aggregation is justified now; a period of years at ten times the expected volume would be
+the point to add a monthly aggregate table (the retention design already keeps one). Storage:
+≈ 0.83 KB per attempt including its operation row, so ≈ 0.9 MB a year at the expected volume.
+Accounting overhead per model request (test double, no network): ≈ 4.7 ms with the ledger on
+against 0.02 ms off, 4 database writes and 14 queries (begin: reconcile update + operation
+upsert; finish: operation upsert + attempt upsert; with the real client one more INSERT per
+physical attempt at request start). A nightly cycle makes about 10 requests, so about 50 ms a
+night. Concurrent finalization of one operation by eight threads leaves one row per attempt and
+no gap (`test_ai_usage_concurrency.py`).
+
+The earlier runner-2 timeout (15-minute job limit) was not a scaling defect of the ledger: the
+ledger's own test files run in about a minute together including database set-up; in the green run of the same code runner
+2 took 11 m 47 s against 8–9 m for its neighbours, i.e. it is simply the longest of the seven
+shards, close to the limit even without these tests. The reduced fixtures were kept for CI
+because the scale numbers above show nothing the small fixtures hide (flat query count,
+linear time), and the representative sizes are run separately, on demand.
 
 ## Retention design (R98-C05) — nothing is deleted
 

@@ -205,3 +205,99 @@ def test_render_the_r98_pages_for_review(client, settings):
         {"periood": "custom", "alates": "2026-01-01", "kuni": "2099-01-01"},
     )
     assert narrow.status_code == 200
+
+
+def seed_browser() -> None:
+    """The browser suite's world (`e2e/test_r98_pages.py`): `seed()` plus what the pages' new
+    states need — an entirely missing night, a source run that finished with errors, an
+    interrupted request with no attempt, a stored and a fresh parity report, and a sync run.
+    Run in a subprocess against the browser suite's own database; nothing here is real."""
+    from app.legacy_import.lovable_sync_models import (
+        LovableSyncRun,
+        SyncMode,
+        SyncRunStatus,
+        SyncTrigger,
+    )
+    from app.register_watch.models import SweepRun, WatchRun
+
+    seed(days=8)
+    now = timezone.now()
+    today = now.astimezone(report.TALLINN).date()
+    from app.core.models import NightlyStepRecord
+
+    # One night with no record at all, between recorded ones (seed() records nights 1..5 back).
+    missing = now - dt.timedelta(days=4)
+    NightlyStepRecord.objects.filter(
+        cycle_start__gte=missing.replace(hour=0, minute=0), cycle_start__lt=missing.replace(hour=23, minute=59)
+    ).delete()
+    WatchRun.objects.create(
+        started_at=now - dt.timedelta(hours=3),
+        finished_at=now - dt.timedelta(hours=2),
+        targets_checked=9,
+        errors=[{"allikas": "riigikogu", "viga": "ajalõpp"}],
+    )
+    SweepRun.objects.create(started_at=now - dt.timedelta(hours=3), finished_at=now - dt.timedelta(hours=2))
+    AiOperation.objects.create(
+        service="candidates",
+        requested_model=MODEL,
+        started_at=now - dt.timedelta(days=1),
+        expected_end_at=now - dt.timedelta(days=1) + dt.timedelta(minutes=30),
+        outcome="IN_PROGRESS",
+    )
+    for n in range(30):  # enough attempts for the detail table to need a second page
+        when = now - dt.timedelta(hours=2, minutes=n)
+        op = AiOperation.objects.create(
+            id=uuid.uuid4(),
+            service="watch_findings",
+            requested_model=MODEL,
+            run_ref=f"extra-{n}",
+            started_at=when,
+            finished_at=when + dt.timedelta(seconds=30),
+            outcome=Outcome.SUCCEEDED,
+            items_presented=5,
+            items_classified=5,
+        )
+        _attempts(op, [(AttemptOutcome.OK, 4000, 500, 3000 + n)])
+    started = now - dt.timedelta(hours=8)
+    LovableSyncRun.objects.create(
+        run_key=f"{today.isoformat()}-browser",
+        trigger=SyncTrigger.SCHEDULED,
+        mode=SyncMode.APPLY,
+        status=SyncRunStatus.SUCCEEDED,
+        started_at=started,
+        finished_at=started + dt.timedelta(minutes=6),
+        snapshot_taken_at=started,
+        mapping_version="x",
+        backup_set="sets/20261128T000000Z",
+        verified=True,
+        counts={
+            "source_live": 2500,
+            "source_operational": 2373,
+            "checked": 2373,
+            "unchanged": 2364,
+            "changed_source": 9,
+            "breaker_limit": 20,
+            "changed_handovers": 0,
+            "handover_limit": 100,
+            "restore_limit": 20,
+            "held_local_work": 2,
+        },
+    )
+    LovableParityReport.objects.update(
+        mismatches=[["2099_3", "title"]],
+        counts={"MATCH": 168, "EXPLAINED_DIFFERENCE": 40, "HELD": 2, "MISMATCH": 1, "UNVERIFIED": 0},
+        run_key=f"{today.isoformat()}-browser",
+        eligible=30,
+    )
+    LovableParityReport.objects.create(
+        at=now - dt.timedelta(minutes=30),
+        mode="sample",
+        source="fresh",
+        snapshot_taken_at=now - dt.timedelta(minutes=31),
+        snapshot_sha256="b" * 64,
+        teemad=10,
+        sample_size=10,
+        eligible=30,
+        seed="e2e",
+        counts={"MATCH": 60, "EXPLAINED_DIFFERENCE": 3, "HELD": 0, "MISMATCH": 0, "UNVERIFIED": 0},
+    )
