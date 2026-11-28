@@ -50,3 +50,30 @@ def freshness(request: HttpRequest) -> HttpResponse:
             attention=integration_status.attention(rows),
         ),
     )
+
+
+@never_cache
+@require_http_methods(["GET"])
+def processing(request: HttpRequest) -> HttpResponse:
+    """Dokumentide töötlus ja OneNote'i katvus: counts and ages only (docs/adr/0239)."""
+    from app.documents import processing_health
+    from app.legacy_import import onenote_diagnostics
+
+    _require(request, "toodeldud")
+    health = processing_health.collect()
+    waiting = health.oldest_waiting_age
+    return render(
+        request,
+        "haldus/processing.html",
+        _context(
+            request,
+            "toodeldud",
+            health=health,
+            waiting_hours=(waiting.seconds // 3600) if waiting else 0,
+            failures=[
+                (processing_health.KIND_LABELS[kind], n)
+                for kind, n in sorted(health.failures.items())
+            ],
+            onenote=onenote_diagnostics.diagnostics(),
+        ),
+    )

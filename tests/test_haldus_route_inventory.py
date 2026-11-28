@@ -89,6 +89,7 @@ def test_the_groups_are_the_contracted_seven_in_order():
         "onenote",
         "oised_tsuklid",
         "varskus",
+        "toodeldud",
         "ai_kasutus",
         "registrid",
     ]

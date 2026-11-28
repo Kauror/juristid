@@ -50,6 +50,7 @@ def test_the_registry_is_the_contracted_one():
         "onenote",
         "oised_tsuklid",
         "varskus",
+        "toodeldud",
         "ai_kasutus",
         "registrid",
         "kasutajad",

@@ -462,6 +462,13 @@ GROUPS: tuple[Group, ...] = (
                 "Iga allika viimane katse ja õnnestunud kontroll, ootel töö ja lahknevused.",
             ),
             Item(
+                "toodeldud",
+                "Dokumentide töötlus",
+                "haldus:processing",
+                may_open_system,
+                "Töötlemisjärjekord, rikked põhjuste kaupa, töötlemata failid ja OneNote'i katvus.",
+            ),
+            Item(
                 "ai_kasutus",
                 "AI kasutus",
                 "haldus:ai_usage",
