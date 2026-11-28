@@ -14,6 +14,10 @@ basis = "deployment"
 prs = []
 changes = [
   "Haldus → Integratsioonid → AI kasutus (tehnilisele haldurile): mudelipäringute arv, korduskatsed, vead, tokenid ja hinnanguline maksumus perioodide kaupa. Maksumus on hinnang hinnakirja järgi, mitte arve; teadmata hind või tokenid on märgitud «Maksumus teadmata».",
+  "Haldus → Integratsioonid → Öised tsüklid: viimase 30 öö sammud ja tulemused; puuduv kirje on märgitud «Kirje puudub».",
+  "Haldus → Integratsioonid → Allikate värskus: iga allika viimane katse, viimane õnnestunud kontroll ja ootel töö.",
+  "Haldus → Integratsioonid → Dokumentide töötlus: töötlemisjärjekord, rikked põhjuste kaupa ja OneNote'i katvus; teadlikult töötlemata failid ei ole rikked.",
+  "Haldus → Ülevaade näitab AI kasutuse, öise tsükli, allikate värskuse, dokumentide töötluse ja Lovable'i võrdluse tähelepanu vajavaid kohti.",
 ]
 
 # r96 — turvavoor 26.11.2026 ja omaniku kasutajaliidese parandused (#731 #733 #734 #735 #736, ühendatud
