@@ -32,7 +32,7 @@ the Matter's current owner (app/matters/work_items.py).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 from django.utils import timezone
@@ -961,24 +961,16 @@ def build_my_work(
         ),
     ]
 
-    from app.matters.week_overview import build_week_overview
+    from app.matters import week_overview
 
-    overview = build_week_overview(
-        user,
-        subject,
-        today,
+    overview = week_overview.build_week_overview(
+        week_overview.make_ctx(
+            user,
+            week_overview.SELF if is_self else week_overview.COLLEAGUE,
+            subject,
+            today,
+        ),
         items=everything,
-        is_self=is_self,
-        due_this_week=opinions.due_this_week,
-        due_url=opinions.due_url,
-        overdue_before_week=drafting_matters(user)
-        .filter(owner=subject)
-        .filter(
-            date_range_q(
-                "response_deadline", start=None, end=opinions.week_start - timedelta(days=1)
-            )
-        )
-        .count(),
     )
 
     quick: list[QuickRow] = []

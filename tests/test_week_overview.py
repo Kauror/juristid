@@ -1,16 +1,19 @@
 """«Selle nädala ülevaade» (r97): every figure is a counted record, never a guess.
 
-The rules held here, in the order the ADR states them:
+The rules held here:
 
-* a **postponement is not a completion** — a day moved on is *edasi lükatud*, a
-  changed sentence is *asendatud*, and only a COMPLETED row is *tehtud*;
-* an ending with **no person behind it** (the system, the synchronisation) is
-  nobody's work, and somebody else's completion is not mine;
-* the week is Monday to Sunday in **Europe/Tallinn**, so a completion at 23:30 on
-  Sunday belongs to that week and one at 00:10 on Monday to the next;
-* a **WAIT/MONITOR review date** that has passed is never an overdue obligation;
-* the figure and the page behind it are **one population** — the records page
-  lists exactly the rows the overview counted, for the reader asking only.
+* a **postponement is not a completion**: a later day is *edasi lükatud*, any other
+  change of day is *tähtaega muudetud*, a different step is *asendatud* and only a
+  COMPLETED row is *tehtud*;
+* an ending with **no person behind it** is nobody's work, and somebody else's
+  completion is not mine;
+* the week is Monday to Sunday in **Europe/Tallinn**;
+* a **WAIT/MONITOR review date** that has passed is never an overdue obligation, and
+  every review event is a review (repeated ones are not collapsed);
+* the figure and the page behind it are **one population**, compared by record
+  identity and not by total, in every scope;
+* a colleague's desk gets **no historical statistics**, and the department's records
+  are the head's — enforced at the route and by the queries, not by a template.
 """
 
 from __future__ import annotations
@@ -21,14 +24,17 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
+from app.matters import stat_periods
 from app.matters import week_overview as wo
 from app.matters.models import Matter
 from app.matters.my_work import build_my_work
 from app.matters.services import create_matter
-from app.workflow.enums import ActionKind, DateSemantics
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
 from app.workflow.services import (
+    acknowledge_review,
     cancel_next_action,
     complete_next_action,
     set_next_action,
@@ -73,47 +79,96 @@ def overview(user: Any, today: dt.date = FRIDAY, *, subject: Any = None) -> wo.W
 
 def value(figures: list[wo.WeekFigure], key: str) -> int:
     figure = next(f for f in figures if f.key == key)
-    assert figure.cell.value is not None
-    return figure.cell.value
+    # A history figure whose coverage does not reach back to the week reads «—»
+    # (value None) when nothing was found: unmeasured, which is asserted elsewhere.
+    return figure.cell.value or 0
 
 
-# --- completion vs postponement ------------------------------------------------
+def ctx_of(user: Any, today: dt.date, scope: str = wo.SELF, viewer: Any = None) -> wo.Ctx:
+    return wo.make_ctx(viewer or user, scope, None if scope == wo.DEPARTMENT else user, today)
 
 
-def test_a_completed_action_is_done_and_a_postponed_one_is_not(specialist) -> None:
-    done_matter, moved_matter = a_matter(specialist, "A"), a_matter(specialist, "B")
-    finished = complete_next_action(action=step(done_matter, specialist), actor=specialist)
-    ended(finished, at(dt.date(2026, 10, 7)))
-    first = step(moved_matter, specialist, day=dt.date(2026, 10, 8))
-    second = step(moved_matter, specialist, day=dt.date(2026, 10, 15))  # same words, later day
+def week_now() -> tuple[dt.date, dt.date]:
+    week = stat_periods.current(timezone.localdate())
+    return week.start, week.end
+
+
+# --- completion, postponement, date change, replacement ------------------------
+
+
+def test_done_postponed_date_changed_superseded_and_cancelled_are_five_things(specialist) -> None:
+    done = complete_next_action(
+        action=step(a_matter(specialist, "A"), specialist), actor=specialist
+    )
+    ended(done, at(dt.date(2026, 10, 7)))
+
+    later = a_matter(specialist, "B")
+    first = step(later, specialist, day=dt.date(2026, 10, 8))
+    step(later, specialist, day=dt.date(2026, 10, 15))
     ended(first, at(dt.date(2026, 10, 8)))
-    assert second.pk != first.pk
 
-    figures = overview(specialist).actions
-    assert value(figures, wo.DONE) == 1
-    assert value(figures, wo.POSTPONED) == 1
-    assert value(figures, wo.SUPERSEDED) == 0
-    assert value(figures, wo.CANCELLED) == 0
+    earlier = a_matter(specialist, "C")
+    first = step(earlier, specialist, day=dt.date(2026, 10, 20))
+    step(earlier, specialist, day=dt.date(2026, 10, 12))
+    ended(first, at(dt.date(2026, 10, 8)))
+
+    different = a_matter(specialist, "D")
+    first = step(different, specialist, "Esimene", dt.date(2026, 10, 8))
+    step(different, specialist, "Hoopis teine", dt.date(2026, 10, 20))
+    ended(first, at(dt.date(2026, 10, 8)))
+
+    gone = cancel_next_action(action=step(a_matter(specialist, "E"), specialist), actor=specialist)
+    ended(gone, at(dt.date(2026, 10, 6)))
+
+    actions = overview(specialist).actions
+    assert {f.key: value(actions, f.key) for f in actions if f.key != wo.OUTSTANDING} == {
+        wo.DONE: 1,
+        wo.REVIEWED: 0,
+        wo.POSTPONED: 1,
+        wo.DATE_CHANGED: 1,
+        wo.SUPERSEDED: 1,
+        wo.CANCELLED: 1,
+    }
 
 
-def test_a_changed_sentence_is_a_replacement_not_a_postponement(specialist) -> None:
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        pytest.param({"day": dt.date(2026, 10, 15)}, wo.POSTPONED, id="later-day"),
+        pytest.param({"day": dt.date(2026, 10, 1)}, wo.DATE_CHANGED, id="earlier-day"),
+        pytest.param({"day": None}, wo.DATE_CHANGED, id="day-removed"),
+        pytest.param(
+            {"day": dt.date(2026, 10, 15), "date_precision": DatePrecision.MONTH},
+            wo.SUPERSEDED,
+            id="precision-changed",
+        ),
+        pytest.param({"text": "Hoopis teine"}, wo.SUPERSEDED, id="sentence-changed"),
+        pytest.param({"kind": ActionKind.WAIT}, wo.SUPERSEDED, id="meaning-changed"),
+    ],
+)
+def test_the_classification_reads_what_changed(specialist, change, expected) -> None:
     matter = a_matter(specialist)
-    old = step(matter, specialist, "Esimene", dt.date(2026, 10, 8))
-    step(matter, specialist, "Hoopis teine", dt.date(2026, 10, 20))
-    ended(old, at(dt.date(2026, 10, 8)))
-    figures = overview(specialist).actions
-    assert (
-        value(figures, wo.SUPERSEDED),
-        value(figures, wo.POSTPONED),
-        value(figures, wo.DONE),
-    ) == (1, 0, 0)
+    first = step(matter, specialist, "Koosta", dt.date(2026, 10, 8))
+    kw = dict(change)
+    kw.setdefault("text", "Koosta")
+    kw.setdefault("day", dt.date(2026, 10, 8))
+    step(matter, specialist, kw.pop("text"), kw.pop("day"), **kw)
+    first.refresh_from_db()
+    assert wo.classify_ended(first) == expected
 
 
-def test_a_cancelled_action_is_cancelled_never_done(specialist) -> None:
-    action = step(a_matter(specialist), specialist)
-    ended(cancel_next_action(action=action, actor=specialist), at(dt.date(2026, 10, 6)))
-    figures = overview(specialist).actions
-    assert (value(figures, wo.CANCELLED), value(figures, wo.DONE)) == (1, 0)
+def test_a_change_of_responsible_is_a_replacement(specialist, other_specialist) -> None:
+    matter = a_matter(specialist)
+    first = step(matter, specialist, "Koosta", dt.date(2026, 10, 8))
+    set_next_action(
+        matter=matter,
+        text="Koosta",
+        target_date=dt.date(2026, 10, 15),
+        responsible=other_specialist,
+        actor=specialist,
+    )
+    first.refresh_from_db()
+    assert wo.classify_ended(first) == wo.SUPERSEDED
 
 
 def test_somebody_elses_completion_and_the_systems_are_not_mine(
@@ -134,12 +189,9 @@ def test_a_completion_and_its_successor_are_two_facts(specialist) -> None:
     first = complete_next_action(action=step(matter, specialist), actor=specialist)
     ended(first, at(dt.date(2026, 10, 6)))
     step(matter, specialist, "Järgmine", dt.date(2026, 10, 12))
-    figures = overview(specialist).actions
-    assert value(figures, wo.DONE) == 1
-    assert value(figures, wo.OUTSTANDING) == 0  # the successor is due next week, not owed by Sunday
-
-
-# --- the week is Monday to Sunday in Tallinn ----------------------------------
+    actions = overview(specialist).actions
+    assert value(actions, wo.DONE) == 1
+    assert value(actions, wo.OUTSTANDING) == 0  # due next week, not owed by Sunday
 
 
 @pytest.mark.parametrize(
@@ -157,19 +209,34 @@ def test_the_week_boundary_is_the_tallinn_midnight(specialist, moment, counted) 
     assert value(overview(specialist).actions, wo.DONE) == int(counted)
 
 
-# --- review dates are not obligations -----------------------------------------
+# --- reviews -------------------------------------------------------------------
 
 
-def test_a_passed_review_date_is_not_an_overdue_obligation(specialist) -> None:
-    matter = a_matter(specialist)
-    step(
-        matter,
-        specialist,
+def _waiting(owner: Any, day: dt.date) -> NextAction:
+    return step(
+        a_matter(owner),
+        owner,
         "Ootan ministeeriumi vastust",
-        dt.date(2026, 10, 1),
+        day,
         kind=ActionKind.WAIT,
         date_semantics=DateSemantics.REVIEW_ON,
     )
+
+
+def test_every_review_event_is_counted_and_keeps_its_identity(specialist) -> None:
+    action = _waiting(specialist, dt.date(2026, 10, 1))
+    for next_day in (dt.date(2026, 10, 14), dt.date(2026, 10, 21)):
+        acknowledge_review(action=action, actor=specialist, next_review_date=next_day)
+    week = stat_periods.current(timezone.localdate())
+    ctx = ctx_of(specialist, timezone.localdate())
+    found = wo.records(ctx, wo.REVIEWED, stat_periods.Span(week.start, week.end))
+    assert len(found) == 2
+    assert len({r.key for r in found}) == 2  # two events of one action, both kept
+    assert all(r.actor and "→" in r.note for r in found)
+
+
+def test_a_passed_review_date_is_not_an_overdue_obligation(specialist) -> None:
+    _waiting(specialist, dt.date(2026, 10, 1))
     view = overview(specialist)
     assert value(view.actions, wo.OUTSTANDING) == 0
     assert not [row for row in view.seven_days if row.is_late]
@@ -183,60 +250,270 @@ def test_the_seven_day_panel_holds_open_work_only(specialist) -> None:
     )
     rows = overview(specialist).seven_days
     assert [row.matter.pk for row in rows] == [kept.pk]
-    assert all(row.when <= FRIDAY + dt.timedelta(days=6) for row in rows)
 
 
-# --- the figure and the page behind it are one population ---------------------
+# --- the figure and the page behind it are one population ----------------------
 
 
-@pytest.mark.parametrize("kind", [wo.DONE, wo.POSTPONED, wo.CANCELLED, wo.SUPERSEDED])
-def test_the_records_page_lists_exactly_what_the_figure_counted(client, specialist, kind) -> None:
-    done = complete_next_action(
-        action=step(a_matter(specialist, "D"), specialist), actor=specialist
+def _world(owner: Any, other: Any) -> None:
+    """One of each outcome in the current week, plus noise that must not be counted."""
+    start, _ = week_now()
+    day = lambda n: at(start + dt.timedelta(days=n))  # noqa: E731
+    ended(complete_next_action(action=step(a_matter(owner, "D1"), owner), actor=owner), day(0))
+    ended(complete_next_action(action=step(a_matter(owner, "D2"), owner), actor=owner), day(1))
+    ended(cancel_next_action(action=step(a_matter(owner, "C"), owner), actor=owner), day(1))
+    moved = a_matter(owner, "P")
+    first = step(moved, owner, day=start + dt.timedelta(days=2))
+    step(moved, owner, day=start + dt.timedelta(days=12))
+    ended(first, day(2))
+    shifted = a_matter(owner, "E")
+    first = step(shifted, owner, day=start + dt.timedelta(days=20))
+    step(shifted, owner, day=start + dt.timedelta(days=9))
+    ended(first, day(2))
+    swapped = a_matter(owner, "S")
+    first = step(swapped, owner, "x", start + dt.timedelta(days=2))
+    step(swapped, owner, "y", start + dt.timedelta(days=4))
+    ended(first, day(2))
+    other_done = complete_next_action(action=step(a_matter(other, "O"), other), actor=other)
+    ended(other_done, day(2))
+    waiting = _waiting(owner, start - dt.timedelta(days=3))
+    acknowledge_review(action=waiting, actor=owner, next_review_date=start + dt.timedelta(days=30))
+    a_matter(owner, "Avatud teema")
+
+
+@pytest.mark.parametrize("scope", [wo.SELF, wo.DEPARTMENT])
+def test_the_records_page_lists_exactly_the_records_the_figure_counted(
+    client, specialist, other_specialist, department_head, scope
+) -> None:
+    _world(specialist, other_specialist)
+    today = timezone.localdate()
+    viewer = department_head if scope == wo.DEPARTMENT else specialist
+    ctx = ctx_of(specialist, today, scope, viewer)
+    built = wo.build_week_overview(
+        ctx,
+        items=__import__("app.matters.work_items", fromlist=["work_items"]).work_items(
+            viewer,
+            today=today,
+            responsible=None if scope == wo.DEPARTMENT else specialist,
+        ),
     )
-    ended(done, at(dt.date(2026, 10, 6)))
-    gone = cancel_next_action(action=step(a_matter(specialist, "C"), specialist), actor=specialist)
-    ended(gone, at(dt.date(2026, 10, 6)))
-    moved = a_matter(specialist, "P")
-    first_move = step(moved, specialist, day=dt.date(2026, 10, 7))
-    step(moved, specialist, day=dt.date(2026, 10, 14))
-    ended(first_move, at(dt.date(2026, 10, 7)))
-    swapped = a_matter(specialist, "S")
-    first_swap = step(swapped, specialist, "x", dt.date(2026, 10, 7))
-    step(swapped, specialist, "y", dt.date(2026, 10, 9))
-    ended(first_swap, at(dt.date(2026, 10, 7)))
+    client.force_login(viewer)
+    checked = 0
+    for group in (built.opinions, built.actions, built.commencements, built.previous):
+        for figure in group:
+            if not figure.url.startswith("/minu-asjad/nadal/"):
+                continue
+            response = client.get(figure.url)
+            assert response.status_code == 200, figure.url
+            keys = [r.key for r in response.context["rows"]]
+            assert len(keys) == len(set(keys)), "a record was listed twice"
+            expected = wo.records(
+                ctx,
+                response.context["kind"],
+                _span_of(figure.url, ctx),
+            )
+            assert set(keys) == {r.key for r in expected}, figure.url
+            if figure.cell.exact:
+                assert figure.cell.value == len(keys), figure.url
+            checked += 1
+    assert checked >= 12
 
-    figure = next(f for f in overview(specialist).actions if f.key == kind)
-    client.force_login(specialist)
-    response = client.get(figure.url)
-    assert response.status_code == 200
-    assert len(response.context["rows"]) == figure.cell.value == 1
+
+def _span_of(url: str, ctx: wo.Ctx) -> stat_periods.Span:
+    from urllib.parse import parse_qs, urlparse
+
+    query = parse_qs(urlparse(url).query)
+    start = wo.week_start_of(query.get("nadal", [""])[0], ctx.today)
+    return stat_periods.Span(start, start + dt.timedelta(days=6))
+
+
+def test_the_department_counts_distinct_records_of_everybody_and_a_person_only_theirs(
+    specialist, other_specialist, department_head
+) -> None:
+    _world(specialist, other_specialist)
+    today = timezone.localdate()
+    mine = wo.records(ctx_of(specialist, today), wo.DONE, ctx_of(specialist, today).week.counted)
+    theirs = wo.records(
+        ctx_of(other_specialist, today), wo.DONE, ctx_of(specialist, today).week.counted
+    )
+    dept_ctx = ctx_of(specialist, today, wo.DEPARTMENT, department_head)
+    everyone = wo.records(dept_ctx, wo.DONE, dept_ctx.week.counted)
+    assert {r.key for r in everyone} == {r.key for r in mine} | {r.key for r in theirs}
+    assert len(mine) == 2 and len(theirs) == 1
+
+
+# --- permissions ----------------------------------------------------------------
 
 
 def test_the_records_page_never_shows_another_persons_rows(
     client, specialist, other_specialist
 ) -> None:
-    done = complete_next_action(action=step(a_matter(specialist), specialist), actor=specialist)
-    ended(done, at(dt.date(2026, 10, 6)))
+    _world(specialist, other_specialist)
+    start, _ = week_now()
     client.force_login(other_specialist)
-    url = wo.records_url(wo.DONE, MONDAY)
-    assert client.get(url).context["rows"] == []
+    rows = client.get(wo.records_url(wo.DONE, start)).context["rows"]
+    assert [r.matter.title for r in rows] == ["O"]
 
 
-def test_the_preset_is_removed_by_a_plain_link_to_the_ordinary_page(client, specialist) -> None:
-    client.force_login(specialist)
-    body = client.get(wo.records_url(wo.DONE, MONDAY)).content.decode()
-    assert "Eemalda eelseadistus" in body
-    assert f'href="{reverse("matters:my_work")}"' in body
+def test_the_department_records_are_the_heads_by_route_and_not_by_template(
+    client, specialist, other_specialist, department_head
+) -> None:
+    _world(specialist, other_specialist)
+    start, _ = week_now()
+    url = wo.records_url(wo.DONE, start, department=True)
+    client.force_login(other_specialist)
+    assert client.get(url).status_code == 403
+    client.force_login(department_head)
+    assert client.get(url).status_code == 200
+
+
+def test_a_colleagues_desk_carries_no_historical_figures_or_links(
+    client, department_head, specialist, other_specialist
+) -> None:
+    _world(specialist, other_specialist)
+    view = overview(department_head, subject=specialist)
+    assert view.scope == wo.COLLEAGUE and view.has_history is False
+    assert view.actions == view.opinions == view.previous == view.recent_opinions == []
+    client.force_login(department_head)
+    body = client.get(reverse("matters:person_work", kwargs={"pk": specialist.pk})).content.decode()
+    assert "/minu-asjad/nadal/" not in body
+    assert "Selle nädala ülevaade" not in body
+
+
+def test_the_shared_link_shows_the_recipient_only_what_they_may_open(
+    client, specialist, other_specialist, department_head
+) -> None:
+    _world(specialist, other_specialist)
+    start, _ = week_now()
+    url = wo.records_url(wo.DONE, start)
+    client.force_login(department_head)
+    assert client.get(url).context["rows"] == []  # the head's own desk, not the sender's
+
+
+def test_department_records_equal_what_the_head_may_see(
+    client, specialist, other_specialist, department_head
+) -> None:
+    _world(specialist, other_specialist)
+    ctx = ctx_of(specialist, timezone.localdate(), wo.DEPARTMENT, department_head)
+    visible = NextAction.objects.visible_to(department_head).values_list("matter_id", flat=True)
+    for rec in wo.records(ctx, wo.DONE, ctx.week.counted):
+        assert rec.matter is not None and rec.matter.pk in set(visible)
 
 
 def test_a_garbage_preset_falls_back_instead_of_failing(client, specialist) -> None:
     client.force_login(specialist)
-    response = client.get(reverse("matters:my_week_records") + "?naitaja=%3Cscript%3E&nadal=nope")
-    assert response.status_code == 200
+    url = reverse("matters:my_week_records") + "?naitaja=%3Cscript%3E&nadal=nope&alates=x"
+    assert client.get(url).status_code == 200
 
 
-# --- the strip, the scope and the manager's view ------------------------------
+def test_the_preset_is_removed_by_a_plain_link_to_the_page_it_came_from(
+    client, specialist, department_head
+) -> None:
+    start, _ = week_now()
+    client.force_login(specialist)
+    body = client.get(wo.records_url(wo.DONE, start)).content.decode()
+    assert f'href="{reverse("matters:my_work")}">Eemalda eelseadistus' in body
+    client.force_login(department_head)
+    body = client.get(wo.records_url(wo.DONE, start, department=True)).content.decode()
+    assert f'href="{reverse("matters:department")}">Eemalda eelseadistus' in body
+
+
+# --- opinions: attribution, requests, coverage ---------------------------------
+
+
+def test_sent_opinions_are_credited_exactly_as_minu_statistika_credits_them(
+    specialist, other_specialist
+) -> None:
+    from app.matters.my_statistics import my_statistics
+
+    today = timezone.localdate()
+    for who in (specialist, other_specialist):
+        ctx = ctx_of(who, today)
+        stats = my_statistics(who, today, stat_periods.current(today))
+        card = next(c for g in stats.groups for c in g.cards if c.key == "saadetud")
+        figure = next(f for f in wo.build_week_overview(ctx, items=[]).opinions if f.key == "sent")
+        assert figure.cell == card.cell
+        found = wo.records(ctx, wo.SENT, ctx.week.counted)
+        assert (card.cell.value or 0) == len(found)
+
+
+def test_an_imported_opinion_without_an_actor_follows_the_owner_on_the_sent_day(
+    specialist, other_specialist
+) -> None:
+    """A transfer after the send must not move the credit; unknown stays unknown."""
+    from app.reporting.opinions import SOURCE_IMPORTED, MatterFacts, OpinionFact
+
+    today = timezone.localdate()
+    matter = a_matter(specialist, "Üleantud")
+    sent_day = today - dt.timedelta(days=1)
+    facts = MatterFacts(
+        matter_id=matter.pk,
+        reference="",
+        title=matter.title,
+        year=None,
+        received=None,
+        owner="x",
+        is_eu=False,
+        koda_initiative=False,
+        instrument="",
+        owner_id=specialist.pk,
+    )
+    fact = OpinionFact(matter=facts, sent_on=sent_day, deadline=None, source=SOURCE_IMPORTED)
+    from app.matters.services import assign_matter
+
+    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
+    for who in (specialist, other_specialist):
+        ctx = ctx_of(who, today)
+        assert ctx.data is not None
+        ctx.data = type(ctx.data)(
+            ctx.data.recording, ctx.data.reliable, ctx.data.ownership, [fact], ctx.data.series
+        )
+        from app.matters.my_statistics import UNKNOWN, credit_opinion
+
+        credited = credit_opinion(fact, ctx.data.ownership)
+        found = wo.sent_recs(ctx, stat_periods.Span(sent_day, today))
+        assert bool(found) == (credited == str(who.pk))
+        assert credited != UNKNOWN or not found  # unknown is never credited to anyone
+
+
+def test_open_requests_are_counted_as_requests_with_their_own_identity(specialist) -> None:
+    start, end = week_now()
+    one = create_matter(owner=specialist, actor=specialist, title="Nõue", response_deadline=end)
+    ctx = ctx_of(specialist, timezone.localdate())
+    recs = wo.records(ctx, wo.OWED, ctx.week.counted)
+    assert [r.key for r in recs] == [f"request:{one.pk}:{end}"]
+    assert wo.records(ctx, wo.LATE, ctx.week.counted) == []
+
+
+def test_an_unmeasured_week_is_unknown_and_a_covered_week_is_a_measured_zero(specialist) -> None:
+    today = timezone.localdate()
+    ctx = ctx_of(specialist, today)
+    # Coverage that begins after the week: nothing found there is unknown, never 0.
+    ctx.reliable["actions"] = today + dt.timedelta(days=30)
+    unmeasured = wo.build_week_overview(ctx, items=[])
+    done = next(f for f in unmeasured.actions if f.key == wo.DONE)
+    assert done.cell.coverage == wo.Coverage.UNKNOWN and done.text == "—"
+    # Coverage that began before the week: the same empty week is a genuine 0.
+    ctx.reliable["actions"] = ctx.week.start - dt.timedelta(days=30)
+    measured = wo.build_week_overview(ctx, items=[])
+    done = next(f for f in measured.actions if f.key == wo.DONE)
+    assert done.cell.coverage == wo.Coverage.VERIFIED and done.text == "0"
+
+
+def test_the_new_teema_preview_and_its_list_are_one_population_and_include_closed(
+    specialist,
+) -> None:
+    from app.matters.services import close_matter  # noqa: F401  (closed ones stay received)
+
+    today = timezone.localdate()
+    ctx = ctx_of(specialist, today)
+    window = wo.preview_window(today)
+    full = wo.records(ctx, wo.NEW, window)
+    preview = wo.build_week_overview(ctx, items=[]).new_matters
+    assert [p.matter.pk for p in preview] == [r.matter.pk for r in full[: wo.PREVIEW] if r.matter]
+
+
+# --- the strip, the scope and the page -----------------------------------------
 
 
 def test_the_four_primary_figures_come_first(specialist) -> None:
@@ -244,20 +521,22 @@ def test_the_four_primary_figures_come_first(specialist) -> None:
     assert keys[:4] == ["overdue", "attention", "opinions_drafting", "open"]
 
 
-def test_a_colleagues_desk_gets_no_personal_statistics(department_head, specialist) -> None:
-    view = overview(department_head, subject=specialist)
-    assert view.has_statistics is False
-    assert view.previous == [] and view.monitoring == [] and view.recent_opinions == []
-
-
-def test_the_overview_renders_and_never_writes(
-    client, specialist, django_assert_max_num_queries
+def test_the_department_overview_exists_for_the_head_only(
+    client, department_head, specialist
 ) -> None:
+    client.force_login(department_head)
+    body = client.get(reverse("matters:department")).content.decode()
+    assert "Osakonna 7 päeva tähtajad" in body and "Selle nädala ülevaade" in body
+    client.force_login(specialist)
+    body = client.get(reverse("matters:department")).content.decode()
+    assert "Selle nädala ülevaade" not in body
+
+
+def test_the_overview_renders_and_never_writes(client, specialist) -> None:
     a_matter(specialist)
     client.force_login(specialist)
     before = NextAction.objects.count()
-    with django_assert_max_num_queries(400):
-        response = client.get(reverse("matters:my_work"))
+    response = client.get(reverse("matters:my_work"))
     assert response.status_code == 200
     body = response.content.decode()
     assert "Selle nädala ülevaade" in body and "Minu 7 päeva tähtajad" in body

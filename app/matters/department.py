@@ -103,6 +103,10 @@ class Department:
     #: already builds it. There is no second area implementation here.
     area_page: ov.Overview | None = None
 
+    #: «Selle nädala ülevaade» for the department, built for the head only
+    #: (app/matters/week_overview.py, scope ``DEPARTMENT``).
+    overview: Any = None
+
     #: The department calendar at the top of the rail, on both scopes — Minu
     #: asjad's calendar with no subject (app/matters/calendar.py). ``None`` when
     #: the caller gave no address to build its links on.
@@ -283,5 +287,13 @@ def build_department(
         page.digest = dd.build_digest(viewer, period, kind)
         page.periods = dd.period_options(period, kind)
         page.changes_url = changes_url(period)
+        from app.matters import week_overview
+
+        # The same component and the same resolver as Minu asjad, over the
+        # head's department scope and the page's one read of the work model.
+        page.overview = week_overview.build_week_overview(
+            week_overview.make_ctx(viewer, week_overview.DEPARTMENT, None, today),
+            items=items,
+        )
 
     return page

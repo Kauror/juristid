@@ -75,6 +75,8 @@ RECORDED_BY: dict[str, tuple[tuple[str, str], ...]] = {
     "sent": (("submissions", "0001_initial"), ("matters", "0045_response_deadline_history")),
     "entries": (("matters", "0003_entry"),),
     "closed": (("audit", "0001_initial"),),
+    # `NextAction.ended_by` and the NEXT_ACTION_* events (week overview, r97).
+    "actions": (("audit", "0001_initial"),),
     # MATTER_ASSIGNED, MATTER_CLOSED and MATTER_REOPENED: the ownership and
     # open/closed trail.
     "trail": (("audit", "0001_initial"),),
@@ -88,6 +90,7 @@ RELIABLE_BY: dict[str, str] = {
     "sent": "SUBMISSION_SENT",
     "entries": "ENTRY_ADDED",
     "closed": "MATTER_CLOSED",
+    "actions": "NEXT_ACTION_COMPLETED",
     "trail": "MATTER_ASSIGNED",
 }
 
@@ -858,24 +861,26 @@ def _matter_url(pk: Any) -> str:
     return reverse("matters:matter_detail", args=[pk])
 
 
-def my_statistics(
-    person: Any,
-    today: date,
-    period: Any = None,
-    selected: str = "",
-    *,
-    show_all: bool = False,
-    path: str = "",
-) -> MyStatistics:
-    """The page for ``person``, read as ``person``, for ``period`` (default: this week).
+@dataclass(frozen=True)
+class SeriesData:
+    """Everything one person's figures are read from, loaded once (r97).
 
-    A bounded number of queries whatever the portfolio: the trail, the opinions,
-    the person's own entries and closings, the Teemad created here, the
-    incoming sources, and — for the current period only — Minu asjad's work.
+    Both `my_statistics` and Minu asjad's week overview take their cells from
+    these series, so a week figure on either surface is the same read — and the
+    overview asks for the current and the previous week from one load.
     """
+
+    recording: dict[str, date | None]
+    reliable: dict[str, date | None]
+    ownership: Ownership
+    facts: list[Any]
+    series: dict[str, Series]
+
+
+def load_series(person: Any, today: date, first: date, until: date) -> SeriesData:
+    """Read the person's records from ``first`` to ``until`` into dated series."""
     from app.audit.enums import ChangeEventType
     from app.audit.models import ChangeEvent
-    from app.matters import stat_periods
     from app.matters.enums import MatterOrigin
     from app.matters.models import Entry, Matter
     from app.matters.my_statistics_incoming import incoming_series
@@ -883,19 +888,14 @@ def my_statistics(
     from app.riigikogu.bills import switched_on
     from app.workflow.enums import closure_reason_label
 
-    period = period or stat_periods.current(today)
-    selected = selected if selected in FIGURES else DEFAULT_FIGURE
-    counted, compared = period.counted, period.comparison
-    first = min(period.start, compared.start)
     window = timezone.make_aware(datetime(first.year, first.month, first.day))
-
     recording = recording_since()
     reliable = reliable_since(person, recording)
     ownership = load_ownership(person, today, recording["trail"], reliable["trail"])
     visible = Matter.objects.visible_to(person).values("pk")
 
     all_facts = opinions.opinion_facts(person)
-    facts = [fact for fact in all_facts if first <= fact.sent_on <= period.until]
+    facts = [fact for fact in all_facts if first <= fact.sent_on <= until]
     first_sent: dict[Any, date] = {}
     for fact in all_facts:
         known = first_sent.get(fact.matter.matter_id)
@@ -947,8 +947,42 @@ def my_statistics(
         "lopetatud": closed,
         "arvamuseta": unanswered,
         "sissekanded": entries,
-        **incoming_series(person, ownership, first, period.until, riigikogu_on=switched_on()),
+        **incoming_series(person, ownership, first, until, riigikogu_on=switched_on()),
     }
+
+    return SeriesData(recording, reliable, ownership, all_facts, series)
+
+
+def my_statistics(
+    person: Any,
+    today: date,
+    period: Any = None,
+    selected: str = "",
+    *,
+    show_all: bool = False,
+    path: str = "",
+) -> MyStatistics:
+    """The page for ``person``, read as ``person``, for ``period`` (default: this week).
+
+    A bounded number of queries whatever the portfolio: the trail, the opinions,
+    the person's own entries and closings, the Teemad created here, the
+    incoming sources, and — for the current period only — Minu asjad's work.
+    """
+    from app.matters import stat_periods
+
+    period = period or stat_periods.current(today)
+    selected = selected if selected in FIGURES else DEFAULT_FIGURE
+    counted, compared = period.counted, period.comparison
+    first = min(period.start, compared.start)
+    timezone.make_aware(datetime(first.year, first.month, first.day))
+
+    data = load_series(person, today, first, period.until)
+    recording, reliable, ownership, series = (
+        data.recording,
+        data.reliable,
+        data.ownership,
+        data.series,
+    )
 
     present: dict[str, tuple[list[DrillRow], int]] = {}
     if period.is_current:

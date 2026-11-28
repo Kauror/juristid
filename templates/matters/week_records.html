@@ -1,39 +1,41 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}{{ title }} · Minu asjad · {{ application_name }}{% endblock %}
+{% block title %}{{ title }} · {% if department %}Osakond{% else %}Minu asjad{% endif %} · {{ application_name }}{% endblock %}
 {% comment %}
 The records behind one figure of «Selle nädala ülevaade». The preset is the query
 string and nothing else: it is not a saved view, and «Eemalda eelseadistus»
-leaves for the ordinary Minu asjad (app/matters/week_views.py).
+leaves for the page the figure was on (app/matters/week_views.py).
 {% endcomment %}
 {% block content %}
 <link rel="stylesheet" href="{% static 'css/week-overview.css' %}">
 <div class="page wk">
-  {% include "matters/_my_tabs.html" with my_tab="asjad" %}
+  {% if not department %}{% include "matters/_my_tabs.html" with my_tab="asjad" %}{% endif %}
   <div class="wk__head">
-    <h1 class="wk__title">{{ title }}</h1>
+    <h1 class="wk__title">{{ title }}{% if department %} · osakond{% endif %}</h1>
     <span class="wk__period">{{ period }} · {{ rows|length }}</span>
-    <a class="wk__remove" href="{% url 'matters:my_work' %}">Eemalda eelseadistus</a>
+    <a class="wk__remove" href="{{ back_url }}">Eemalda eelseadistus</a>
   </div>
   {% if rows %}
     <table class="wk__table">
       <thead>
         <tr>
-          <th scope="col">Viide</th>
           <th scope="col">Teema</th>
+          {% if department %}<th scope="col">Vastutaja</th>{% endif %}
           {% if is_action %}<th scope="col">Tegevus</th>{% endif %}
           <th scope="col">Kuupäev</th>
           <th scope="col">{% if is_action %}Tulemus{% else %}Märkus{% endif %}</th>
+          {% if is_action %}<th scope="col">Tegija</th>{% endif %}
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
           <tr>
-            <td class="wk__ref">{{ row.reference }}</td>
-            <th scope="row" class="wk__matter"><a href="{{ row.url }}" title="{{ row.title }}">{{ row.title }}</a></th>
+            <th scope="row" class="wk__matter"><a href="{{ row.url }}" title="{{ row.matter.title }}">{{ row.matter.title }}</a></th>
+            {% if department %}<td>{{ row.owner }}</td>{% endif %}
             {% if is_action %}<td>{{ row.what }}</td>{% endif %}
             <td class="wk__date">{% if row.day %}<time datetime="{{ row.day|date:'Y-m-d' }}">{{ row.day|date:"d.m.Y" }}</time>{% else %}—{% endif %}</td>
             <td>{{ row.note }}</td>
+            {% if is_action %}<td>{{ row.actor }}</td>{% endif %}
           </tr>
         {% endfor %}
       </tbody>

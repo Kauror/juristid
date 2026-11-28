@@ -1,25 +1,25 @@
 """«Selle nädala ülevaade» — what happened and what is still owed, this calendar week (r97).
 
-A read side only. Nothing here writes, fetches or asks an AI anything, and every
-figure is taken from a definition that already exists:
+A read side only: nothing here writes, fetches or asks an AI anything. One scope
+decides what is counted, and the figure and the list behind it come from the
+**same function**, so a number can never describe a different set of records than
+the page it opens:
 
-* **Sent opinions, new Teemad, closed Teemad, incoming monitoring** are Minu
-  statistika's own cards (`app.matters.my_statistics`) for the week's period, so
-  the overview and the detailed page cannot disagree, and a figure whose
-  history is not fully recorded keeps its coverage («≥ 3», «—», a real 0).
-  That builder is self-only, so a manager reading a colleague's desk gets none
-  of these blocks — no cross-person statistics are exposed (r97 §33).
-* **Outstanding opinions** are `dashboard.drafting_matters` for the subject's
-  Teemad: the population Osakond and the register already count. They are
-  counted as Teemad and never divided into the sent figure: sent opinions and
-  open requests have no honest common denominator, so there is no percentage.
-* **Muud tegevused** are counted from the `NextAction` rows themselves, by what
-  actually ended them. A moved day is *edasi lükatud*, never *tehtud* — Lovable's
-  Command Center counts a postponement as work; Juristid does not (ADR 0236).
+* ``SELF`` — a person's own desk. History is credited the way Minu statistika
+  credits it (`my_statistics.credit_opinion`: the recorded sender, else the owner
+  *on the sent day*, else unknown). The current and the previous week are cells of
+  **one** `my_statistics.load_series` read.
+* ``DEPARTMENT`` — Osakond, for the department head only. Distinct records of every
+  Teema the head may read; no per-person totals are added together and nothing is
+  ranked.
+* ``COLLEAGUE`` — a head reading a colleague's desk. Operational work only (the
+  seven-day list): a colleague's personal historical statistics are not part of
+  that workspace (r97 R97-C03).
 
-Every action count names one action row once (its primary key is the identity),
-so a step completed and its successor opened are two different facts, and an
-automatic ending (no ``ended_by``) is nobody's work.
+Actions are counted from the `NextAction` rows by what ended them
+(`classify_ended`) and attributed to ``ended_by``. A moved day is never *tehtud*
+(ADR 0235). Reviews are `NEXT_ACTION_REVIEWED` events, each one counted, because
+a person may legitimately review the same waiting step more than once.
 """
 
 from __future__ import annotations
@@ -36,21 +36,37 @@ from django.utils import timezone
 from app.core.dates import format_estonian_date, local_day_range
 from app.matters import stat_periods
 from app.matters import work_items as wi
+from app.matters.dashboard import drafting_matters
 from app.matters.models import Matter
-from app.matters.my_dates import EffectiveRow, deadline_rows, effective_rows
-from app.matters.my_statistics import Cell, Coverage
-from app.matters.register_filters import register_url
+from app.matters.my_dates import (
+    CERTAINTY_EXACT,
+    EffectiveRow,
+    deadline_rows,
+    effective_rows,
+)
+from app.matters.my_statistics import (
+    Cell,
+    Coverage,
+    SeriesData,
+    cell,
+    credit_opinion,
+    load_series,
+    recording_since,
+    reliable_since,
+)
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 
-#: Outcomes of an action, in the order the overview prints them. The key is the
-#: `?naitaja=` of the records page that lists exactly these rows.
-DONE, REVIEWED, POSTPONED, CANCELLED, SUPERSEDED, OUTSTANDING = (
+SELF, DEPARTMENT, COLLEAGUE = "self", "department", "colleague"
+
+#: Outcomes of an action; the key is the `?naitaja=` of the records page.
+DONE, REVIEWED, POSTPONED, DATE_CHANGED, SUPERSEDED, CANCELLED, OUTSTANDING = (
     "tehtud",
     "ule-vaadatud",
     "edasi-lukatud",
-    "tuhistatud",
+    "tahtaega-muudetud",
     "asendatud",
+    "tuhistatud",
     "tegemata",
 )
 
@@ -58,28 +74,67 @@ ACTION_LABELS: dict[str, str] = {
     DONE: "Tehtud",
     REVIEWED: "Üle vaadatud",
     POSTPONED: "Edasi lükatud",
-    CANCELLED: "Tühistatud",
+    DATE_CHANGED: "Tähtaega muudetud",
     SUPERSEDED: "Asendatud",
+    CANCELLED: "Tühistatud",
     OUTSTANDING: "Tegemata",
 }
+#: What a figure counts, where it is not an action: said for a screen reader.
+ACTION_UNITS: dict[str, str] = {REVIEWED: "ülevaatust"}
 
-#: How many upcoming commencements / recent opinions / new Teemad the preview shows.
+SENT, NEW, OWED, LATE = "saadetud-arvamused", "uued-teemad", "taitmata-nouded", "tahtaja-ulatanud"
+ARRIVED, UPCOMING, PLANNED = "joustunud", "joustuvad", "eeldatavad"
+HISTORY_KINDS = (DONE, REVIEWED, POSTPONED, DATE_CHANGED, SUPERSEDED, CANCELLED)
+COMMENCEMENT_KINDS = (ARRIVED, UPCOMING, PLANNED)
+RECORD_TITLES: dict[str, str] = {
+    **ACTION_LABELS,
+    SENT: "Saadetud arvamused",
+    NEW: "Uued teemad",
+    OWED: "Täitmata arvamuse nõuded sel nädalal",
+    LATE: "Varasemast üle tähtaja arvamuse nõuded",
+    ARRIVED: "Jõustunud",
+    UPCOMING: "Jõustuvad",
+    PLANNED: "Eeldatavad jõustumised",
+}
+
 PREVIEW = 3
-
-#: The seven-day window: today and the six days after it.
 HORIZON_DAYS = 7
+SCOPE_PARAM = "ulatus"
+DEPARTMENT_VALUE = "osakond"
+#: The preview and its «Vaata kõiki» page read the same window.
+PREVIEW_DAYS = 365
+
+#: Incoming-monitoring figures of Minu statistika, in its order.
+_MONITORING = (
+    ("registrid", "Registrite dokumendid"),
+    ("kutsed", "Riigikogu kutsed"),
+    ("arutelud", "Riigikogu arutelud"),
+    ("mainimised", "Koja mainimised"),
+    ("valitsus", "Valitsuse päevakord"),
+)
+
+
+@dataclass(frozen=True)
+class Rec:
+    """One counted record. ``key`` is its identity: two records never share one."""
+
+    key: str
+    matter: Matter | None
+    day: date | None
+    what: str = ""
+    note: str = ""
+    actor: str = ""
+    url: str = ""
+    owner: str = ""
 
 
 @dataclass(frozen=True)
 class WeekFigure:
-    """One number, what it counts, and the exact list behind it."""
-
     key: str
     label: str
     cell: Cell
     url: str = ""
     tone: str = ""
-    #: What the number counts, said once for a screen reader: «teemat», «tegevust».
     unit: str = ""
 
     @property
@@ -91,10 +146,6 @@ class WeekFigure:
         return f"{self.label}: {self.cell.spoken} {self.unit}".strip()
 
 
-def _exact(value: int) -> Cell:
-    return Cell(Coverage.VERIFIED, value)
-
-
 @dataclass(frozen=True)
 class SevenDayRow:
     when: date
@@ -103,11 +154,10 @@ class SevenDayRow:
     what: str
     category: str
     url: str
-    #: «Üle tähtaja» for a late DO deadline, «Ülevaatus» for a WAIT/MONITOR review
-    #: date — which is a review, never an overdue obligation — «» otherwise.
     status: str
     is_review: bool
     is_late: bool
+    owner: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,16 +166,16 @@ class PreviewRow:
     day: date | None
     note: str = ""
     url: str = ""
+    owner: str = ""
 
 
 @dataclass
 class WeekOverview:
+    scope: str
     start: date
     end: date
     previous_start: date
     previous_end: date
-    #: Statistika-backed blocks exist only on one's own desk.
-    has_statistics: bool
     opinions: list[WeekFigure] = field(default_factory=list)
     actions: list[WeekFigure] = field(default_factory=list)
     commencements: list[WeekFigure] = field(default_factory=list)
@@ -140,6 +190,61 @@ class WeekOverview:
     upcoming_commencements: list[EffectiveRow] = field(default_factory=list)
     commencements_url: str = ""
     statistics_url: str = ""
+    previous_statistics_url: str = ""
+
+    @property
+    def has_history(self) -> bool:
+        """Whether the history blocks exist at all (they never do on a colleague's desk)."""
+        return self.scope in (SELF, DEPARTMENT)
+
+    @property
+    def is_department(self) -> bool:
+        return self.scope == DEPARTMENT
+
+
+# ---------------------------------------------------------------------------
+# The context every figure and every list is read through
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Ctx:
+    viewer: Any
+    scope: str
+    subject: Any
+    today: date
+    week: Any
+    last: Any
+    data: SeriesData | None = None
+    #: First day each history figure is reliably recorded (`reliable_since`).
+    reliable: dict[str, date | None] = field(default_factory=dict)
+
+    @property
+    def person_id(self) -> Any:
+        return None if self.subject is None else str(self.subject.pk)
+
+
+def make_ctx(viewer: Any, scope: str, subject: Any, today: date) -> Ctx:
+    week = stat_periods.current(today)
+    ctx = Ctx(viewer, scope, subject, today, week, week.previous)
+    if scope == SELF:
+        ctx.data = load_series(subject, today, ctx.last.start, week.until)
+        ctx.reliable = ctx.data.reliable
+    elif scope == DEPARTMENT:
+        ctx.reliable = reliable_since(viewer, recording_since())
+    return ctx
+
+
+def _span(start: date, end: date) -> stat_periods.Span:
+    return stat_periods.Span(start, end)
+
+
+def _name(user: Any) -> str:
+    return "" if user is None else str(user.get_short_name() or user.display_name)
+
+
+def _matter_url(pk: Any) -> str:
+    return reverse("matters:matter_detail", kwargs={"pk": pk})
 
 
 # ---------------------------------------------------------------------------
@@ -147,26 +252,14 @@ class WeekOverview:
 # ---------------------------------------------------------------------------
 
 
-def _ended_in(week: stat_periods.Span | Any, *, user: Any, subject: Any) -> QuerySet[NextAction]:
-    """Actions *subject* ended during ``week``, on Teemad ``user`` may read.
-
-    ``ended_by`` is the person who did it. A row ended by the system (a follow-up
-    collapsing, the synchronisation) has none and is therefore nobody's work.
-    """
-    return (
-        NextAction.objects.visible_to(user)
-        .filter(local_day_range("ended_at", week.start, week.end), ended_by=subject)
-        .select_related("matter", "replaced_by")
-    )
-
-
 def classify_ended(row: NextAction) -> str:
-    """What ending ``row`` was. The single place that tells a postponement from a replacement.
+    """What ending ``row`` was. The one place that tells the outcomes apart.
 
-    A row replaced by one with the **same text, kind and meaning whose day is
-    later** is the same step moved on (`date_shift`, `Muuda`); a replacement
-    that changes the sentence is a different step taking its place. Only a
-    COMPLETED row is work done.
+    COMPLETED is the only work done. A SUPERSEDED row whose successor is the same
+    step — same text, kind, date meaning, date precision and person — is a **date
+    change**: later is *edasi lükatud*, any other change of day is *tähtaega
+    muudetud*. A successor that differs in anything else is a different action
+    taking its place (*asendatud*), and so is a re-save that changed nothing.
     """
     if row.status == ActionStatus.COMPLETED:
         return DONE
@@ -175,342 +268,335 @@ def classify_ended(row: NextAction) -> str:
     if row.status != ActionStatus.SUPERSEDED:
         return ""
     successor = row.replaced_by
+    if successor is None or (
+        successor.text,
+        successor.kind,
+        successor.date_semantics,
+        successor.date_precision,
+        successor.responsible_id,
+    ) != (row.text, row.kind, row.date_semantics, row.date_precision, row.responsible_id):
+        return SUPERSEDED
+    if successor.target_date == row.target_date:
+        return SUPERSEDED
     if (
-        successor is not None
-        and successor.text == row.text
-        and successor.kind == row.kind
-        and row.target_date is not None
+        row.target_date is not None
         and successor.target_date is not None
         and successor.target_date > row.target_date
     ):
         return POSTPONED
-    return SUPERSEDED
+    return DATE_CHANGED
 
 
-def action_records(
-    user: Any, subject: Any, kind: str, start: date, end: date
-) -> list[tuple[NextAction, str, date]]:
-    """The rows behind one *Muud tegevused* figure: (action, outcome, day it happened)."""
-    span = stat_periods.Span(start, end)
-    out: list[tuple[NextAction, str, date]] = []
+def _ended_in(ctx: Ctx, span: Any) -> QuerySet[NextAction]:
+    rows = (
+        NextAction.objects.visible_to(ctx.viewer)
+        .filter(local_day_range("ended_at", span.start, span.end), ended_by__isnull=False)
+        .select_related("matter", "replaced_by", "ended_by")
+    )
+    if ctx.scope == SELF:
+        rows = rows.filter(ended_by=ctx.subject)
+    return rows.order_by("-ended_at", "pk")
+
+
+def action_recs(ctx: Ctx, kind: str, span: Any) -> list[Rec]:
+    """The records behind one *Muud tegevused* figure, in the scope of ``ctx``."""
     if kind == REVIEWED:
         from app.audit.enums import ChangeEventType
         from app.audit.models import ChangeEvent
 
-        seen: set[Any] = set()
-        events = (
-            ChangeEvent.objects.filter(
-                local_day_range("occurred_at", start, end),
-                event_type=ChangeEventType.NEXT_ACTION_REVIEWED,
-                actor=subject,
+        events = ChangeEvent.objects.filter(
+            local_day_range("occurred_at", span.start, span.end),
+            event_type=ChangeEventType.NEXT_ACTION_REVIEWED,
+            matter__in=Matter.objects.visible_to(ctx.viewer).values("pk"),
+            actor__isnull=False,
+        ).exclude(payload__has_any_keys=["provenance_source", "provenance", "operation"])
+        if ctx.scope == SELF:
+            events = events.filter(actor=ctx.subject)
+        found = list(events.select_related("actor", "matter").order_by("-occurred_at", "pk"))
+        steps = {
+            a.pk: a
+            for a in NextAction.objects.visible_to(ctx.viewer).filter(
+                pk__in=[e.object_id for e in found if e.object_id]
             )
-            .exclude(payload__has_any_keys=["provenance_source", "provenance", "operation"])
-            .order_by("-occurred_at")
-        )
-        by_id = {
-            action.pk: action
-            for action in NextAction.objects.visible_to(user)
-            .filter(pk__in=[event.object_id for event in events if event.object_id])
-            .select_related("matter")
         }
-        for event in events:
-            action = by_id.get(event.object_id)
-            if action is None or action.pk in seen:
+        out = []
+        for event in found:
+            action = steps.get(event.object_id)
+            if action is None:
                 continue
-            seen.add(action.pk)
-            out.append((action, REVIEWED, timezone.localtime(event.occurred_at).date()))
+            moved = event.payload or {}
+            out.append(
+                Rec(
+                    key=f"event:{event.pk}",
+                    matter=event.matter,
+                    day=timezone.localtime(event.occurred_at).date(),
+                    what=action.text,
+                    note=f"{moved.get('from') or '—'} → {moved.get('to') or '—'}",
+                    actor=_name(event.actor),
+                    url=_matter_url(event.matter_id),
+                )
+            )
         return out
-    if kind == OUTSTANDING:
-        return []
-    for row in _ended_in(span, user=user, subject=subject).order_by("-ended_at"):
-        outcome = classify_ended(row)
-        if outcome == kind and row.ended_at is not None:
-            out.append((row, outcome, timezone.localtime(row.ended_at).date()))
+    out = []
+    for row in _ended_in(ctx, span):
+        if classify_ended(row) != kind or row.ended_at is None:
+            continue
+        out.append(
+            Rec(
+                key=f"action:{row.pk}",
+                matter=row.matter,
+                day=timezone.localtime(row.ended_at).date(),
+                what=row.text,
+                note=_change_note(row, kind),
+                actor=_name(row.ended_by),
+                url=_matter_url(row.matter_id),
+            )
+        )
     return out
 
 
-def _outstanding(items: list[wi.WorkItem], today: date, week_end: date) -> list[wi.WorkItem]:
-    """DO obligations that are late or fall due by Sunday. A review date is not one."""
+def _change_note(row: NextAction, kind: str) -> str:
+    if kind in (POSTPONED, DATE_CHANGED) and row.replaced_by is not None:
+        was, now = row.target_date, row.replaced_by.target_date
+        before = format_estonian_date(was) if was else "—"
+        after = format_estonian_date(now) if now else "—"
+        return f"{before} → {after}"
+    return ACTION_LABELS.get(kind, "")
+
+
+def outstanding_recs(ctx: Ctx, items: list[wi.WorkItem]) -> list[Rec]:
+    """DO deadlines that are late or fall due by Sunday. A review date is never one."""
     out = []
     for item in items:
         if not item.is_action or item.when is None:
             continue
         if item.action_kind != ActionKind.DO or item.date_semantics != DateSemantics.DEADLINE:
             continue
-        if item.is_overdue or item.when <= week_end:
-            out.append(item)
+        if item.is_overdue or item.when <= ctx.week.end:
+            out.append(
+                Rec(
+                    key=f"action:{item.object_id}",
+                    matter=item.matter,
+                    day=item.when,
+                    what=item.text,
+                    note="Üle tähtaja" if item.is_overdue else "",
+                    url=item.matter_url,
+                    owner=_name(item.matter.owner) if ctx.scope == DEPARTMENT else "",
+                )
+            )
     return out
 
 
 # ---------------------------------------------------------------------------
-# The overview
+# Opinions
 # ---------------------------------------------------------------------------
 
 
-def records_page(kind: str, *, today: date, week: date | None = None) -> str:
-    """The records page (the temporary preset) for sent opinions / new Teemad: this year to date."""
-    params = {"naitaja": kind, "alates": date(today.year, 1, 1)}
-    if week is not None:
-        params = {"naitaja": kind, "nadal": week}
+def sent_recs(ctx: Ctx, span: Any) -> list[Rec]:
+    """Opinions sent in ``span``: one person's by Minu statistika's credit, or all of them."""
+    from app.reporting import opinions
+
+    facts = ctx.data.facts if ctx.data is not None else opinions.opinion_facts(ctx.viewer)
+    chosen = []
+    for fact in facts:
+        if not span.start <= fact.sent_on <= span.end:
+            continue
+        if ctx.scope == SELF and (
+            ctx.data is None or credit_opinion(fact, ctx.data.ownership) != ctx.person_id
+        ):
+            continue
+        chosen.append(fact)
+    matters = {
+        m.pk: m
+        for m in Matter.objects.visible_to(ctx.viewer)
+        .filter(pk__in={f.matter.matter_id for f in chosen})
+        .select_related("owner")
+    }
+    out = [
+        Rec(
+            key=f"opinion:{fact.matter.matter_id}:{fact.sent_on}:{fact.source}",
+            matter=matters[fact.matter.matter_id],
+            day=fact.sent_on,
+            what=fact.matter.title,
+            note="Lovable'i teatatud" if fact.source == opinions.SOURCE_IMPORTED else "",
+            url=_matter_url(fact.matter.matter_id),
+            owner=_name(matters[fact.matter.matter_id].owner) if ctx.scope == DEPARTMENT else "",
+        )
+        for fact in chosen
+        if fact.matter.matter_id in matters
+    ]
+    return sorted(out, key=lambda r: (r.day or date.min, r.key), reverse=True)
+
+
+def owed_recs(ctx: Ctx, *, before_week: bool) -> list[Rec]:
+    """Open opinion requests (an open `Arvamuse tähtaeg`) that have not been answered.
+
+    A Teema carries at most one open request (`Matter.response_deadline`); earlier
+    ones are ended `MatterResponseDeadline` rows. So this is one record per open
+    request, identified by Teema and deadline — and a Teema with a draft but no
+    recorded request is a Teema-level workload (the strip's «koostamisel»), not a
+    request, and is not counted here.
+    """
+    rows = drafting_matters(ctx.viewer).filter(response_deadline__isnull=False)
+    if ctx.scope == SELF:
+        rows = rows.filter(owner=ctx.subject)
+    if before_week:
+        rows = rows.filter(response_deadline__lt=ctx.week.start)
+    else:
+        rows = rows.filter(
+            response_deadline__gte=ctx.week.start, response_deadline__lte=ctx.week.end
+        )
+    return [
+        Rec(
+            key=f"request:{m.pk}:{m.response_deadline}",
+            matter=m,
+            day=m.response_deadline,
+            what="Arvamuse tähtaeg",
+            url=_matter_url(m.pk),
+            owner=_name(m.owner) if ctx.scope == DEPARTMENT else "",
+        )
+        for m in rows.select_related("owner").order_by("response_deadline", "pk")
+    ]
+
+
+def new_recs(ctx: Ctx, span: Any) -> list[Rec]:
+    """Teemad that arrived in ``span``.
+
+    On a person's desk: the *Uued teemad* figure of Minu statistika (Teemad that
+    came into their responsibility, closed ones included). In the department:
+    Teemad received in the span, closed ones included.
+    """
+    if ctx.scope == SELF and ctx.data is not None:
+        found = ctx.data.series["uued"].within(span)
+        matters = {
+            m.pk: m
+            for m in Matter.objects.visible_to(ctx.viewer).filter(
+                pk__in=[r.matter_id for r in found]
+            )
+        }
+        return sorted(
+            (
+                Rec(
+                    key=f"matter:{r.matter_id}",
+                    matter=matters[r.matter_id],
+                    day=r.day,
+                    url=_matter_url(r.matter_id),
+                )
+                for r in found
+                if r.matter_id in matters
+            ),
+            key=lambda r: (r.day or date.min, r.key),
+            reverse=True,
+        )
+    rows = (
+        Matter.objects.visible_to(ctx.viewer)
+        .real_data()
+        .filter(received_date__gte=span.start, received_date__lte=span.end)
+        .select_related("owner")
+        .order_by("-received_date", "pk")
+    )
+    return [
+        Rec(
+            key=f"matter:{m.pk}",
+            matter=m,
+            day=m.received_date,
+            url=_matter_url(m.pk),
+            owner=_name(m.owner),
+        )
+        for m in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Commencements
+# ---------------------------------------------------------------------------
+
+
+def _eff_rows(ctx: Ctx) -> list[EffectiveRow]:
+    if ctx.scope == COLLEAGUE:
+        return []
+    return effective_rows(
+        ctx.viewer, ctx.today, owner=None if ctx.scope == DEPARTMENT else ctx.subject
+    )
+
+
+def commencement_buckets(ctx: Ctx, rows: list[EffectiveRow]) -> dict[str, list[EffectiveRow]]:
+    """This week's commencements by what is known of them. Precision is never invented."""
+    out: dict[str, list[EffectiveRow]] = {ARRIVED: [], UPCOMING: [], PLANNED: []}
+    for row in rows:
+        if row.start is None or row.end is None:
+            continue
+        if row.start > ctx.week.end or row.end < ctx.week.start:
+            continue
+        if row.certainty != CERTAINTY_EXACT:
+            if row.certainty == "ligikaudne":
+                out[PLANNED].append(row)
+        elif row.end <= ctx.today:
+            out[ARRIVED].append(row)
+        else:
+            out[UPCOMING].append(row)
+    return out
+
+
+def commencement_recs(ctx: Ctx, kind: str, rows: list[EffectiveRow] | None = None) -> list[Rec]:
+    found = commencement_buckets(ctx, rows if rows is not None else _eff_rows(ctx)).get(kind, [])
+    return [
+        Rec(
+            key=f"effective:{r.record.pk}",
+            matter=r.matter,
+            day=r.start,
+            what=r.what,
+            note=f"{r.display_date} · {r.certainty_label}",
+            url=r.matter_url,
+            owner=_name(r.matter.owner) if ctx.scope == DEPARTMENT else "",
+        )
+        for r in found
+    ]
+
+
+# ---------------------------------------------------------------------------
+# The one resolver the records page and the figures share
+# ---------------------------------------------------------------------------
+
+
+def records(
+    ctx: Ctx,
+    kind: str,
+    span: Any,
+    items: list[wi.WorkItem] | None = None,
+    rows: list[EffectiveRow] | None = None,
+) -> list[Rec]:
+    if kind in HISTORY_KINDS:
+        return action_recs(ctx, kind, span)
+    if kind == SENT:
+        return sent_recs(ctx, span)
+    if kind == NEW:
+        return new_recs(ctx, span)
+    if kind == OWED:
+        return owed_recs(ctx, before_week=False)
+    if kind == LATE:
+        return owed_recs(ctx, before_week=True)
+    if kind in COMMENCEMENT_KINDS:
+        return commencement_recs(ctx, kind, rows)
+    if kind == OUTSTANDING:
+        if items is None:
+            items = wi.work_items(
+                ctx.viewer,
+                today=ctx.today,
+                responsible=None if ctx.scope == DEPARTMENT else ctx.subject,
+            )
+        return outstanding_recs(ctx, items)
+    return []
+
+
+def records_url(kind: str, week_start: date, *, department: bool = False) -> str:
+    params = {"naitaja": kind, "nadal": week_start}
+    if department:
+        params[SCOPE_PARAM] = DEPARTMENT_VALUE
     return reverse("matters:my_week_records") + "?" + urlencode(params)
 
 
-def records_url(kind: str, week: date) -> str:
-    """The page that lists exactly the action rows of one outcome in the week of ``week``."""
-    return reverse("matters:my_week_records") + "?" + urlencode({"naitaja": kind, "nadal": week})
-
-
-def build_week_overview(
-    user: Any,
-    subject: Any,
-    today: date,
-    *,
-    items: list[wi.WorkItem],
-    is_self: bool,
-    due_this_week: int,
-    due_url: str,
-    overdue_before_week: int,
-) -> WeekOverview:
-    """Assemble the overview. ``items`` is the work model the page already read."""
-    from app.matters.my_statistics import my_statistics
-
-    week = stat_periods.current(today)
-    last = week.previous
-    overview = WeekOverview(
-        start=week.start,
-        end=week.end,
-        previous_start=last.start,
-        previous_end=last.end,
-        has_statistics=is_self,
-    )
-    stats_url = week.url(reverse("matters:my_statistics"))
-    overview.statistics_url = stats_url
-
-    stats_now = my_statistics(user, today, week) if is_self else None
-
-    # --- Arvamused ---------------------------------------------------------
-    if stats_now is not None:
-        cards = {card.key: card for group in stats_now.groups for card in group.cards}
-        sent = cards["saadetud"]
-        overview.opinions.append(
-            WeekFigure("sent", "Saadetud", sent.cell, sent.url, unit="arvamust")
-        )
-    overview.opinions.append(
-        WeekFigure(
-            "owed",
-            "Täitmata sel nädalal",
-            _exact(due_this_week),
-            due_url,
-            unit="teemat",
-        )
-    )
-    overview.opinions.append(
-        WeekFigure(
-            "late",
-            "Varasemast üle tähtaja",
-            _exact(overdue_before_week),
-            register_url(**_opinion_params(subject, week, before_week=True)),
-            "danger" if overdue_before_week else "",
-            unit="teemat",
-        )
-    )
-
-    # --- Muud tegevused ----------------------------------------------------
-    span = stat_periods.Span(week.start, week.end)
-    counts = {DONE: 0, POSTPONED: 0, CANCELLED: 0, SUPERSEDED: 0}
-    for row in _ended_in(span, user=user, subject=subject):
-        outcome = classify_ended(row)
-        if outcome in counts:
-            counts[outcome] += 1
-    reviews = len(action_records(user, subject, REVIEWED, week.start, week.end))
-    open_do = _outstanding(items, today, week.end)
-    figures = {
-        DONE: counts[DONE],
-        REVIEWED: reviews,
-        POSTPONED: counts[POSTPONED],
-        CANCELLED: counts[CANCELLED],
-        SUPERSEDED: counts[SUPERSEDED],
-    }
-    for key, value in figures.items():
-        overview.actions.append(
-            WeekFigure(
-                key,
-                ACTION_LABELS[key],
-                _exact(value),
-                records_url(key, week.start),
-                unit="tegevust",
-            )
-        )
-    overview.actions.append(
-        WeekFigure(
-            OUTSTANDING,
-            ACTION_LABELS[OUTSTANDING],
-            _exact(len(open_do)),
-            reverse("matters:my_deadlines"),
-            "danger" if any(i.is_overdue for i in open_do) else "",
-            unit="tegevust",
-        )
-    )
-
-    # --- Jõustumised -------------------------------------------------------
-    rows = effective_rows(user, today) if is_self else []
-    dated = [(r, r.start, r.end) for r in rows if r.start is not None and r.end is not None]
-    in_week = [(r, a, b) for r, a, b in dated if a <= week.end and b >= week.start]
-    arrived = [r for r, _, b in in_week if r.certainty == "taps" and b <= today]
-    upcoming = [r for r, _, b in in_week if r.certainty == "taps" and b > today]
-    planned = [r for r, _, _ in in_week if r.certainty == "ligikaudne"]
-    eff_url = reverse("matters:my_effective_dates")
-    for key, label, found in (
-        ("arrived", "Jõustunud", arrived),
-        ("upcoming", "Jõustuvad", upcoming),
-        ("planned", "Eeldatavad", planned),
-    ):
-        overview.commencements.append(
-            WeekFigure(key, label, _exact(len(found)), eff_url, unit="jõustumist")
-        )
-    overview.upcoming_commencements = [
-        r for r in rows if r.start is not None and r.end is not None and r.end >= today
-    ][:PREVIEW]
-    overview.commencements_url = eff_url
-
-    # --- Eelmine nädal -----------------------------------------------------
-    if is_self:
-        before = my_statistics(user, today, last)
-        for group in before.groups:
-            for card in group.cards:
-                if card.key in ("saadetud", "uued", "lopetatud"):
-                    overview.previous.append(
-                        WeekFigure(card.key, card.figure.label, card.cell, card.url)
-                    )
-        for key in (DONE,):
-            overview.previous.append(
-                WeekFigure(
-                    key,
-                    "Tehtud tegevused",
-                    _exact(
-                        sum(
-                            1
-                            for r in _ended_in(last, user=user, subject=subject)
-                            if classify_ended(r) == DONE
-                        )
-                    ),
-                    records_url(key, last.start),
-                    unit="tegevust",
-                )
-            )
-
-    # --- Sissetulev seire (never personal work) ---------------------------
-    if stats_now is not None:
-        for group in stats_now.groups:
-            if group.key == "seire":
-                overview.monitoring = [
-                    WeekFigure(c.key, c.figure.label, c.cell, c.url)
-                    for c in group.cards
-                    if c.cell.value
-                ]
-
-    # --- 7 päeva -----------------------------------------------------------
-    horizon = today + timedelta(days=HORIZON_DAYS - 1)
-    if is_self:
-        for drow in deadline_rows(user, today):
-            if drow.due > horizon:
-                continue
-            item = drow.item
-            review = item.action_kind in (ActionKind.WAIT, ActionKind.MONITOR) or (
-                item.is_action and item.date_semantics == DateSemantics.REVIEW_ON
-            )
-            late = bool(item.is_overdue) and not review
-            if drow.due < today and not late:
-                continue  # a passed review date is a review, not a past obligation
-            overview.seven_days.append(
-                SevenDayRow(
-                    when=drow.due,
-                    relative=drow.relative,
-                    matter=drow.matter,
-                    what=drow.what or drow.category_label,
-                    category=drow.category_label,
-                    url=drow.matter_url,
-                    status="Üle tähtaja" if late else ("Ülevaatus" if review else ""),
-                    is_review=review,
-                    is_late=late,
-                )
-            )
-        overview.seven_days.sort(key=lambda r: (not r.is_late, r.when, str(r.matter.title)))
-    overview.seven_days_url = reverse("matters:my_deadlines")
-
-    # --- Previews ------------------------------------------------------------
-    if is_self and stats_now is not None:
-        overview.recent_opinions, overview.recent_opinions_url = _recent_opinions(user, subject)
-        overview.new_matters, overview.new_matters_url = _new_matters(user, subject)
-    return overview
-
-
-def _opinion_params(subject: Any, week: Any, *, before_week: bool = False) -> dict[str, str]:
-    from app.matters.register_filters import OPEN_FULL, OPINION_DRAFTING
-
-    params: dict[str, str] = {
-        **OPEN_FULL,
-        "vastutaja": str(getattr(subject, "pk", "")),
-        "arvamus": OPINION_DRAFTING,
-    }
-    if before_week:
-        params["tahtaeg_kuni"] = format_estonian_date(week.start - timedelta(days=1))
-    else:
-        params["tahtaeg_kuni"] = format_estonian_date(week.end)
-    return params
-
-
-def _recent_opinions(user: Any, subject: Any) -> tuple[list[PreviewRow], str]:
-    from app.reporting import opinions
-
-    mine = [f for f in opinions.opinion_facts(user) if _credited(f, subject)]
-    latest = sorted(mine, key=lambda f: f.sent_on, reverse=True)[:PREVIEW]
-    matters = {
-        m.pk: m
-        for m in Matter.objects.visible_to(user).filter(pk__in=[f.matter.matter_id for f in latest])
-    }
-    rows = [
-        PreviewRow(
-            matters[f.matter.matter_id],
-            f.sent_on,
-            note=("Lovable'i teatatud" if f.source == opinions.SOURCE_IMPORTED else ""),
-            url=reverse("matters:matter_detail", kwargs={"pk": f.matter.matter_id}),
-        )
-        for f in latest
-        if f.matter.matter_id in matters
-    ]
-    return rows, records_page("saadetud-arvamused", today=timezone.localdate())
-
-
-def _credited(fact: Any, subject: Any) -> bool:
-    """Recorded sender, else the Teema's owner — Minu statistika's credit rule."""
-    if fact.actor_id is not None:
-        return str(fact.actor_id) == str(subject.pk)
-    return fact.matter.owner_id == subject.pk
-
-
-def _new_matters(user: Any, subject: Any) -> tuple[list[PreviewRow], str]:
-    """Latest Teemad this person holds, by the day they were *received*.
-
-    An imported historical Teema has its original receipt date, which is the
-    business meaning; one with no receipt date is not «new» and is left out
-    rather than given a date it never had.
-    """
-    found = list(
-        Matter.objects.visible_to(user)
-        .real_data()
-        .filter(owner=subject, is_open=True, received_date__isnull=False)
-        .order_by("-received_date", "-created_at")[:PREVIEW]
-    )
-    rows = [
-        PreviewRow(m, m.received_date, url=reverse("matters:matter_detail", kwargs={"pk": m.pk}))
-        for m in found
-    ]
-    return rows, records_page("uued-teemad", today=timezone.localdate())
-
-
 def week_start_of(raw: str | None, today: date) -> date:
-    """A ``?nadal=`` Monday, or this week's. Anything unparseable or future is this week."""
     try:
         value = date.fromisoformat(raw or "")
     except ValueError:
@@ -520,12 +606,237 @@ def week_start_of(raw: str | None, today: date) -> date:
     return value - timedelta(days=value.weekday())
 
 
+def preview_window(today: date) -> stat_periods.Span:
+    return _span(max(today - timedelta(days=PREVIEW_DAYS), stat_periods.FIRST_DAY), today)
+
+
+# ---------------------------------------------------------------------------
+# The overview
+# ---------------------------------------------------------------------------
+
+
+def build_week_overview(ctx: Ctx, *, items: list[wi.WorkItem]) -> WeekOverview:
+    """Assemble the overview for ``ctx``. ``items`` is the work model the page already read."""
+    week, last = ctx.week, ctx.last
+    dept = ctx.scope == DEPARTMENT
+    overview = WeekOverview(
+        scope=ctx.scope,
+        start=week.start,
+        end=week.end,
+        previous_start=last.start,
+        previous_end=last.end,
+    )
+    if ctx.scope == COLLEAGUE:
+        _seven_days(ctx, overview, items)
+        return overview
+
+    span_now = _span(week.start, week.end)
+    span_last = _span(last.start, last.end)
+    stats_path = reverse("matters:my_statistics")
+    eff_rows = _eff_rows(ctx)
+
+    def figure(
+        key: str,
+        label: str,
+        kind: str,
+        span: Any,
+        *,
+        history: str = "",
+        tone: str = "",
+        unit: str = "",
+    ) -> WeekFigure:
+        found = records(ctx, kind, span, items, eff_rows)
+        value = (
+            cell(span, ctx.reliable.get(history), len(found))
+            if history
+            else Cell(Coverage.VERIFIED, len(found))
+        )
+        return WeekFigure(
+            key,
+            label,
+            value,
+            records_url(kind, span.start, department=dept),
+            tone if value.exact and value.value else "",
+            unit,
+        )
+
+    # --- Arvamused ---------------------------------------------------------
+    if ctx.scope == SELF and ctx.data is not None:
+        # Coverage from the same series Minu statistika reads; the list behind it
+        # is `sent_recs`, which credits with the same `credit_opinion`.
+        sent = WeekFigure(
+            "sent",
+            "Saadetud",
+            ctx.data.series["saadetud"].cell(week.counted),
+            records_url(SENT, week.start),
+            unit="arvamust",
+        )
+    else:
+        sent = figure("sent", "Saadetud", SENT, span_now, unit="arvamust")
+    overview.opinions = [
+        sent,
+        figure("owed", "Täitmata nõuded sel nädalal", OWED, span_now, unit="nõuet"),
+        figure("late", "Varasemast üle tähtaja", LATE, span_now, tone="danger", unit="nõuet"),
+    ]
+
+    # --- Muud tegevused ----------------------------------------------------
+    overview.actions = [
+        figure(
+            key,
+            ACTION_LABELS[key],
+            key,
+            span_now,
+            history="actions",
+            unit=ACTION_UNITS.get(key, "tegevust"),
+        )
+        for key in HISTORY_KINDS
+    ]
+    overview.actions.append(
+        figure(
+            OUTSTANDING,
+            ACTION_LABELS[OUTSTANDING],
+            OUTSTANDING,
+            span_now,
+            tone="danger",
+            unit="tegevust",
+        )
+    )
+
+    # --- Jõustumised -------------------------------------------------------
+    buckets = commencement_buckets(ctx, eff_rows)
+    for key, label in ((ARRIVED, "Jõustunud"), (UPCOMING, "Jõustuvad"), (PLANNED, "Eeldatavad")):
+        overview.commencements.append(
+            WeekFigure(
+                key,
+                label,
+                Cell(Coverage.VERIFIED, len(buckets[key])),
+                records_url(key, week.start, department=dept),
+                unit="jõustumist",
+            )
+        )
+    overview.upcoming_commencements = [
+        r for r in eff_rows if r.start is not None and r.end is not None and r.end >= ctx.today
+    ][:PREVIEW]
+    overview.commencements_url = reverse("matters:my_effective_dates") if not dept else ""
+
+    # --- Eelmine nädal -----------------------------------------------------
+    if ctx.scope == SELF and ctx.data is not None:
+        series = ctx.data.series
+        overview.previous = [
+            WeekFigure(
+                "p-sent",
+                "Saadetud arvamused",
+                series["saadetud"].cell(last.counted),
+                records_url(SENT, last.start),
+                unit="arvamust",
+            ),
+            WeekFigure(
+                "p-new",
+                "Uued teemad",
+                series["uued"].cell(last.counted),
+                records_url(NEW, last.start),
+                unit="teemat",
+            ),
+            WeekFigure(
+                "p-closed",
+                "Lõpetatud teemad",
+                series["lopetatud"].cell(last.counted),
+                last.url(stats_path, naitaja="lopetatud"),
+                unit="teemat",
+            ),
+            figure(
+                "p-done", "Tehtud tegevused", DONE, span_last, history="actions", unit="tegevust"
+            ),
+        ]
+        overview.statistics_url = week.url(stats_path)
+        overview.previous_statistics_url = last.url(stats_path)
+        for key, label in _MONITORING:
+            found = series[key].cell(week.counted) if key in series else None
+            if found is not None and found.value:
+                overview.monitoring.append(
+                    WeekFigure(key, label, found, week.url(stats_path, naitaja=key))
+                )
+    else:
+        overview.previous = [
+            figure("p-sent", "Saadetud arvamused", SENT, span_last, unit="arvamust"),
+            figure("p-new", "Uued teemad", NEW, span_last, unit="teemat"),
+            figure(
+                "p-done", "Tehtud tegevused", DONE, span_last, history="actions", unit="tegevust"
+            ),
+        ]
+
+    # --- 7 päeva -----------------------------------------------------------
+    _seven_days(ctx, overview, items)
+
+    # --- Previews: the same populations as the «Vaata kõiki» pages -----------
+    window = preview_window(ctx.today)
+    for attr, kind in (("recent_opinions", SENT), ("new_matters", NEW)):
+        previews = [
+            PreviewRow(r.matter, r.day, r.note, r.url, owner=r.owner)
+            for r in records(ctx, kind, window)[:PREVIEW]
+            if r.matter is not None
+        ]
+        setattr(overview, attr, previews)
+        params = {"naitaja": kind, "alates": window.start}
+        if dept:
+            params[SCOPE_PARAM] = DEPARTMENT_VALUE
+        setattr(
+            overview,
+            f"{attr}_url",
+            reverse("matters:my_week_records") + "?" + urlencode(params),
+        )
+    return overview
+
+
+def _seven_days(ctx: Ctx, overview: WeekOverview, items: list[wi.WorkItem]) -> None:
+    horizon = ctx.today + timedelta(days=HORIZON_DAYS - 1)
+    rows = deadline_rows(
+        ctx.viewer,
+        ctx.today,
+        responsible=None if ctx.scope == DEPARTMENT else ctx.subject,
+        items=items,
+    )
+    out = []
+    for drow in rows:
+        if drow.due > horizon:
+            continue
+        item = drow.item
+        review = item.action_kind in (ActionKind.WAIT, ActionKind.MONITOR) or (
+            item.is_action and item.date_semantics == DateSemantics.REVIEW_ON
+        )
+        late = bool(item.is_overdue) and not review
+        if drow.due < ctx.today and not late:
+            continue  # a passed review date is a review, not a past obligation
+        out.append(
+            SevenDayRow(
+                when=drow.due,
+                relative=drow.relative,
+                matter=drow.matter,
+                what=drow.what or drow.category_label,
+                category=drow.category_label,
+                url=drow.matter_url,
+                status="Üle tähtaja" if late else ("Ülevaatus" if review else ""),
+                is_review=review,
+                is_late=late,
+                owner=_name(drow.matter.owner) if ctx.scope == DEPARTMENT else "",
+            )
+        )
+    out.sort(key=lambda r: (not r.is_late, r.when, str(r.matter.title)))
+    overview.seven_days = out
+    overview.seven_days_url = reverse("matters:my_deadlines") if ctx.scope == SELF else ""
+
+
 __all__ = [
     "ACTION_LABELS",
+    "COLLEAGUE",
+    "DEPARTMENT",
+    "SELF",
+    "Ctx",
     "WeekOverview",
-    "action_records",
     "build_week_overview",
     "classify_ended",
+    "make_ctx",
+    "records",
     "records_url",
     "week_start_of",
 ]
