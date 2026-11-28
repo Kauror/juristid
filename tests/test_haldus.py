@@ -48,6 +48,7 @@ def test_the_registry_is_the_contracted_one():
         "ajaloolised_materjalid",
         "lovable",
         "onenote",
+        "ai_kasutus",
         "registrid",
         "kasutajad",
         "susteem",

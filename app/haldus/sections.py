@@ -448,6 +448,14 @@ GROUPS: tuple[Group, ...] = (
                 ),
             ),
             Item(
+                "ai_kasutus",
+                "AI kasutus",
+                "haldus:ai_usage",
+                may_open_system,
+                "Mudelipäringud, tokenid ja hinnanguline maksumus; kuu hoiatuspiirid.",
+                also=("haldus:ai_usage_csv",),
+            ),
+            Item(
                 "registrid",
                 "Registrite jälgimine",
                 "haldus:register_watch",

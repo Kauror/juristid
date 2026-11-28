@@ -87,6 +87,7 @@ def test_the_groups_are_the_contracted_seven_in_order():
     assert [item.key for item in sections.group_of("lovable").items] == [
         "lovable",
         "onenote",
+        "ai_kasutus",
         "registrid",
     ]
 

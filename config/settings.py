@@ -75,6 +75,7 @@ LOCAL_APPS = [
     "app.intelligence",
     "app.related_materials",
     "app.register_watch",
+    "app.ai_usage",
     "app.riigikogu",
     "app.mcp_access",
     "app.mcp_server",
@@ -1074,6 +1075,15 @@ RIIGIKOGU_MONITORING = env_bool("JURISTID_RIIGIKOGU_MONITORING", default=False)
 # separately authorised. The analysis code runs against a mocked model in tests.
 RIIGIKOGU_DOCUMENT_AI = env_bool("JURISTID_RIIGIKOGU_DOCUMENT_AI", default=False)
 RIIGIKOGU_DOCUMENT_AI_MODEL = env("JURISTID_RIIGIKOGU_DOCUMENT_AI_MODEL", "claude-opus-5-5")
+
+
+# The AI usage ledger (app/ai_usage, docs/adr/0235): operational metadata of every
+# model request. Off switch for an emergency only; never gates the work itself.
+AI_USAGE_LEDGER = env_bool("JURISTID_AI_USAGE_LEDGER", default=True)
+# Informational monthly warning levels in euros (blank = none; no default is invented).
+# Crossing one only shows a notice in Haldus; it never switches the model off.
+AI_BUDGET_WARN_EUR = env("JURISTID_AI_BUDGET_WARN_EUR", "")
+AI_BUDGET_ESCALATE_EUR = env("JURISTID_AI_BUDGET_ESCALATE_EUR", "")
 
 
 def _revision() -> str:

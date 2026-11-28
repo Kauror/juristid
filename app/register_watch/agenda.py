@@ -29,6 +29,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
+from app.ai_usage import recorder
 from app.register_watch import ai_call, candidates_ai, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import (
@@ -842,6 +843,8 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
         key=lambda row: int(row["number"]),
         usage=usage,
         client=client,
+        service="government_agenda",
+        presented=len(items),
     )
     if isinstance(answers, ai_call.Failure):
         if answers.kind == "request" and answers.reason == ai_call.OUT_OF_TIME:
@@ -855,6 +858,7 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
         # A readable answer with no usable verdict for any item asked about (empty,
         # other numbers, unusable strengths) is no answer: a bounded retry, never a
         # closed agenda with everything «Hindamata».
+        recorder.set_classified(ai_call.last_operation(usage), 0)
         return _failed_attempt(agenda, usage, "vastuses polnud ühtki kasutatavat hinnangut")
     judged = 0
     with transaction.atomic():
@@ -875,6 +879,7 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
             item.related_matter = topics.get(str(row.get("related") or ""))
             item.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
             judged += 1
+        recorder.set_classified(ai_call.last_operation(usage), judged)
         agenda.judged_at = timezone.now()
         agenda.ai_attempts = F("ai_attempts") + 1
         agenda.save(update_fields=["judged_at", "ai_attempts", "updated_at"])

@@ -23,6 +23,7 @@ from typing import Any
 from django.conf import settings
 from django.db import transaction
 
+from app.ai_usage import recorder
 from app.matters.models import Matter
 from app.register_watch import ai_call, outbound
 from app.register_watch.house_style import KODA_STYLE
@@ -193,6 +194,8 @@ def _judge_batch(
         key=itemgetter("id"),
         usage=usage,
         client=client,
+        service="candidates",
+        presented=len(candidates),
     )
     if isinstance(answers, ai_call.Failure):
         # The list goes on without the model; the next night asks again.
@@ -223,4 +226,5 @@ def _judge_batch(
             candidate.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
             judged += 1
     usage.judged += judged
+    recorder.set_classified(ai_call.last_operation(usage), judged)
     return judged

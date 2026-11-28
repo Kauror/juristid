@@ -7,6 +7,15 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# r98 (osa I) — AI kasutuse arvestus. AJUTINE KUUPÄEV 2026-11-29: muuda tegelikuks paigalduspäevaks enne ühendamist.
+[[day]]
+date = 2026-11-29
+basis = "deployment"
+prs = []
+changes = [
+  "Haldus → Integratsioonid → AI kasutus (tehnilisele haldurile): mudelipäringute arv, korduskatsed, vead, tokenid ja hinnanguline maksumus perioodide kaupa. Maksumus on hinnang hinnakirja järgi, mitte arve; teadmata hind või tokenid on märgitud «Maksumus teadmata».",
+]
+
 # r96 — turvavoor 26.11.2026 ja omaniku kasutajaliidese parandused (#731 #733 #734 #735 #736, ühendatud
 # #737, lõppvoor sama PR-i sees; ADR 0230–0234). AJUTINE KUUPÄEV 2026-11-28: muuda
 # see väljalaske tegelikuks paigalduspäevaks enne ühendamist/paigaldust (väljalaskekomplekt kontrollib seda
