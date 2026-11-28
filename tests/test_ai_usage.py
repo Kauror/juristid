@@ -1,4 +1,4 @@
-"""The AI usage ledger, its pricing and its Haldus page (r98, docs/adr/0235).
+"""The AI usage ledger, its pricing and its Haldus page (r98, docs/adr/0236).
 
 No provider is called: the transport runs against doubles, and the physical
 attempts the SDK would make are simulated by firing the recorder's own hooks.

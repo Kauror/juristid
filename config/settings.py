@@ -1077,7 +1077,7 @@ RIIGIKOGU_DOCUMENT_AI = env_bool("JURISTID_RIIGIKOGU_DOCUMENT_AI", default=False
 RIIGIKOGU_DOCUMENT_AI_MODEL = env("JURISTID_RIIGIKOGU_DOCUMENT_AI_MODEL", "claude-opus-5-5")
 
 
-# The AI usage ledger (app/ai_usage, docs/adr/0235): operational metadata of every
+# The AI usage ledger (app/ai_usage, docs/adr/0236): operational metadata of every
 # model request. Off switch for an emergency only; never gates the work itself.
 AI_USAGE_LEDGER = env_bool("JURISTID_AI_USAGE_LEDGER", default=True)
 # Informational monthly warning levels in euros (blank = none; no default is invented).

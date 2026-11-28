@@ -1,4 +1,4 @@
-"""Recording one AI operation and its attempts (r98, ADR 0235).
+"""Recording one AI operation and its attempts (r98, ADR 0236).
 
 Used by `app.register_watch.ai_call`, the one transport of the model. The
 accounting never decides anything for the caller: every public function here

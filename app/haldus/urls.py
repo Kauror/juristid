@@ -35,7 +35,7 @@ urlpatterns = [
     path("registrid/", register_watch_views.runs, name="register_watch"),
     path("registrid/allikad/", register_watch_views.sources, name="register_watch_sources"),
     path("registrid/<uuid:pk>/", register_watch_views.run, name="register_watch_run"),
-    # -- AI kasutus: the model's usage ledger (r98, docs/adr/0235) --
+    # -- AI kasutus: the model's usage ledger (r98, docs/adr/0236) --
     path("ai-kasutus/", ai_usage_views.ai_usage, name="ai_usage"),
     path("ai-kasutus/csv/", ai_usage_views.ai_usage_csv, name="ai_usage_csv"),
     # -- Andmete sünkroonimine (LS-C): Lovable and OneNote, requests for the host --

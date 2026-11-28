@@ -1,4 +1,4 @@
-# 0235 — Model requests are recorded as operational metadata and priced from a dated catalogue
+# 0236 — Model requests are recorded as operational metadata and priced from a dated catalogue
 
 Date: 2026-11-28 · Status: Implemented in the r98 candidate (Part I of the r98 brief: R98-01…R98-08).
 **Not active in production**: needs release 98, migration `ai_usage/0001`, and the owner's decisions

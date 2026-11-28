@@ -1,4 +1,4 @@
-"""Haldus → Integratsioonid → AI kasutus (r98, docs/adr/0235).
+"""Haldus → Integratsioonid → AI kasutus (r98, docs/adr/0236).
 
 Read-only, for a verified technical administrator (the same predicate as Lovable
 and Süsteemi seis): costs and request metadata are operational, not for every

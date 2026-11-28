@@ -1,4 +1,4 @@
-"""What the ledger says, priced and summed (r98, ADR 0235).
+"""What the ledger says, priced and summed (r98, ADR 0236).
 
 Every figure is read from `AiOperation` / `AiAttempt` rows; nothing calls a
 provider. Cost is an **estimate from list prices**, never an invoice:

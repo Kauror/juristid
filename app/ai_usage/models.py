@@ -1,4 +1,4 @@
-"""The AI usage ledger: operational metadata only (r98, ADR 0235).
+"""The AI usage ledger: operational metadata only (r98, ADR 0236).
 
 One **operation** is one logical request the application made of the model (a
 batch of findings to judge, a page of candidates, an agenda). It has zero or more
