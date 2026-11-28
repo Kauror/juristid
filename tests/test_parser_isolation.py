@@ -21,7 +21,9 @@ from __future__ import annotations
 import ast
 import json
 import socket
+import shutil
 import sys
+import tempfile
 import threading
 import time
 from io import StringIO
@@ -611,7 +613,13 @@ def test_a_child_finds_no_secret_in_its_environment_or_its_parents(tmp_path, mon
 def test_the_service_answers_over_its_socket_and_survives_a_bad_client(tmp_path, settings):
     from app.documents.extraction.isolation_server import Service, check
 
-    path = tmp_path / "sock" / "parser.sock"
+    # A Unix socket path is limited to ~107 bytes. pytest's `tmp_path` under a two-digit
+    # CI shard (`/tmp/juristid-slices/tests-14/tmp/pytest-of-runner/...`) is longer
+    # than that, so the socket lives in its own short directory; everything else
+    # stays under `tmp_path`. (r97: the test only failed when sharding put it in
+    # shard 10 or above.)
+    short = Path(tempfile.mkdtemp(prefix="jp-"))
+    path = short / "parser.sock"
     service = Service(
         socket_path=path,
         scratch=tmp_path / "scratch",
@@ -656,6 +664,7 @@ def test_the_service_answers_over_its_socket_and_survives_a_bad_client(tmp_path,
         stop.set()
         worker.join(timeout=10)
         service.listener.close()
+        shutil.rmtree(short, ignore_errors=True)
 
 
 @linux_only
