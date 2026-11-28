@@ -171,11 +171,13 @@ def assert_normal_file_still_read(service: RunningService) -> None:
 @pytest.mark.parametrize(
     ("hook", "code", "overrides"),
     [
-        ("hang", isolation.TIMEOUT, {"wall_seconds": 3}),
-        ("spin", isolation.CPU_LIMIT, {"wall_seconds": 2}),
-        ("crash", isolation.CRASHED, {}),
-        ("flood", isolation.OUTPUT_LIMIT, {"output": 1024**2}),
-        ("memory", isolation.MEMORY_LIMIT, {"memory": 1024**3}),
+        ("hang", {isolation.TIMEOUT}, {"wall_seconds": 3}),
+        # Through the service the CPU limit equals the wall limit (limits_for), so a
+        # single-threaded spin meets whichever of the two fires first; both are named.
+        ("spin", {isolation.CPU_LIMIT, isolation.TIMEOUT}, {"wall_seconds": 2}),
+        ("crash", {isolation.CRASHED}, {}),
+        ("flood", {isolation.OUTPUT_LIMIT}, {"output": 1024**2}),
+        ("memory", {isolation.MEMORY_LIMIT}, {"memory": 1024**3}),
     ],
 )
 def test_a_poisoned_file_is_stopped_with_its_name_and_the_next_file_is_read(
@@ -191,7 +193,7 @@ def test_a_poisoned_file_is_stopped_with_its_name_and_the_next_file_is_read(
     started = time.monotonic()
     with pytest.raises(ExtractionFailed) as stopped:
         read(f"{HOOK}{hook}.txt", wall_seconds=overrides.get("wall_seconds"))
-    assert stopped.value.code == code
+    assert stopped.value.code in code
     assert "Originaal on alles" in stopped.value.detail
     if "wall_seconds" in overrides:
         # Stopped at its own deadline, not at the client's socket budget.
