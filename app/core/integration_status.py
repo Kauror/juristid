@@ -339,10 +339,44 @@ def _lovable(now: dt.datetime) -> Source:
     return source
 
 
+def _backup(now: dt.datetime) -> Source:
+    """What the application itself knows of backups: the set each night's sync took, and
+    whether it verified to level 2 (`LovableSyncRun.backup_set`, `.verified`).
+
+    Confidentiality (who can read the files) and the off-host copy are facts of the host, not
+    of the database: the page says so and points to the read-only assessment script.
+    """
+    from app.legacy_import.lovable_sync_models import LovableSyncRun, SyncTrigger
+
+    runs = LovableSyncRun.objects.filter(trigger=SyncTrigger.SCHEDULED).exclude(backup_set="")
+    latest = runs.order_by("-started_at").first()
+    source = Source(
+        "backup",
+        "Varukoopia (öise sünkroonimise komplekt)",
+        "Iga öö enne sünkroonimist; ööpäevane kohalik komplekt",
+        UNKNOWN,
+        "Komplekti pole veel salvestatud.",
+        latest.started_at if latest else None,
+        runs.filter(verified=True)
+        .order_by("-started_at")
+        .values_list("started_at", flat=True)
+        .first(),
+    )
+    if latest is not None:
+        source.state, source.line = _daily(source.last_success, now)
+        if not latest.verified:
+            source.state, source.line = ATTENTION, "Viimane komplekt ei ole 2. tasemel kinnitatud"
+    source.limits.append(
+        "Konfidentsiaalsus (õigused) ja väline koopia on hosti näitajad: "
+        "scripts/deploy/juristid-backup-assess.sh (ainult loeb). Väline koopia: puudub."
+    )
+    return source
+
+
 def sources(now: dt.datetime | None = None) -> list[Source]:
     now = now or timezone.now()
     found: list[Source] = []
-    for build in (_lovable, _watch, _sweep, _agenda):
+    for build in (_lovable, _backup, _watch, _sweep, _agenda):
         try:
             found.append(build(now))
         except Exception:

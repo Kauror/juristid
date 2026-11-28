@@ -148,9 +148,8 @@ def ai_usage(request: HttpRequest) -> HttpResponse:
             services=Service.choices,
             outcomes=AttemptOutcome.choices,
             summary=summary,
-            today_cost=report.money(day.cost_eur if not day.unknown_cost_attempts else None)
-            if day.attempts
-            else report.money(day.cost_eur),
+            # The measured part, always; the unknown part is said beside it, never folded in.
+            today_cost=report.money(day.cost_eur) if day.attempts else "Täna päringuid pole",
             today_unknown=day.unknown_cost_attempts,
             month=month,
             month_cost=report.money(month.spent_eur),

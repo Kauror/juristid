@@ -33,7 +33,7 @@
 
   <section class="panel" aria-labelledby="aiusage-filter">
     <h2 class="acctsection__title" id="aiusage-filter">Periood ja filtrid</h2>
-    <form method="get" class="inlineform">
+    <form method="get" class="filterbar">
       <label>Periood
         <select name="periood">{% for key, label in periods %}<option value="{{ key }}"{% if key == f.key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
       </label>
