@@ -689,6 +689,16 @@ def records(
     items: list[wi.WorkItem] | None = None,
     rows: list[EffectiveRow] | None = None,
 ) -> list[Rec]:
+    if kind in (SENT, NEW):
+        # Sent opinions and arrivals are read once for the widest window the page
+        # needs (the previews' year) and sliced for the weeks, so the Teema lookups
+        # behind them happen once, not once per span (r97, bounded reads).
+        window = preview_window(ctx.today)
+        if span.start >= window.start and span.end <= window.end + timedelta(days=7):
+            wide = ("records", kind, "wide")
+            if wide not in ctx.memo:
+                ctx.memo[wide] = _records(ctx, kind, window, items, rows)
+            return [r for r in ctx.memo[wide] if r.day and span.start <= r.day <= span.end]
     key = ("records", kind, span.start, span.end)
     if key not in ctx.memo:
         ctx.memo[key] = _records(ctx, kind, span, items, rows)

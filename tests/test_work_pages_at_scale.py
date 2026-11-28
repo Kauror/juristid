@@ -71,9 +71,10 @@ pytestmark = pytest.mark.django_db
 #: +3 since one count of sent opinions (docs/adr/0214 §6, quality audit 2026-11-19): the
 #: strip, the rail and the team table count from one read of the one reader — its
 #: Teemad, their instruments, areas and senders, and the three sent records.
-#: +13 for «Selle nädala ülevaade» (r97, docs/adr/0235): fixed reads, constant in the
+#: +13 for «Selle nädala ülevaade» (r97, docs/adr/0235), then +8 for the department's incoming
+#: monitoring (one read of the five sources) and coverage: fixed reads, constant in the
 #: size of the department — the 36- and 72-Teema worlds cost the same.
-OSAKOND_BUDGET = 64
+OSAKOND_BUDGET = 72
 #: Minu asjad +1 since the rail's Kalender (docs/adr/0158, amendment of
 #: 2026-10-26): its commencements, read once; its work is the page's own list.
 #: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
