@@ -35,12 +35,14 @@ import time
 from pathlib import Path
 
 import pytest
+from django.urls import reverse
 
+from app.documents.enums import ExtractionState
 from app.documents.extraction import isolation
 from app.documents.extraction.base import SourceFile, registry
 from app.documents.extraction.errors import ExtractionFailed
 
-pytestmark = pytest.mark.skipif(
+linux_only = pytest.mark.skipif(
     not sys.platform.startswith("linux"),
     reason="setrlimit, process groups and Unix sockets are Linux semantics",
 )
@@ -168,6 +170,7 @@ def assert_normal_file_still_read(service: RunningService) -> None:
     assert run == ["parser.sock"]
 
 
+@linux_only
 @pytest.mark.parametrize(
     ("hook", "code", "overrides"),
     [
@@ -202,6 +205,7 @@ def test_a_poisoned_file_is_stopped_with_its_name_and_the_next_file_is_read(
     assert_normal_file_still_read(service)
 
 
+@linux_only
 def test_the_whole_tree_of_a_file_that_ran_out_of_time_is_gone(service):
     before = sleepers(service)
     with pytest.raises(ExtractionFailed) as stopped:
@@ -214,6 +218,7 @@ def test_the_whole_tree_of_a_file_that_ran_out_of_time_is_gone(service):
     assert_normal_file_still_read(service)
 
 
+@linux_only
 def test_sigterm_in_the_middle_of_a_file_kills_its_tree_and_ends_the_service(service, settings):
     """`docker stop`: the child tree dies with the service, the caller is told
     there was no verdict (so the file is handed back, not failed)."""
@@ -244,6 +249,7 @@ def test_sigterm_in_the_middle_of_a_file_kills_its_tree_and_ends_the_service(ser
     assert sleepers(service) - before == set()
 
 
+@linux_only
 def test_a_killed_service_is_no_verdict_on_the_file_and_works_again_when_restarted(service):
     assert "före" in text_of(read("a.txt", "före".encode()))
     service.process.send_signal(signal.SIGKILL)
@@ -258,6 +264,7 @@ def test_a_killed_service_is_no_verdict_on_the_file_and_works_again_when_restart
     assert "efter" in text_of(read("c.txt", b"efter"))
 
 
+@linux_only
 def test_a_caller_that_gives_up_mid_file_does_not_wedge_the_queue(service):
     header = {
         "op": "parse",
@@ -284,8 +291,99 @@ def test_a_caller_that_gives_up_mid_file_does_not_wedge_the_queue(service):
     assert_normal_file_still_read(service)
 
 
+@linux_only
 def test_the_socket_belongs_to_its_owner_alone(service):
     mode = stat.S_IMODE(service.socket_path.lstat().st_mode)
     assert stat.S_ISSOCK(service.socket_path.lstat().st_mode)
     assert mode & 0o077 == 0, oct(mode)
     assert service.socket_path.lstat().st_uid == os.geteuid()
+
+
+# ---------------------------------------------------------------------------
+# What a person is left with (r96 final, section 6): originals and Teema
+# ---------------------------------------------------------------------------
+
+
+def _original_bytes(version) -> bytes:
+    from app.documents.extraction.orchestrator import evidence_storage
+
+    with evidence_storage().open(version.storage_key, "rb") as handle:
+        return handle.read()
+
+
+@linux_only
+@pytest.mark.django_db
+def test_a_file_the_real_service_stopped_keeps_its_original_and_the_teema_is_created(
+    service, signed_in, settings
+):
+    """Through the real client and the real service: the hung file is FAILED once
+    with the sentence that says the original is kept, the next file is read, the
+    Teema is created, and the stored original is byte for byte what was uploaded."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from app.documents.models import DocumentVersion
+    from app.matters import intake_extraction
+    from app.matters.staging import MatterIntakeFile
+    from tests import synthetic_corpus as corpus
+    from tests.test_intake_reader import stage
+
+    settings.DOCUMENT_PARSER_INTAKE_WALL_SECONDS = 3
+    poisoned = corpus.text_pdf(["Rikutud fail"])
+    normal = corpus.text_pdf(["Korras fail"])
+    session = stage(
+        signed_in,
+        SimpleUploadedFile(f"{HOOK}hang.pdf", poisoned, content_type="application/pdf"),
+        SimpleUploadedFile("korras.pdf", normal, content_type="application/pdf"),
+    )
+    reports = intake_extraction.drain(limit=10)
+
+    assert sorted(report.error_code for report in reports) == ["", isolation.TIMEOUT]
+    hung = MatterIntakeFile.objects.get(session=session, original_filename=f"{HOOK}hang.pdf")
+    assert hung.extraction_state == ExtractionState.FAILED
+    assert "Originaal on alles" in hung.extraction_note
+    # Settled: nothing offers it again, however long the reader runs.
+    assert intake_extraction.drain(limit=10) == []
+
+    response = signed_in.post(
+        reverse("matters:matter_create"), {"title": "Rikutud fail", "intake": str(session.pk)}
+    )
+    assert response.status_code == 302
+    kept = DocumentVersion.objects.get(original_filename=f"{HOOK}hang.pdf")
+    assert _original_bytes(kept) == poisoned
+    assert _original_bytes(DocumentVersion.objects.get(original_filename="korras.pdf")) == normal
+
+
+@pytest.mark.django_db
+def test_a_teema_is_created_with_the_real_client_and_no_service_listening(
+    signed_in, settings, tmp_path
+):
+    """No mock: the socket is simply not there. The file stays queued, nothing is
+    written against it, and `Loo teema` keeps the original."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from app.documents.models import DocumentVersion
+    from app.matters import intake_extraction
+    from app.matters.staging import MatterIntakeFile
+    from tests import synthetic_corpus as corpus
+    from tests.test_intake_reader import stage
+
+    settings.DOCUMENT_PARSER_ISOLATION = "service"
+    settings.DOCUMENT_PARSER_SOCKET = str(tmp_path / "nobody-listens" / "parser.sock")
+    content = corpus.text_pdf(["Lugeja puudub"])
+    session = stage(
+        signed_in, SimpleUploadedFile("ootel.pdf", content, content_type="application/pdf")
+    )
+
+    reports = intake_extraction.drain(limit=10)
+
+    assert [report.state for report in reports] == [intake_extraction.PARSER_UNAVAILABLE]
+    waiting = MatterIntakeFile.objects.get(session=session)
+    assert waiting.extraction_state == ExtractionState.PENDING
+    assert waiting.extraction_claimed_at is None
+
+    response = signed_in.post(
+        reverse("matters:matter_create"), {"title": "Lugeja puudub", "intake": str(session.pk)}
+    )
+    assert response.status_code == 302
+    version = DocumentVersion.objects.get(original_filename="ootel.pdf")
+    assert _original_bytes(version) == content
