@@ -119,19 +119,26 @@ def test_a_watched_request_is_observed_with_a_headers_time_only(monkeypatch, sle
 
 
 def test_a_failing_start_record_never_changes_the_provider_call(monkeypatch, sleeps):
-    real = AiAttempt.objects.bulk_create
-    calls = {"n": 0}
+    calls: list[bool] = []
 
-    def flaky(rows: Any, **kw: Any) -> Any:
-        calls["n"] += 1
-        if calls["n"] == 1 and not kw.get("update_conflicts"):
-            raise RuntimeError("database hiccup")
-        return real(rows, **kw)
+    class FailsOnTheStartRecord:
+        """`AiAttempt.objects`, except that the first INSERT-only write (the start record)
+        fails; the final upsert and every read go through."""
 
-    monkeypatch.setattr(
-        type(AiAttempt.objects), "bulk_create", lambda self, rows, **kw: flaky(rows, **kw)
-    )
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+        def bulk_create(self, rows: Any, **kw: Any) -> Any:
+            calls.append(bool(kw.get("update_conflicts")))
+            if len(calls) == 1 and not kw.get("update_conflicts"):
+                raise RuntimeError("database hiccup")
+            return real.bulk_create(rows, **kw)
+
+    real = AiAttempt.objects
+    monkeypatch.setattr(AiAttempt, "objects", FailsOnTheStartRecord(), raising=False)
     answer = _run(monkeypatch, Script([ok()]), ledger=True)
+    monkeypatch.undo()
+    assert calls[:2] == [False, True], calls  # the start record failed, the final upsert ran
     assert not isinstance(answer, ai_call.Failure)  # the answer is the same
     assert AiLedgerGap.objects.filter(kind="attempt_start_not_saved").count() == 1
     attempt = AiAttempt.objects.get()  # the final upsert still stored the attempt

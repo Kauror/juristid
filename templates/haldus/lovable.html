@@ -68,7 +68,7 @@
     <h2 class="acctsection__title" id="sunk-parity">Sõltumatu võrdlus (kooskõla Lovable'iga)</h2>
     <p class="acctnote">Sõltumatu kontroll võrdleb Lovable'i väärtusi Juristide omadega ega kasuta sünkroonimise plaanijat. Sünkroonimise õnnestumine ei ole kooskõla tõend. Võrdlus ei muuda Juristide teemasid ega kirjuta Lovable'isse. Uue lugemisega võrdluse käivitab ainult operaator käsuga <span class="mono">manage.py lovable_parity --fresh</span>; leht ei tee Lovable'ile ühtegi päringut.</p>
     {% for p in diag.parity %}
-      <article class="dsync__block" data-parity-source="{{ p.report.source }}" data-parity-status="{{ p.status }}" data-parity-currency="{{ p.currency }}">
+      <article data-parity-source="{{ p.report.source }}" data-parity-status="{{ p.status }}" data-parity-currency="{{ p.currency }}">
         <h3 class="dsync__subtitle">{{ p.label }}</h3>
         <p>
           {% if p.status == "verified" %}<span class="statechip statechip--ok">{{ p.headline }}</span>
