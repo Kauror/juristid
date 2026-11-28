@@ -465,7 +465,8 @@ def test_minu_asjad_offers_it_only_on_eligible_rows(client, specialist):
     )
     client.force_login(specialist)
 
-    body = client.get(MY_WORK).content.decode()
+    # Below «Selle nädala ülevaade» (r97), whose seven-day table repeats the row texts.
+    body = client.get(MY_WORK).content.decode().split("<!--/week-overview-->")[-1]
 
     assert _row_menu_offers(body, "Teen ise ära")
     assert not _row_menu_offers(body, "Ootan ministeeriumi vastust")
