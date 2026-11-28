@@ -2,8 +2,10 @@
 
 The ten changes an AI client may **propose** to Juristid, what each one asks
 for, which canonical service it ends in, and what it never does. The life of a
-proposal — prepare, the person's approval in Juristid with their own
-authenticator, commit — is the gateway's (CONTRACT §5, ADR 0189); the
+proposal — prepare, then the person's «Kinnita» on Juristid's own page with
+their own authenticator, which saves it at once, then the receipt the gateway
+reports (`commit_prepared_action`; ADR 0189, ADR 0234, which replaced the
+earlier commit step) — is described in `CLIENT-WRITES.md`; the
 interface every operation implements is `app/mcp_writes/operations/base.py`;
 the operations live in `app/mcp_writes/operations/` and are registered in
 `REGISTRY` (`operations/__init__.py`). The MCP tool for an operation is
@@ -20,7 +22,7 @@ the operations live in `app/mcp_writes/operations/` and are registered in
 | Arguments | `extra="forbid"`, a NUL character refused anywhere, every string bounded (free text by `MCP_WRITE_MAX_TEXT_CHARS`, others by the column/form limit), explicit enums, dates as ISO strings at an explicit precision. Malformed input is `invalid_argument`. |
 | Nothing invented | A missing fact is `missing_information` naming what is missing; no day, outcome, deadline, stage or person is defaulted except where the web door defaults it (create: you are the Vastutaja when you name nobody). |
 | `prepare` writes nothing | Proven by the SQL it sends (`no_writes` in `tests/test_mcp_write_operations_support.py`), not only by row counts. |
-| Staleness | `state` is recomputed under the canonical Matter lock at commit and must equal the stored one. Every state carries the Matter's visibility to the user, the user's write right, `is_open`, `record_mode`, deletion, plus the operation's own facts below. |
+| Staleness | `state` is recomputed under the canonical Matter lock when the person presses «Kinnita» and must equal the stored one. Every state carries the Matter's visibility to the user, the user's write right, `is_open`, `record_mode`, deletion, plus the operation's own facts below. |
 | No echo | A refusal never repeats the caller's input (a person's name, a URL, a value); database values such as a Matter's reference, or the candidate colleagues of an ambiguous name, may appear. |
 | No kind labels | The preview never prints «Teen»/«Ootan»/«Jälgin» (ADR 0054); it shows what the date means. |
 | Canonical services only | `execute` calls the service the web door calls; a `DomainError` becomes `OperationRefused("domain_rule", <the service's own sentence>)`. Save-once services receive the proposal id as `once_token` (docs/adr/0167). |

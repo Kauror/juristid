@@ -10,6 +10,7 @@ granted. Every 404 here also means nothing was changed (the POST rows).
 from __future__ import annotations
 
 from collections.abc import Callable
+from urllib.parse import urlencode
 
 import pytest
 from django.test import Client
@@ -197,9 +198,13 @@ def test_no_refused_caller_can_change_an_account(client, caller):
         "account_admin:send_link",
         "account_admin:change_email",
     ):
+        # Urlencoded, as the browser sends these forms. A multipart body from a
+        # caller with no persona is refused earlier still, unread, by the SEC-013
+        # boundary (docs/adr/0233), with its own redirect — tested there.
         response = client.post(
             reverse(route, kwargs={"pk": target.pk}),
-            {"display_name": "Muudetud", "role": "READER", "email": "x@koda.ee"},
+            urlencode({"display_name": "Muudetud", "role": "READER", "email": "x@koda.ee"}),
+            content_type="application/x-www-form-urlencoded",
         )
         assert response.status_code in (302, 404), (caller, route)
         if response.status_code == 302:

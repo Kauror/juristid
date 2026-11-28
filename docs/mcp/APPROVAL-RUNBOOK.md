@@ -25,9 +25,13 @@ cd /mnt/user/appdata/juristid-main/repo
    Nothing in the register changes. ChatGPT gets the approval link.
 2. **Approve.** The colleague opens
    `https://<origin>/mcp-ligipaas/muudatus/<proposal id>/` in their browser:
-   shared gate, **their own persona**, and the page shows exactly what was
-   prepared — the Teema and its link, each field «praegu → pärast», the
-   consequences, what does not change, warnings, expiry. «Kinnita» needs the
+   shared gate, **their own persona**, and the page shows what will be saved,
+   derived again by Juristid from the proposal's arguments (since r96,
+   docs/adr/0234: never the gateway's stored copy) — the Teema and its link,
+   each field «praegu → pärast», the consequences, what does not change,
+   warnings, expiry. The form is bound to exactly that preview: if anything
+   changed between showing it and pressing «Kinnita», the page shows the new
+   preview and asks again, spending no code. «Kinnita» needs the
    current code from their «Juristidi MCP autentija» (the same authenticator,
    lock ladder and throttle as connecting ChatGPT). Production runs with
    `MCP_WRITE_REVERIFY_SECONDS=0` (owner's decision 2026-10-29): **every**
@@ -42,17 +46,27 @@ cd /mnt/user/appdata/juristid-main/repo
    If the record changed since the preview, the page says so and offers no
    «Kinnita». Anybody else — another persona, a guessed link — gets one
    generic refusal.
-3. **Commit.** Back in ChatGPT the colleague (or ChatGPT on their word) calls
-   `commit_prepared_action`. The gateway (`POST /v1/commit`) locks the
-   proposal, checks it is the same person, grant, client and token family,
-   that the approval exists, matches the stored arguments' digest and is
-   younger than `MCP_WRITE_APPROVAL_SECONDS` (10 min), asks again whether the
-   account may still write, takes the record's locks, re-checks it has not
-   moved on, and runs the canonical service — once. A second commit of the
-   same proposal returns the same receipt and saves nothing more.
+   **«Kinnita» saves the change at once** (since r96): in one transaction
+   Juristid locks the proposal and the record, checks everything again
+   (pending, unexpired, the grant's write right, that the ChatGPT connection
+   that prepared it is still live, that the record has not moved on and the
+   preview is still the one shown), writes the approval and runs the canonical
+   service — once. The page says «Kinnitatud ja salvestatud». There is no
+   «Tühista kinnitus» any more: there is no approved-but-unsaved state.
+3. **Receipt.** Back in ChatGPT the colleague (or ChatGPT on their word) calls
+   `commit_prepared_action` — a name kept for compatibility: it does not
+   approve, authorise or execute anything, it only fetches the receipt. The
+   gateway (`POST /v1/commit`) checks it is the same person, grant, client and
+   token family and answers the saved record's receipt (executed), the link
+   again (waiting for approval), or an error for a declined, expired, failed
+   or stale proposal; it executes nothing. A second call returns the same
+   receipt (`replayed`) and saves nothing more.
 
-A model's tool call alone never saves anything. Without step 2 the commit
-answers `awaiting_approval`.
+A model's tool call alone never saves anything. Without step 2 the receipt
+request answers `awaiting_approval`. Repeated calls are budgeted (docs/adr/0234 §4):
+past a limit ChatGPT is told `rate_limited` with how long to wait; the
+approval page itself is never limited, and the receipt of a saved change is
+always answered.
 
 ## What the record's history says
 
@@ -76,8 +90,11 @@ failure code); `--status PENDING|APPROVED|EXECUTED|DECLINED|EXPIRED|FAILED|STALE
 narrows it. `show` prints one proposal's ids, target Matter id and reference,
 status, times, the approval (time, method `totp` / `recent_totp`, validity) and
 every event — `PREPARED`, `APPROVED` / `APPROVAL_REFUSED` / `DECLINED`,
-`COMMITTED` / `COMMIT_REPLAYED` / `COMMIT_REFUSED` / `FAILED` / `EXPIRED` —
-with its codes. Neither prints arguments, preview text, saved values, tokens
+`COMMITTED` (written by the approval page since r96) / `RECEIPT_DELIVERED` /
+`COMMIT_REPLAYED` / `COMMIT_REFUSED` / `FAILED` / `EXPIRED` /
+`FORMAT_RETIRED` — with its codes. Identical refusals past the first five in
+ten minutes are counted, not each written out (`aggregated` on the sixth);
+`mcp_writes budgets` shows the counts. Neither prints arguments, preview text, saved values, tokens
 or codes: to see the content, open the record in Juristid. To join the change
 to its business audit rows, filter `audit_changeevent` / `audit_securityauditevent`
 by the `correlation_id` `show` prints.
@@ -85,9 +102,9 @@ by the `correlation_id` `show` prints.
 What the codes mean: `stale` — the record moved on after preparing or
 approval; `approval_mismatch` — the stored arguments or the approval do not
 match the digest (treat as tampering; check database access); `expired` — not
-approved, or not committed, in time; `forbidden` at commit — the account lost
-its write right between approval and commit; `internal_error` with
-`retryable=True` — nothing was saved and the approval still stands;
+approved in time; `forbidden` on a receipt request or at «Kinnita» — the account
+lost its write right; `internal_error` with `retryable=True` on the approval
+page — nothing was saved and the proposal is still waiting for approval;
 `principal_mismatch` on `COMMIT_REFUSED` — somebody else's token tried this
 proposal id.
 

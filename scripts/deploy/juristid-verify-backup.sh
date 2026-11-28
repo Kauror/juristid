@@ -368,6 +368,9 @@ record_proof() {
   printf 'set=%s\nlevel=%s\nverified_at=%s\ndatabase_sha256=%s\n' \
     "$name" "$level" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sha" >"$tmp" ||
     die "could not write the proof into $SET_DIR."
+  # Private like everything else in the set (SEC-011): the caller's umask is 022
+  # under cron. The Lovable lane opens it to its group afterwards (share_set_proof).
+  chmod 0600 -- "$tmp" || die "could not set the proof's mode in $SET_DIR."
   mv -f -- "$tmp" "$SET_DIR/VERIFIED-L$level" || die "could not write the proof into $SET_DIR."
   PROOF_TMP=""
   note "  proof recorded: $SET_DIR/VERIFIED-L$level"

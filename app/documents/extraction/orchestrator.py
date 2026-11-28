@@ -56,6 +56,7 @@ from app.documents.enums import (
 from app.documents.extraction import parsers  # noqa: F401  (registers every parser)
 from app.documents.extraction.base import DerivativePayload, ParseResult, SourceFile, registry
 from app.documents.extraction.errors import ExtractionFailed, ExtractionNotApplicable
+from app.documents.extraction.isolation import BATCH, ParserUnavailable, parse_isolated
 from app.documents.extraction.limits import current_limits, guard_parse_result
 from app.documents.models import (
     DocumentDerivative,
@@ -84,6 +85,12 @@ class ExtractionReport:
 #: is something that happened to this attempt. The row's own state belongs to
 #: whoever holds the claim now.
 CLAIM_LOST = "CLAIM_LOST"
+
+#: Reported when the parser boundary could not be reached at all (the parser
+#: service restarting, say). Not a verdict on the file: the claim was handed
+#: back and the row is PENDING again, so a loop that sees this must stop
+#: rather than take the same row straight back (docs/adr/0230).
+PARSER_UNAVAILABLE = "PARSER_UNAVAILABLE"
 
 
 class ClaimLost(RuntimeError):
@@ -287,6 +294,7 @@ def parse_source(
     mime_type: str,
     load: Callable[[], bytes],
     reference: str = "",
+    budget: str = BATCH,
 ) -> ParseOutcome:
     """Read one file and say what came out of it. Writes nothing, anywhere.
 
@@ -306,6 +314,15 @@ def parse_source(
     extension allowlist and the content-signature check — happens where it
     always did, at upload, before any of these bytes are stored
     (`app.documents.uploads.read_upload`).
+
+    **The parser does not run in this process** unless
+    ``DOCUMENT_PARSER_ISOLATION`` is ``inprocess`` (the test suite's mode).
+    ``budget`` chooses its limits — `intake` for a file somebody is waiting for
+    on a form, `batch` otherwise — and a file the boundary had to stop is a
+    FAILED outcome with the boundary's own code (`parser_timeout`,
+    `parser_memory_limit`, ...). A boundary that could not be reached at all
+    is not a verdict on the file: :class:`ParserUnavailable` is raised to the
+    caller, which hands its claim back (docs/adr/0230).
     """
     parser = registry.for_mime_type(mime_type)
     if parser is None:
@@ -324,7 +341,7 @@ def parse_source(
 
     source = SourceFile(content=content, filename=filename, mime_type=mime_type)
     try:
-        result = parser.parse(source)
+        result = parse_isolated(parser, source, budget=budget)
         # The postcondition every parser's output must meet, checked here
         # because this is the one path all of them share: a parser that forgot
         # a budget fails like one that enforced it, through the same FAILED
@@ -339,6 +356,8 @@ def parse_source(
             error_code=error.code,
             parser=parser,
         )
+    except ParserUnavailable:
+        raise
     except Exception as error:
         # A parser that raises something unforeseen is a bug, not a valid file
         # verdict. It is logged with the row reference and *no content*, the
@@ -362,12 +381,26 @@ def parse_source(
 
 
 def _run(version: DocumentVersion, *, fence: Any, started: float) -> ExtractionReport:
-    outcome = parse_source(
-        filename=version.original_filename,
-        mime_type=version.mime_type,
-        load=lambda: _read_evidence(version),
-        reference=f"version {version.pk}",
-    )
+    try:
+        outcome = parse_source(
+            filename=version.original_filename,
+            mime_type=version.mime_type,
+            load=lambda: _read_evidence(version),
+            reference=f"version {version.pk}",
+        )
+    except ParserUnavailable:
+        logger.warning("parser boundary unavailable; version=%s handed back", version.pk)
+        _release(version, fence=fence)
+        return ExtractionReport(
+            version_id=version.pk,
+            state=PARSER_UNAVAILABLE,
+            derivatives=0,
+            fragments=0,
+            attachments=0,
+            seconds=time.monotonic() - started,
+            note="Faili lugeja ei olnud kättesaadav; fail jäi järjekorda.",
+            error_code="parser_unavailable",
+        )
 
     if outcome.failed:
         return _record_failure(
@@ -466,6 +499,23 @@ def _settle(version: DocumentVersion, *, state: str, note: str, fence: Any) -> N
     version.extraction_state = state
     version.extraction_claimed_at = None
     version.extraction_note = detail
+
+
+def _release(version: DocumentVersion, *, fence: Any) -> None:
+    """Hand an unfinished claim back: PENDING again, attempts untouched.
+
+    Fenced like every other write, so a pass that already lost its claim
+    raises ClaimLost instead of reopening a row somebody else owns.
+    """
+    updated = DocumentVersion.objects.filter(pk=version.pk, extraction_claimed_at=fence).update(
+        extraction_state=ExtractionState.PENDING,
+        extraction_claimed_at=None,
+        updated_at=timezone.now(),
+    )
+    if not updated:
+        raise ClaimLost(f"Version {version.pk} is no longer claimed by this pass.")
+    version.extraction_state = ExtractionState.PENDING
+    version.extraction_claimed_at = None
 
 
 @transaction.atomic

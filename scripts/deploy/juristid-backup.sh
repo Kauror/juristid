@@ -83,6 +83,33 @@
 
 set -euo pipefail
 
+# CONFIDENTIALITY (SEC-011, docs/adr/0232)
+#
+# A set is the whole register and the bytes of every confidential document.
+# Until 2026-11-26 this script created everything with the caller's umask —
+# 022 under cron — so a dump was 0644 in a 0755 set directory, and every pool
+# object kept the source tree's 0644: readable by any account on the host and
+# by anything that exports the backup share. What it creates is now private
+# whatever the caller's umask:
+#
+#   * `umask 077` before the first write: set directories 0700, the dump, the
+#     manifest, SHA256SUMS and the membership inventories 0600;
+#   * pool objects are copied with `--no-perms`, so a NEW object gets the
+#     source's mode masked by that umask (0600, directories 0700) and its
+#     owner kept (`--numeric-ids` as root: 10001, which is what the
+#     application reads a restored tree as). An object already in the pool is
+#     left exactly as it is: tightening the existing corpus is a one-time,
+#     deliberate operator step (deploy/unraid-main/RECOVERY.md,
+#     «Backup confidentiality»), never something a nightly run does by itself;
+#   * the destination is inspected before anything is written. Access beyond
+#     the owner on the backup root, `sets/` or a pool is reported in the log
+#     on every run, and `--require-private-destination` (or
+#     JURISTID_BACKUP_REQUIRE_PRIVATE=1) refuses to write into it at all.
+#
+# Content, checksums, membership, retention and the restore are untouched:
+# a mode is not part of any digest this script or the verifier computes.
+umask 077
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "$SCRIPT_DIR/lib.sh"
@@ -101,6 +128,7 @@ ALLOW_EMPTY=""
 # the failure this whole script exists to make impossible.
 MINIMUM_FREE_MIB=2048
 RUN_TOC_CHECK=1
+REQUIRE_PRIVATE_DESTINATION="${JURISTID_BACKUP_REQUIRE_PRIVATE:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -109,6 +137,7 @@ Usage:
                      [--project NAME] [--db-name NAME] [--db-user NAME]
                      [--minimum-free-mib N] [--no-toc-check]
                      [--allow-empty evidence|legacy-source]
+                     [--require-private-destination]
 
   --compose-file   the deployment's compose.yml, named explicitly
   --data-root      the appdata tree holding evidence/ and legacy-source/
@@ -119,6 +148,12 @@ Usage:
                    pg_restore --list, which needs the db container — and with
                    it goes the membership check, so a set produced this way has
                    never been checked against the byte pool it names.
+  --require-private-destination
+                   refuse to write when the backup root, sets/ or a pool lets
+                   anybody but its owner's group in (other-read, other-write,
+                   other-search, or an ACL). Without it the same finding is a
+                   WARNING in the log on every run. Also
+                   JURISTID_BACKUP_REQUIRE_PRIVATE=1.
   --allow-empty    this tree is empty on purpose, not because its storage is
                    missing. Name one tree per flag; repeat it for both. Every
                    tree not named keeps the guard. Recorded in the manifest as
@@ -144,6 +179,7 @@ while [ $# -gt 0 ]; do
     --db-user) DB_USER="${2:-}"; shift 2 ;;
     --minimum-free-mib) MINIMUM_FREE_MIB="${2:-}"; shift 2 ;;
     --no-toc-check) RUN_TOC_CHECK=0; shift ;;
+    --require-private-destination) REQUIRE_PRIVATE_DESTINATION=1; shift ;;
     --allow-empty)
       case "${2:-}" in
         evidence | legacy-source) ALLOW_EMPTY="$ALLOW_EMPTY ${2}" ;;
@@ -201,6 +237,27 @@ PARTIAL_DIR="$SET_DIR.partial"
 [ -e "$PARTIAL_DIR" ] && die "an unfinished backup set is already at $PARTIAL_DIR. Look at it before running again; this script never removes another run's work."
 
 mkdir -p "$BACKUP_ROOT/sets" "$EVIDENCE_MIRROR" "$LEGACY_MIRROR"
+
+# Who else can reach what this run is about to write. Asked of the four
+# directories a set's bytes live under — the set directory itself is created
+# 0700 below, whatever its parent allows. Reported every run, so a share that
+# was opened up later is in the next log; refused only when asked to, because
+# a nightly backup that stops on a permission it has always had would leave
+# the register with no recent set at all.
+exposed=0
+for path in "$BACKUP_ROOT" "$BACKUP_ROOT/sets" "$EVIDENCE_MIRROR" "$LEGACY_MIRROR"; do
+  access="$(access_beyond_owner "$path")"
+  [ -n "$access" ] || continue
+  if reaches_others "$access"; then
+    exposed=1
+    note "  CONFIDENTIALITY WARNING: $path allows: $access"
+  else
+    note "  confidentiality note: $path allows its group: $access"
+  fi
+done
+if [ "$exposed" -eq 1 ] && [ "$REQUIRE_PRIVATE_DESTINATION" = "1" ]; then
+  die "the backup destination lets accounts other than its owner in (see the warnings above), and --require-private-destination is set. Nothing has been written. Tighten the destination with deploy/unraid-main/RECOVERY.md («Backup confidentiality») open, and run this again."
+fi
 mkdir "$PARTIAL_DIR"
 
 # The listings taken as the dump begins (see "What belongs to this set"). Not in
@@ -266,7 +323,10 @@ sync_tree() {
   # object that left the source may still be named by an earlier set, or by
   # this one (see "What belongs to this set"), and a mirror that can delete is a
   # mirror that can propagate an accident at the speed of rsync.
-  rsync -a --numeric-ids "$source/" "$mirror/"
+  #
+  # `--no-perms`: a new pool object is private (the source's mode under this
+  # script's umask), an existing one keeps its mode — see CONFIDENTIALITY.
+  rsync -a --no-perms --numeric-ids "$source/" "$mirror/"
 }
 
 step "Evidence and page XML, first pass"
@@ -284,7 +344,7 @@ step "Membership as the dump begins"
 pin_listing() {
   local label="$1" source="$2" mirror="$3" listing="$4" status=0
   capture_inventory "$source" "$listing"
-  rsync -a --numeric-ids --from0 --files-from="$listing" "$source/" "$mirror/" || status=$?
+  rsync -a --no-perms --numeric-ids --from0 --files-from="$listing" "$source/" "$mirror/" || status=$?
   case "$status" in
     0) : ;;
     24) note "  $label: an object left the tree before the dump began; it is not a member" ;;

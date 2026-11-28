@@ -199,7 +199,10 @@ def test_whatever_an_operations_prepare_writes_is_rolled_back(
     events_before = ChangeEvent.objects.count()
     with django_capture_on_commit_callbacks() as callbacks:
         answer = _prepare(world)
-    assert isinstance(answer, dict)
+    # As the owner the careless write runs and is rolled back; as the gateway's
+    # own role (tests/test_mcp_writer_role_runs_proposals.py, docs/adr/0234) the
+    # database refuses it outright and the prepare answers internal_error.
+    assert isinstance(answer, dict) or answer.code == "internal_error"
     world["matter"].refresh_from_db()
     assert world["matter"].title == "Pakendiseaduse muutmine"
     assert ChangeEvent.objects.count() == events_before

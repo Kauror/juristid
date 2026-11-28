@@ -72,6 +72,8 @@ class Command(BaseCommand):
             # r95: the Government changed a stored agenda; the site's listings unread.
             "revised": len(outcome.revised),
             "discovery_failed": int(outcome.discovery_failed),
+            # SEC-010: the step's deadline stopped the run (also counted in errors).
+            "out_of_time": int(outcome.out_of_time),
             # The session day and HTTP status of the newest week without an agenda.
             "note": outcome.note(),
         }

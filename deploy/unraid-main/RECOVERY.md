@@ -163,7 +163,7 @@ usual dry run (README, "Deploying a release" — `db` and `tunnel` must not move
 the named form now lists four services:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-parser batch-parser intake-reader searchindex intake-sweeper notifications
 ```
 
 That starts no extractor — this stack has none — and does not touch `db` or
@@ -374,6 +374,192 @@ it did not create. That is the safe direction and it is left as it is — but it
 is worth recognising the message, because "a backup set already exists" from a
 run you started by hand a moment after the scheduled one is about the clock, not
 about anything being wrong. Wait a second and run it again.
+
+### Backup confidentiality
+
+A set is the whole register; the pools are the bytes of every confidential
+document. From 2026-11-26 (docs/adr/0232 §4) `juristid-backup.sh` writes them
+private whatever umask cron gives it:
+
+| What | Mode | Owner |
+|---|---|---|
+| a new set directory (`sets/<stamp>`, while building `<stamp>.partial`) | 0700 | the account running the backup (root on the host) |
+| `database.dump`, `manifest.json`, `SHA256SUMS`, `*.files0`, `VERIFIED-L2` (written by `--record`) | 0600 | the same |
+| a pool object copied for the first time | 0600 (directories 0700) | kept from the source: 10001 on the host |
+| a pool object already in the pool | **unchanged** | unchanged |
+| a set the Lovable/OneNote lane took and verified: its directory, `VERIFIED-L2`, `SHA256SUMS`, `database.dump` (r96) | 0750 / 0640, group 10001 | root; the group is the application's |
+
+Who reads them, and why that still works: the backup, the verifier, the
+restore and `offhost-backup.sh` all run as root on the host; `pg_restore` reads
+the dump inside the `db` container as that container's root after
+`docker compose cp`; a restore copies pool objects into `appdata` with their
+mode and numeric owner (10001), which is the account the application reads
+them as. No digest, inventory or count includes a mode, so integrity, the
+membership check, level-2 verification and the restore rehearsal are unchanged.
+
+The one reader that is not root: the Lovable lane's one-off containers (the sync
+and the OneNote import) run as the application's account (uid/gid 10001) and read
+the set they were given, mounted read-only at `/backup-set`, to check its proof
+before writing (`lovable_sync.backup_proof_problem`: `VERIFIED-L2`, `SHA256SUMS`,
+and the dump hashed again). After verifying such a set, `juristid-lovable-sync.sh`
+gives exactly those three objects and the set directory to group 10001, read-only
+(`lib.sh` `share_set_proof`; r96 integration) — never to others, and nothing else
+in the set. That account already holds the database's own credentials, so its
+group reading a dump of that database exposes nothing new. Without this every
+APPLY and OneNote import would be refused (`PROOF_MISSING`).
+`share_set_proof` follows no symbolic link, touches no other set, pool or parent
+directory, and if it cannot open the objects the script logs `WARN the set's proof
+could not be opened` and the run refuses the set (`PROOF_MISSING`). The check
+needs the dump's bytes (it hashes the dump again, so a set changed after its
+verification does not pass); a variant in which the host re-hashes the dump just
+before the mount and the container reads only the marker and `SHA256SUMS` would
+withdraw the dump from the group, at the price of the engine no longer checking it
+itself — not made in r96 (`tests/test_backup_confidentiality.py` pins the three
+objects the check opens).
+
+Every run inspects the backup root, `sets/` and both pools and writes one line
+per directory that lets anybody but its owner in: `confidentiality note` for
+the owner's group only, `CONFIDENTIALITY WARNING` for "other" bits or an ACL.
+`--require-private-destination` (or `JURISTID_BACKUP_REQUIRE_PRIVATE=1` in the
+cron environment) turns a warning into a refusal before anything is written.
+Leave it off until the destination has been tightened as below, or the nightly
+backup stops.
+
+#### Tightening what already exists — a targeted, one-time operator step
+
+**Owner approval required. Nothing below is run by any script, and r96 does not
+run it.** It changes modes only (ownership, content, names, pools' membership and
+every checksum stay as they are). State recorded read-only on 28.11.2026, on r95
+scripts: backup root and `sets/` `0755 root`; `evidence/`, `legacy-source/`
+`0755 10001`; 193 set directories `0755`, 1,024 set files `0644` (all root); 29,941
+pool files `0644` (63 owned by root, the rest 10001); 33,887 pool directories —
+30,406 `0755`, 117 `0755 root`, **3,364 `0777`** (all in `evidence/`); no ACL, no
+symbolic link, no `*.partial`; `fingerprints/` `0755` (131 files), `operator-reports/`
+`0700`; the share is not exported (SMB, NFS), no container mounts it or a parent.
+Re-read before acting; the numbers move with every nightly set.
+
+**Preconditions.** (a) The r96 scripts are on the host
+(`grep -c share_set_proof "$REPO/scripts/deploy/lib.sh"` = 1) — the owner's order:
+tighten after r96, so the private-write script and the proof share are in place
+first. (b) A window outside 20:30–23:00 UTC (backup 20:45, cycle 21:00/22:00; the
+on-demand sync polls every 5 minutes and skips while the host lock is held); no
+`juristid-backup|verify-backup|restore|lovable-sync` process (`ps`); no
+`/tmp/juristid-host-lock`. (c) The last nightly set verified to level 2. The
+sync takes a **fresh** set for every APPLY and OneNote import and opens its own
+proof (`share_set_proof`), so no older set needs the group's read access: tightening
+the newest set too does not break the Lovable lane.
+
+1. **Record the before-state, read-only, off the tree** (a mode manifest is the
+   rollback):
+
+   ```sh
+   B=/mnt/user/backups/juristid-main; L=/mnt/user/appdata/juristid-main/backup-logs
+   T=$(date -u +%Y%m%dT%H%M%SZ); umask 077
+   find "$B" -printf '%m\t%p\0' > "$L/confidentiality-modes-$T.nul"     # ~65k entries, ~10 MB
+   ls -ldn "$B" "$B/sets" "$B/evidence" "$B/legacy-source" "$B/fingerprints" "$B/.." \
+     /mnt/disk*/backups/juristid-main /mnt/*pool*/backups/juristid-main 2>/dev/null | tee "$L/confidentiality-before-$T.txt"
+   getfacl -p "$B" "$B/sets" 2>/dev/null | head -20
+   for c in "$B/sets -mindepth 1 -maxdepth 1 -type d" "$B/sets -mindepth 2 -maxdepth 2 -type f" \
+            "$B/evidence $B/legacy-source -type d" "$B/evidence $B/legacy-source -type f"; do
+     echo "$c: $(find $c -perm /077 | wc -l) open, $(find $c -perm /007 | wc -l) world"; done | tee -a "$L/confidentiality-before-$T.txt"
+   grep '^\[' /etc/samba/smb-shares.conf; grep -i 'shareExport\|shareSecurity' /boot/config/shares/backups.cfg
+   docker inspect -f '{{.Name}} {{range .Mounts}}{{.Source}} {{end}}' $(docker ps -aq) | grep -i backups   # expect nothing
+   ```
+
+2. **Take the host lock** (`mkdir /tmp/juristid-host-lock && echo "owner=operator-confidentiality pid=$$" > /tmp/juristid-host-lock/owner`;
+   `trap 'rm -rf /tmp/juristid-host-lock' EXIT`).
+
+3. **The four directories that gate everything below** — closes access on its own:
+
+   ```sh
+   chmod 0700 "$B" "$B/sets" "$B/evidence" "$B/legacy-source"
+   ls -ldn /mnt/disk*/backups/juristid-main /mnt/*pool*/backups/juristid-main   # disk4 and mediapool: 0700?
+   ```
+
+   Unraid presents `/mnt/user/…` as a union and each disk path carries its own
+   modes: if either physical directory (and its `sets`, `evidence`,
+   `legacy-source`) is still `0755`, `chmod 0700` that path too — four directories
+   per disk, never recursive. The parent share directory `/mnt/user/backups`
+   (`0777 99:100`) belongs to every backup under it and is **not** touched here.
+   Stop and look if anything is unexpected (a mount, an ACL, a second owner).
+
+4. **The artifacts**, by name and by kind, never `chmod -R` (it would give a
+   file the directory mode and the reverse). Batches of 2,000, each logged; the
+   selector `-perm /077` makes a re-run idempotent:
+
+   ```sh
+   step() { label=$1 mode=$2; shift 2
+     find "$@" -perm /077 -print0 | nice -n 19 ionice -c3 xargs -0 -r -n 2000 \
+       sh -c 'chmod "$0" -- "$@" && echo "$(date -u +%T) '"$label"' +$#"' "$mode" | tee -a "$L/confidentiality-run-$T.log"; }
+   step setdirs  0700 "$B/sets" -mindepth 1 -maxdepth 1 -type d
+   step setfiles 0600 "$B/sets" -mindepth 2 -maxdepth 2 -type f
+   step pooldirs 0700 "$B/evidence" "$B/legacy-source" -type d
+   step poolfiles 0600 "$B/evidence" "$B/legacy-source" -type f
+   step fpdirs   0700 "$B/fingerprints" -type d
+   step fpfiles  0600 "$B/fingerprints" -type f
+   ```
+
+   About 65,000 metadata writes (about 33,900 + 29,900 pool entries, 1,200 set
+   entries) on the user share, i.e. on `disk4` and `mediapool`: inode updates only,
+   no data moves, but each is a small write (and a parity update on the array disk).
+   **Estimate 5–20 minutes, to be measured**: run the `sets` steps first (1,217
+   objects), time them, and extrapolate before starting the pools. `nice`/`ionice`
+   keep Plex and the other containers' reads ahead of it; stop with Ctrl-C at any
+   time — a half-done run is safe (every object is either as before or tightened)
+   and the same commands resume it. `operator-reports/` is already `0700` and
+   anything else under `$B` that is not a set or a pool is decided separately.
+
+5. **Prove it, then release the lock** (`rm -r /tmp/juristid-host-lock`):
+   - step 1's counts again: every "open" and "world" count must be 0, and
+     `find "$B" -perm /077 | wc -l` = 0;
+   - level 2 on the newest set and on one older set
+     (`juristid-verify-backup.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --set "$B/sets/<stamp>" --backup-root "$B" --level 2`; no `--record`);
+   - a restore of one set (an older one) into a scratch root, as
+     [Rehearsing against a real set](#rehearsing-against-a-real-set) does, from root
+     and from a now-`0600` set; delete the scratch root afterwards (real member
+     material);
+   - the Lovable proof, probe form only (read-only mount of a completed set, no
+     network, nothing written): right now the newest set is private, so the
+     answer must be **no** for all four; the same probe on the set of the next
+     APPLY must say yes for the first three and no for `manifest.json`:
+
+     ```sh
+     IMG=$(docker inspect -f '{{.Config.Image}}' juristid-main-web)
+     docker run --rm --network none --user 10001:10001 -v "$B/sets/<stamp>:/backup-set:ro" --entrypoint python "$IMG" -I -c \
+       'import os;print({n: os.access("/backup-set/"+n, os.R_OK) for n in ("VERIFIED-L2","SHA256SUMS","database.dump","manifest.json")})'
+     ```
+
+     The real proof is the first APPLY after this step: the sync log shows
+     `backup … verified (level 2)` with no `WARN the set's proof could not be opened`,
+     and the run status is not `NO_BACKUP`/`PROOF_*`.
+
+6. **The share.** If step 1 showed `backups` exported over SMB or NFS, un-export it in
+   the Unraid share settings (a host decision outside this repository). Today it is
+   not exported; `appdata` is (`ko`, `lauaarv`) and holds no backups.
+
+7. **Gate before `JURISTID_BACKUP_REQUIRE_PRIVATE=1`.** Only when all hold: step 5
+   passed; one nightly backup and one Lovable APPLY ran after it with no
+   `CONFIDENTIALITY WARNING` and a verified proof; the share is still not exported;
+   the owner says so. Then the variable goes in front of exactly these cron lines
+   (edit the files under `/boot/config/plugins/dynamix/`, then `update_cron`):
+   `juristid.cron` — `45 20 * * * … juristid-backup-nightly.sh …`;
+   `juristid-nightly.cron` — `0 21,22 * * * … juristid-nightly-cycle.sh …` (its sync
+   and backup children inherit it); `juristid-lovable-sync.cron` — `2-59/5 * * * *
+   … juristid-lovable-sync.sh --on-demand` (OneNote requests take their own set).
+   Until then it is **unset**, the default is warn-only, and a destination opened
+   up again only produces a warning.
+
+**Rollback** is the manifest: with the host lock held,
+
+```sh
+while IFS=$'\t' read -r -d '' mode path; do chmod "$mode" -- "$path"; done < "$L/confidentiality-modes-$T.nul"
+```
+
+restores every mode exactly as recorded (names are UUIDs and set stamps, so a
+tab in a path is not a case); then re-run step 5's level-2 check. Ownership and
+content were never changed, so nothing else needs undoing. Rollback of the script
+change is the previous image's `juristid-backup.sh` and `lib.sh`: sets written under
+either version restore under either.
 
 ## Checking a backup
 
@@ -943,7 +1129,7 @@ helps against a database dump forged to match.
 ### Then verify, before anything is published
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web intake-reader searchindex intake-sweeper notifications
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web intake-parser batch-parser intake-reader searchindex intake-sweeper notifications
 ```
 
 Named rather than unqualified, unlike a redeploy: the tunnel is not behind a

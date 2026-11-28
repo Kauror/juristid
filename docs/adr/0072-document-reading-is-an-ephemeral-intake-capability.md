@@ -166,6 +166,11 @@ is — because a reader who sees it as a coverage gap will ask somebody to fix i
 and fixing it means starting the corpus run this record exists to stop starting
 by itself.
 
+> **Amended 2026-11-26 (owner, UX-002).** The two paragraphs Andmekvaliteet
+> printed above the extraction chart («Viis eri seisundit …» and «„Loetud
+> teema loomisel“ tähendab …») are removed. The segment, its exclusion from
+> the denominator and its per-state note in the chart's table are unchanged.
+
 Full-text search over Matter *metadata* — titles, senders, areas, entries — is
 unaffected; so is the opinions archive, which has its own projection. What is
 lost is search inside the bytes of newly filed evidence, and it is lost on

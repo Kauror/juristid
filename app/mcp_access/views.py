@@ -522,6 +522,13 @@ def enrol(request: HttpRequest) -> HttpResponse:
     raw = request.GET.get("kood")
     if raw is not None:
         request.session[SESSION_ENROLMENT] = {"proof": credentials.link_proof(raw[:200])}
+        # Keeping a link's proof is a session-identifier boundary, as for the
+        # account links (SEC-006, docs/adr/0232; r96 integration): a gate session
+        # somebody planted in this browser beforehand is deleted with its row,
+        # so the planter's copy holds no proof to reach the secret with.
+        from app.accounts.local_views import rotate_session
+
+        rotate_session(request)
         return redirect("mcp_access:enrol")
     closed = _door_closed(request)
     if closed is not None:

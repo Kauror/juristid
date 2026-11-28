@@ -131,12 +131,21 @@ def _listing(net, names: list[str]) -> list[str]:
 # -- the door: a deadline bounds the spacing, the socket and the reading ---------------
 
 
-def test_without_a_deadline_the_door_reads_as_before(net):
+def test_without_a_deadline_the_door_still_bounds_the_whole_call(net):
+    """SEC-010 (ADR 0231): no caller's deadline is no longer «no deadline» — the call's
+    own ceiling (`CALL_SECONDS`) still bounds it, read in pieces against the clock."""
     answer = _Slow(net.clock, [PDF], per_read=0)
     net.network.routes["https://adr.envir.ee/x"] = answer
     assert http.get_bytes("adr.envir.ee", "/x") == PDF
     assert net.network.opened == [("https://adr.envir.ee/x", http.TIMEOUT_SECONDS)]
-    assert answer.reads == 1
+    # The piece and the empty read that ends it, each checked against the clock.
+    assert answer.reads == 2
+
+    trickle = _Slow(net.clock, [b"x"] * 1000, per_read=1)
+    net.network.routes["https://adr.envir.ee/slow"] = trickle
+    with pytest.raises(http.DeadlineExceeded):
+        http.get_bytes("adr.envir.ee", "/slow")
+    assert trickle.reads <= http.CALL_SECONDS + 1
 
 
 def test_the_socket_timeout_is_what_is_left(net):

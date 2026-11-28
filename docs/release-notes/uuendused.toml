@@ -7,6 +7,28 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# r96 — turvavoor 26.11.2026 ja omaniku kasutajaliidese parandused (#731 #733 #734 #735 #736, ühendatud
+# #737, lõppvoor sama PR-i sees; ADR 0230–0234). AJUTINE KUUPÄEV 2026-11-28: muuda
+# see väljalaske tegelikuks paigalduspäevaks enne ühendamist/paigaldust (väljalaskekomplekt kontrollib seda
+# ja eraldi päevad ei tohi kattuda). Kasutajale nähtamatud muudatused (SEC-006/007/011/012, parserite
+# isolatsioon konteineris, MCP kirjutaja andmebaasirolli vähendamine, varukoopiate õigused) siia ei kuulu.
+[[day]]
+date = 2026-11-28
+basis = "deployment"
+prs = [731, 733, 734, 735, 736, 737]
+changes = [
+  "Statistika → Andmekvaliteet: korduvad selgitustekstid on eemaldatud.",
+  "Osakond → Muudatused: plokk «Mida see ei näita» on eemaldatud ja tabeli «Vastutajate kaupa» rida «Kokku» on veergudega joondatud.",
+  "Teema → Dokumendid: OneNote'i kuupäevade ja impordi selgitused on eemaldatud; OneNote'i link jääb alles. Mitme impordiseisundiga lehel ei lähe leht enam telefonis küljele laiali.",
+  "Faili võetakse vastu ainult sisseloginud kasutajalt: aegunud seansiga saadetud fail suunab enne vastuvõtmist uuesti sisse logima.",
+  "Uue teema vormil katkestatakse faili lugemine, kui see kestab üle nelja minuti (umbes 39 skaneeritud lehekülge); fail jääb alles ja on avatav ning teema luuakse ikka.",
+  "ChatGPT kaudu ette valmistatud muudatuse kinnituslehel salvestab «Kinnita» muudatuse kohe; nuppu «Tühista kinnitus» enam ei ole ja lehel on vähem selgitavat teksti.",
+  "Kinnituslehe eelvaate koostab Juristid ise; kui muudatus või teema on vahepeal muutunud, näidatakse uut eelvaadet ja küsitakse kinnitust uuesti.",
+  "ChatGPT kaudu tehtavatel päringutel on piirangud, sealhulgas ühine päevane salvestuspiir, mida ei saa ületada ka samaaegsete päringutega; piirangu ületamisel öeldakse, millal uuesti proovida. Haldus → Süsteemi seis näitab nende loendureid.",
+  "Haldus → Registrite jälgimine näitab öise tsükli iga sammu viimast tulemust; ajapiiri tõttu peatatud samm on märgitud.",
+  "Öised registrikontrollid ja Valitsuse päevakorra lugemine lõpevad kindla ajapiiri jooksul; pooleli jäänu loetakse järgmisel ööl.",
+]
+
 # r95 — paigaldatud 26.11.2026 (omaniku otsus 26.11): valitsuse päevakorra leidmine ja 403 (#730, #732;
 # ADR 0219 muudatused 26.11.2026), seire andmebaasi roll (#730).
 [[day]]

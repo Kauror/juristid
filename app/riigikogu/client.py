@@ -77,8 +77,9 @@ class BudgetExceeded(FetchError):
     """The stage used its requests; what is left is read next night."""
 
 
-class OutOfTime(BudgetExceeded):
-    """The stage used its time; what is left is read next night."""
+class OutOfTime(BudgetExceeded, http.DeadlineExceeded):
+    """The stage used its time (or the nightly step's, ADR 0231); what is left is
+    read next night."""
 
 
 @contextmanager
@@ -92,9 +93,15 @@ def time_limit(until: float | None) -> Iterator[None]:
 
 
 def time_left() -> float | None:
-    """Seconds to the current limit (≤ 0 once it passed), or ``None`` without one."""
+    """Seconds to the nearer of the current limit and the run's deadline
+    (`http.remaining`: the nightly step's budget, ADR 0231); ≤ 0 once it passed,
+    ``None`` without either."""
     until = _UNTIL.get()
-    return None if until is None else until - clock()
+    own = None if until is None else until - clock()
+    run = http.remaining()
+    if own is None or run is None:
+        return run if own is None else own
+    return min(own, run)
 
 
 def _out_of_time() -> OutOfTime:

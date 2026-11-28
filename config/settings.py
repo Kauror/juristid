@@ -7,6 +7,7 @@ tree, so a deployed container is configured the same way the local container is.
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from typing import cast
@@ -104,6 +105,11 @@ MIDDLEWARE = [
     # every other (app/core/middleware.py, 2026-10-17 audit JUX-013).
     "app.core.middleware.MethodNotAllowedPageMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    # Before anything reads a body: a multipart request is parsed only for a
+    # session that already carries a signed-in person (by the mode's own test),
+    # and never on a sign-in surface; everything else is refused from the
+    # session and headers alone, the body unread (SEC-013, docs/adr/0233).
+    "app.documents.multipart_boundary.MultipartAuthBoundaryMiddleware",
     # The first thing that parses a multipart body: a request over the upload
     # policy (UPLOAD_MAX_*) is answered 413 here, its temporary files already
     # closed, before the NUL check, CSRF's own read or any view touches a field
@@ -852,6 +858,56 @@ INTAKE_READER_IDLE_SECONDS = env_float("INTAKE_READER_IDLE_SECONDS", 0.5)
 # would strand the form it was reading for long past the session's own life.
 INTAKE_READER_STALE_CLAIM_MINUTES = env_int("INTAKE_READER_STALE_CLAIM_MINUTES", 5)
 
+# --------------------------------------------------------------------------
+# Where untrusted files are parsed (SEC-008, docs/adr/0230)
+# --------------------------------------------------------------------------
+#
+# `service`: over DOCUMENT_PARSER_SOCKET to the no-network, no-secret parser
+# container — what the deployed `Uus teema` reader runs. `subprocess`: a fresh,
+# resource-limited child with an allow-listed environment in this container —
+# the default, for operator commands and the nightly register reads; it cannot
+# take the network away, so it is defence in depth, not the boundary.
+# `inprocess`: the parser in this process — the test suite's mode, refused by
+# the deployed reader.
+DOCUMENT_PARSER_ISOLATION = env(
+    "DOCUMENT_PARSER_ISOLATION", "subprocess" if os.name == "posix" else "inprocess"
+)
+DOCUMENT_PARSER_SOCKET = env("DOCUMENT_PARSER_SOCKET", "")
+# Where `subprocess` mode makes each child's private directory.
+DOCUMENT_PARSER_SCRATCH_ROOT = env("DOCUMENT_PARSER_SCRATCH_ROOT", "")
+# Wall-clock seconds per file. The intake budget must end well inside the
+# reader's stale-claim window (system check documents.E001 holds it there), so a file the
+# boundary stops is settled by the pass that claimed it. The batch budget is
+# for corpus runs and register reads nobody is waiting on, inside
+# EXTRACTION_STALE_CLAIM_MINUTES for the same reason.
+#
+# Intake 240 s (owner decision of 2026-11-28, docs/adr/0230 §Limits): OCR costs
+# about 6 s per dense A4 page on one core, so 240 s reads a scan of about 39
+# pages (120 s read about 19). Held inside the five-minute stale-claim window:
+# 240 + 30 queue + 15 hand-back = 285 s < 300 s. Reverting is the one number
+# below plus the queue, nothing else.
+DOCUMENT_PARSER_INTAKE_WALL_SECONDS = env_int("DOCUMENT_PARSER_INTAKE_WALL_SECONDS", 240)
+DOCUMENT_PARSER_BATCH_WALL_SECONDS = env_int("DOCUMENT_PARSER_BATCH_WALL_SECONDS", 1200)
+# How long a request may wait for the file in front of it at the service.
+# A request that waits longer is handed back (the file stays queued), so the
+# wait is short: the intake wall above has used most of the stale-claim window.
+DOCUMENT_PARSER_QUEUE_SECONDS = env_int("DOCUMENT_PARSER_QUEUE_SECONDS", 30)
+# Address space of a child and everything it starts (RLIMIT_AS). Sized from
+# the measurements in docs/adr/0230; the container's mem_limit is the second,
+# cgroup-wide ceiling.
+DOCUMENT_PARSER_MEMORY_BYTES = env_int("DOCUMENT_PARSER_MEMORY_BYTES", 2 * 1024**3)
+# Largest single file a child may write (RLIMIT_FSIZE).
+DOCUMENT_PARSER_FILE_BYTES = env_int("DOCUMENT_PARSER_FILE_BYTES", 256 * 1024**2)
+DOCUMENT_PARSER_OPEN_FILES = env_int("DOCUMENT_PARSER_OPEN_FILES", 256)
+# What a child may print back. Text-only intake answers are bounded by
+# EXTRACTION_MAX_CHARACTERS (8 M characters, up to 4 bytes each in UTF-8, plus
+# JSON); batch answers also carry thumbnails and e-mail attachments as base64.
+DOCUMENT_PARSER_INTAKE_OUTPUT_BYTES = env_int("DOCUMENT_PARSER_INTAKE_OUTPUT_BYTES", 64 * 1024**2)
+DOCUMENT_PARSER_BATCH_OUTPUT_BYTES = env_int("DOCUMENT_PARSER_BATCH_OUTPUT_BYTES", 512 * 1024**2)
+# Test-only parser hooks (a hang, a crash, a flood). Never read from the
+# environment: only config/test_settings.py can switch it on.
+EXTRACTION_PARSER_TEST_HOOKS = False
+
 # Whether `Uus teema` offers what the reader found in the file.
 #
 # **Off, by product decision of 2026-09-16, and the code stays.** The first
@@ -1247,7 +1303,9 @@ MCP_WRITE_MAX_CONCURRENT_CALLS = env_int("MCP_WRITE_MAX_CONCURRENT_CALLS", 2)
 MCP_WRITE_CALL_TIMEOUT_SECONDS = env_int("MCP_WRITE_CALL_TIMEOUT_SECONDS", 30)
 MCP_WRITE_MAX_REQUEST_BYTES = env_int("MCP_WRITE_MAX_REQUEST_BYTES", 64 * 1024)
 # How long a prepared change waits for its person's approval, how long an
-# approval may wait for its commit, and how long one authenticator code in a
+# approval may wait for its commit (r94 only: since docs/adr/0234 approving
+# saves at once, and this is kept for a rollback's sake), and how long one
+# authenticator code in a
 # gate session spares the person typing another for the next approval. Each
 # approval is still its own button press for its own proposal.
 MCP_WRITE_PROPOSAL_SECONDS = env_int("MCP_WRITE_PROPOSAL_SECONDS", 15 * 60)
@@ -1255,6 +1313,24 @@ MCP_WRITE_APPROVAL_SECONDS = env_int("MCP_WRITE_APPROVAL_SECONDS", 10 * 60)
 MCP_WRITE_REVERIFY_SECONDS = env_int("MCP_WRITE_REVERIFY_SECONDS", 5 * 60)
 # The longest free text one operation takes (a note, a meeting summary).
 MCP_WRITE_MAX_TEXT_CHARS = env_int("MCP_WRITE_MAX_TEXT_CHARS", 8000)
+# The write gateway's cumulative budgets (SEC-014, docs/adr/0234 §4): per user,
+# grant, token family and client, and for the deployment ("GLOBAL"), in fixed
+# 10-minute and one-day windows. 0 switches one budget off. The approval page
+# (where a change is saved) is never budgeted here.
+MCP_WRITE_PREPARE_PER_10M = env_int("MCP_WRITE_PREPARE_PER_10M", 30)
+MCP_WRITE_PREPARE_PER_DAY = env_int("MCP_WRITE_PREPARE_PER_DAY", 300)
+MCP_WRITE_PREPARE_GLOBAL_PER_10M = env_int("MCP_WRITE_PREPARE_GLOBAL_PER_10M", 150)
+MCP_WRITE_PREPARE_GLOBAL_PER_DAY = env_int("MCP_WRITE_PREPARE_GLOBAL_PER_DAY", 1500)
+MCP_WRITE_COMMIT_PER_10M = env_int("MCP_WRITE_COMMIT_PER_10M", 60)
+MCP_WRITE_COMMIT_PER_DAY = env_int("MCP_WRITE_COMMIT_PER_DAY", 600)
+MCP_WRITE_COMMIT_GLOBAL_PER_10M = env_int("MCP_WRITE_COMMIT_GLOBAL_PER_10M", 300)
+MCP_WRITE_REFUSED_PER_10M = env_int("MCP_WRITE_REFUSED_PER_10M", 30)
+MCP_WRITE_MAX_OUTSTANDING = env_int("MCP_WRITE_MAX_OUTSTANDING", 25)
+MCP_WRITE_STORED_BYTES_PER_DAY = env_int("MCP_WRITE_STORED_BYTES_PER_DAY", 8 * 1024 * 1024)
+MCP_WRITE_STORED_BYTES_GLOBAL_PER_DAY = env_int(
+    "MCP_WRITE_STORED_BYTES_GLOBAL_PER_DAY", 64 * 1024 * 1024
+)
+MCP_WRITE_EVENTS_PER_WINDOW = env_int("MCP_WRITE_EVENTS_PER_WINDOW", 5)
 
 # -- the `mcp` process's transport (workstream B, docs/adr/0185 §6) ----------
 #

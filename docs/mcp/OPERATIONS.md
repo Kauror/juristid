@@ -14,7 +14,7 @@ the procedure.
 | Every later release (step 9 replaces a running `mcp`) | [`../../deploy/unraid-main/README.md`](../../deploy/unraid-main/README.md) §"Deploying a release" |
 | Reaching the host safely, keeping secrets out of the transcript | [`../../deploy/unraid-main/OPERATOR.md`](../../deploy/unraid-main/OPERATOR.md) |
 | Operating AI access | **this file** |
-| AI writes: why prepare → approve → commit, and the gateway | ADR 0189; *Phase 2: AI writes* below |
+| AI writes: why prepare → «Kinnita» saves → receipt, and the gateway | ADR 0189; *Phase 2: AI writes* below |
 
 Every command below runs **on the host, from the checkout**, exactly as the
 release runbook's do:
@@ -704,6 +704,17 @@ name, description or schema is not seen by anybody until a workspace admin:
 
 A release whose notes do not mention the MCP tools needs none of this.
 
+**r96 changes the descriptions** (titles, the prepare paragraph, the receipt
+tool's description, the status lines and the server instructions: «Kinnita» on
+the Juristid page saves at once; `commit_prepared_action` only fetches the
+receipt). Tool names, input schemas and annotations are unchanged, so nothing
+breaks without a refresh — but ChatGPT keeps showing the **r94 wording** («Save
+an approved change», «complete a change the user approved») from its frozen
+snapshot until a workspace admin does steps 2 and 4 above. The repository text
+and the deployed `mcp` image do not update that snapshot; record the refresh
+(who, when, the description shown afterwards) in the release log — until it is
+recorded, the connector is *not* updated.
+
 **The release with the five Lovable tools** (docs/adr/0201 §9, migration
 `legacy_import` 0020) mentions them, so after deploying it:
 
@@ -721,7 +732,7 @@ A release whose notes do not mention the MCP tools needs none of this.
 [`LOVABLE-TOOLS.md`](LOVABLE-TOOLS.md) has the tools' arguments, bounds and
 permission rules.
 
-## Phase 2: AI writes — prepare, approve in Juristid, commit (docs/adr/0189)
+## Phase 2: AI writes — prepare, approve (and save) in Juristid, report (docs/adr/0189, 0234)
 
 A colleague can ask ChatGPT to *prepare* an ordinary, reversible change — a
 note, a meeting, a procedural link, the next step, completing a step, the
@@ -732,13 +743,19 @@ owner. **Nothing is written because a model asked.** Every change is:
    forwards it, with the person's own bearer token, to the write gateway, which
    validates it through the same rules as the page and stores a *proposal*
    with a preview. No business record changes;
-2. **approved** — the person opens the approval link on Juristid's own page
-   (`/mcp-ligipaas/muudatus/<id>/`, behind the gate, as their own persona),
-   reads the stored preview and confirms with their own MCP authenticator. Only
-   `web` writes that approval row;
-3. **committed** — the client calls `commit_prepared_action`; the gateway
-   checks the approval, re-checks that the record has not moved on, and runs
-   the canonical service the page runs — once, whatever the retries.
+2. **approved and saved** — the person opens the approval link on Juristid's
+   own page (`/mcp-ligipaas/muudatus/<id>/`, behind the gate, as their own
+   persona). Since r96 (docs/adr/0234) the page derives the change again from
+   the proposal's arguments with Juristid's own code — it never shows the
+   gateway's stored preview — and the person confirms *that* with their own MCP
+   authenticator. In the same transaction, under the record locks and after
+   checking everything again, `web` writes the approval row and runs the
+   canonical service the page runs — once;
+3. **reported** — the client calls `commit_prepared_action` (the name is kept
+   for compatibility; it does not approve, authorise or execute anything) and
+   gets the saved record's receipt, `awaiting_approval` with the link, or an
+   error for a declined, expired, failed or stale proposal. The gateway
+   executes nothing.
 
 No delete, no file upload, no URL fetched, no mail or notification sent, no
 SQL, no account, credential or settings change, no «opinion sent». A technical
@@ -750,7 +767,7 @@ administrator without a business role never writes, whatever a token says.
 | --- | --- | --- | --- | --- | --- |
 | `web` | `juristid-main-web` | `juristid.env` + `MCP_WRITES_ENABLED` (nothing else new) | owner | `internal` | serves the approval page; never calls the gateway |
 | `mcp` | `juristid-main-mcp` | `juristid-mcp.env` + `MCP_WRITES_ENABLED`, `MCP_WRITE_GATEWAY_KEY`; `MCP_WRITE_GATEWAY_URL=http://10.213.250.10:8002` from compose.yml | `juristid_mcp`, SELECT only, read-only sessions — unchanged | `internal`, `mcp_edge`, `mcp_write` | `db`; the gateway over `mcp_write` |
-| `mcp-writer` | `juristid-main-mcp-writer` | `juristid-mcp-writer.env` only | `juristid_mcp_writer` (least privilege, below) | `internal`, `mcp_write` | `db`; listens on `10.213.250.10:8002` — its fixed `mcp_write` address — and nowhere else; no host port |
+| `mcp-writer` | `juristid-main-mcp-writer` | `juristid-mcp-writer.env` only | `juristid_mcp_writer` (prepares and reports only once `mcp_writer_db_role --apply` has narrowed it — until the operator runs it the role still holds the r95 business-table writes; below) | `internal`, `mcp_write` | `db`; listens on `10.213.250.10:8002` — its fixed `mcp_write` address — and nowhere else; no host port |
 | `mcp-tunnel` | `juristid-main-mcp-tunnel` | unchanged | — | `mcp_edge` only | `mcp` — **not** `mcp-writer`: the two share no network |
 
 `mcp_write` (`juristid-main-mcp-write`) is `internal: true` — no route off the
@@ -773,8 +790,8 @@ as the writer role (E058).
 The gateway key is **not** authorization. It proves the caller is the `mcp`
 container; every request is authorized by the person's own token, re-verified
 by the gateway (hash, `juristid.write` scope, grant active and write-enabled,
-account active, security epoch, a business role), and every commit by the
-approval row.
+account active, security epoch, a business role). Since r96 nothing the
+gateway does saves a business record: only the person's approval on `web` does.
 
 ### The writer's database role
 
@@ -782,39 +799,80 @@ approval row.
 table with its reason. LOGIN; NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOINHERIT,
 NOREPLICATION, NOBYPASSRLS; member of no role, owner of nothing; no CREATE on
 the database or schema, no TRUNCATE, REFERENCES or TRIGGER anywhere. SELECT on
-every table but `django_session`. Writes only:
+every table but `django_session` (it resolves and previews a proposed change).
+Since r96 (docs/adr/0234 §2) it writes **only its own bookkeeping**:
 
 | Table | Privileges | Why |
 | --- | --- | --- |
-| `matters_matter` | INSERT, UPDATE | create, title, summary, owner, deadline columns; the Matter row lock every write takes |
-| `matters_matterreferencesequence` | INSERT, UPDATE | the `YYYY_N` counter (locked; created for a year's first Matter) |
-| `matters_matterassignmentnotice` | INSERT, UPDATE | «Uus asi» raised and retired by an assignment |
-| `matters_entry` | INSERT | note, meeting, the result of a completed step |
-| `matters_mattersaveonce` | INSERT | the save-once ledger (the proposal id is the token) |
-| `matters_matterprocedurallink` | INSERT, UPDATE | the link, and its idempotency row lock |
-| `matters_matterresponsedeadline` | INSERT | the deadline's request history (append-only) |
-| `workflow_nextaction` | INSERT, UPDATE | the current step: new, superseded, completed |
-| `workflow_matterplanstep` | INSERT, UPDATE | the plan a new Teema gets; a plan-derived step completed |
-| `workflow_opinionfollowup` | UPDATE | a follow-up check's outcome |
-| `intelligence_matterimportantdate` | INSERT | an important date |
-| `audit_changeevent` | INSERT | the history every service appends (append-only triggers) |
-| `search_searchdocument` | INSERT, UPDATE, DELETE | the search projection's synchronous refresh — **the one DELETE**: stale projection rows are replaced; derived data, rebuilt by `rebuild_search_index` |
-| `mcp_writes_mcpwriteproposal` | INSERT, UPDATE | the gateway's proposals |
+| `mcp_writes_mcpwriteproposal` | INSERT | a prepared proposal — never UPDATE: `web` moves its status, and a trigger keeps what it proposes fixed for every role |
 | `mcp_writes_mcpwriteevent` | INSERT | the gateway's append-only events |
+| `mcp_writes_mcpwritecounter` | INSERT, UPDATE | the budgets (one upsert per window) |
 | `audit_securityauditevent` | INSERT | the gateway's security audit rows (append-only) |
 
-**Never** any write on `accounts_*`, `mcp_access_*`, `django_*`, `auth_*` or
-`mcp_writes_mcpwriteapproval` (SELECT only: only `web` approves) — the command
-refuses an allow-list naming one. The list is proven, not guessed:
-`tests/test_mcp_writer_allowlist.py` runs every canonical service of every
-operation under the role itself and fails both on a missing grant and on a
-grant no operation uses, and `tests/test_mcp_writer_role_runs_operations.py`
-runs the operations' whole test suite again as the role. Role settings:
-`statement_timeout` and `idle_in_transaction_session_timeout` equal to
-`MCP_WRITE_CALL_TIMEOUT_SECONDS` (30), `temp_file_limit` 64 MB, `CONNECTION
-LIMIT` 8. New tables are readable by default and never writable: a release
-whose operations write a new table adds it to the list and re-runs the command
-(the gateway's E050 names the table it cannot write).
+**Never** any write on `accounts_*`, `mcp_access_*`, `django_*`, `auth_*`,
+`mcp_writes_mcpwriteapproval` (SELECT only: only `web` approves) — and, since
+r96, on the thirteen business tables r94's role could write
+(`FORMER_BUSINESS_WRITES`: `matters_matter`, `matters_entry`,
+`workflow_nextaction`, `audit_changeevent`, `search_searchdocument`, …). The
+command refuses an allow-list naming one, and the gateway's own start-up check
+(E050) refuses a role that still holds one. Proven, not guessed:
+`tests/test_mcp_writer_cannot.py` runs every attack (rewrite a proposal's
+arguments, preview, target, expiry, grant, client, family, status or result;
+forge an approval; insert an executed proposal; write any business table;
+call an operation's `execute`) as the role itself and asserts PostgreSQL's
+refusal, and `tests/test_mcp_writer_role_runs_*.py` run the gateway's own
+suites again as the role. Role settings: `statement_timeout` and
+`idle_in_transaction_session_timeout` equal to `MCP_WRITE_CALL_TIMEOUT_SECONDS`
+(30), `temp_file_limit` 64 MB, `CONNECTION LIMIT` 8.
+
+### Writer role after r96 — the one-time narrowing, and its rollback
+
+The r96 image narrows the role; the role itself changes only when an operator
+re-applies it. Order, during the release (writers held as the release runbook
+holds them):
+
+1. **Before the swap**, stop the gateway so no r94 commit runs against the new
+   schema: `… stop mcp-writer`. Note the open proposals (there should be none):
+   `… exec -T web python manage.py mcp_writes list --status PENDING` and
+   `--status APPROVED`. Migration `mcp_writes/0002` retires every one as
+   EXPIRED (`format_retired`, one `FORMAT_RETIRED` event each); executed ones
+   and all history stay.
+2. **Swap and migrate** as the runbook does (`web` runs `migrate`).
+3. **Re-apply the role** with the new image — the same command as first-time
+   enablement step 3, from `web`:
+
+   ```bash
+   sed -n 's/^POSTGRES_PASSWORD=//p' /mnt/user/appdata/juristid-main/config/juristid-mcp-writer.env | docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_writer_db_role --apply --password-stdin
+   ```
+
+   It now answers `writes on 4 allow-listed table(s)`. It revokes everything
+   and grants back exactly the new list, so r94's business grants are gone.
+   `--print-sql` first shows the statements without running them.
+4. **Verify read-only** that the business grants are gone (expect
+   `(False, False, False)`):
+
+   ```bash
+   docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py shell -c "from django.db import connection; c = connection.cursor(); c.execute(\"SELECT bool_or(has_table_privilege('juristid_mcp_writer', t, 'INSERT')), bool_or(has_any_column_privilege('juristid_mcp_writer', t, 'UPDATE')), bool_or(has_table_privilege('juristid_mcp_writer', t, 'DELETE')) FROM unnest(%s::text[]) AS t\", [['matters_matter','matters_entry','workflow_nextaction','audit_changeevent','search_searchdocument']]); print(c.fetchone())"
+   ```
+
+5. **Start the gateway** (`… up -d --no-build --no-deps mcp-writer`): its
+   start-up check runs `privilege_problems_writer`; a restart loop naming
+   `juristid.E050 … must never write` means step 3 was skipped.
+6. **Smoke**: `check_mcp_write_gateway`; with the owner, one end-to-end change
+   on a test Teema the owner names — prepare, open the link, the preview, the
+   code: the page says «Kinnitatud ja salvestatud», the note appears once;
+   `commit_prepared_action` answers `executed` (`replayed` false, then true).
+
+**Rollback to r94** (code): `stop mcp-writer`; expire any format-2 proposal
+still PENDING (r94 would approve it under r94's rules) —
+`… exec -T web python manage.py shell -c "from django.utils import timezone; from app.mcp_writes.models import McpWriteProposal as P; print(P.objects.filter(status='PENDING', format_version=2).update(status='EXPIRED', failure_code='rollback'))"`;
+swap back to the r94 image (the r94 code runs against the forward schema: it
+writes rows with the new columns' defaults, which are format 1, and the
+triggers allow every transition it makes); **then re-apply r94's role** with
+r94's image — the same `mcp_writer_db_role --apply` command run from the r94
+`web` container — which grants r94's business writes back; start
+`mcp-writer`. Leave the schema forward (do not reverse 0002: its counter table
+and columns are ignored by r94). Re-deploying r96 later: the same six steps.
 
 ### First-time enablement of writes
 
@@ -856,7 +914,7 @@ sed -n 's/^POSTGRES_PASSWORD=//p' /mnt/user/appdata/juristid-main/config/juristi
 ```
 
 It answers `Role juristid_mcp_writer: SELECT on schema public (owner …) except
-1 withheld table(s); writes on 16 allow-listed table(s); statement_timeout 30s,
+1 withheld table(s); writes on 4 allow-listed table(s); statement_timeout 30s,
 temp files at most 64MB; password set.` A line `Not yet in this database` means
 the release's migrations have not run — stop. To read the SQL first,
 `… exec -T web python manage.py mcp_writer_db_role --print-sql` changes
@@ -953,8 +1011,9 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp py
 
 Then, with the owner, one end-to-end change on a test Teema the owner names:
 prepare a note from ChatGPT, open the link, check the preview, approve with the
-code, commit; the note appears once, its history row says «ChatGPT kaudu,
-isiklikult kinnitatud»; commit again — `replayed`, still one note.
+code — the note is saved then, once, its history row says «ChatGPT kaudu,
+isiklikult kinnitatud»; the receipt call (`commit_prepared_action`) from
+ChatGPT answers the receipt; again — `replayed`, still one note.
 
 ### Switching AI writes off — four switches, any one is enough
 
@@ -963,7 +1022,7 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml stop mcp-write
 ```
 
 **Stopping `mcp-writer` disables every AI write at once while reading goes
-on**: prepare and commit answer «writes unavailable», the read tools are
+on**: prepare and receipt requests answer «writes unavailable», the read tools are
 untouched, nothing depends on the gateway. It stays stopped through releases,
 restores and reboots until somebody starts it by name.
 
@@ -973,6 +1032,20 @@ restores and reboots until somebody starts it by name.
 
 In an incident: `stop mcp-writer` first, `revoke-all-writes` straight after,
 then the flags. Pending proposals simply expire (`MCP_WRITE_PROPOSAL_SECONDS`).
+
+### Budgets (docs/adr/0234 §4)
+
+Every prepare and receipt (`commit_prepared_action`) call is counted per user, grant, token family and
+client and for the deployment, in 10-minute and one-day windows; over a limit
+the gateway answers `rate_limited` (HTTP 429, `retry_after_seconds`) and says
+nothing was saved. Limits are `MCP_WRITE_*` settings in `juristid-mcp-writer.env`
+(0 switches one off; defaults and rationale in the ADR). The approval page is
+never budgeted. **Diagnose:** Haldus → Süsteemi seis, «ChatGPT kaudu tehtavad
+muudatused» (counts only), or `… exec -T web python manage.py mcp_writes
+budgets` (limits, waiting proposals, the busiest counters by user/grant id and
+client hash prefix, refusals counted beyond the events written). A person
+blocked by mistake recovers by waiting for the window; raising a limit is an
+env change and a recreate of `mcp-writer`.
 
 ### Rolling back
 
@@ -1003,11 +1076,16 @@ then the flags. Pending proposals simply expire (`MCP_WRITE_PROPOSAL_SECONDS`).
 - **Code running inside `mcp` holds the gateway key.** It still needs a
   person's token with `juristid.write` and, for any effect, that person's
   approval on Juristid's page with their authenticator.
-- **Code running inside `mcp-writer`** can write what its role may — the
-  allow-listed tables, through any SQL, not only through the services — but
-  never an approval, an account, a grant or a token, and nothing is deleted
-  but search projection rows (rebuildable). Its temporary-table and
-  advisory-lock residuals are the read role's (NEW-02, above).
+- **Code running inside `mcp-writer`** can, once the role is narrowed (`mcp_writer_db_role --apply`, below), insert proposals,
+  events, security audit rows and budget counters — nothing else. It cannot
+  change a stored proposal (no UPDATE; a trigger refuses it for every role),
+  forge an approval, or write any business table; it can still *read* every
+  table but sessions and insert proposals for the tokens it holds, which its
+  person then sees derived by `web` and must approve with their own code. The
+  budgets (docs/adr/0234 §4) bound how much it can insert. Its temporary-table
+  and advisory-lock residuals are the read role's (NEW-02, above).
+- **`web` is the executor** and holds the application's full role, as for every
+  browser write; the boundary is the personal code on Juristid's own page.
 - **An approval is consent to the preview, not to the text's truth.** A note
   prepared from a prompt-injected document says what it says; the preview
   shows it in full, autoescaped, before the code is asked for.

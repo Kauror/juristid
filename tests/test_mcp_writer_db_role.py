@@ -86,21 +86,20 @@ def test_the_grants_are_exactly_the_allow_list():
 
 
 def test_the_allow_list_never_names_a_denied_table_and_says_why_for_each():
-    import inspect
-
-    source = inspect.getsource(db_role)
-    block = source.split("WRITE_ALLOWLIST: dict[str, tuple[str, ...]] = {", 1)[1].split("\n}", 1)[0]
     for table, privileges in db_role.WRITE_ALLOWLIST.items():
         assert not db_role.is_denied(table), table
         assert privileges and set(privileges) <= {"INSERT", "UPDATE", "DELETE"}, table
-        if table not in db_role.GATEWAY_WRITES:
-            line_before = block.split(f'"{table}"', 1)[0].rstrip().splitlines()[-1].strip()
-            assert line_before.startswith("#"), f"{table} has no comment saying why"
+        # Since docs/adr/0234 the allow-list is the gateway's own bookkeeping only.
+        assert table in db_role.GATEWAY_WRITES, table
     deletes = {table for table, granted in db_role.WRITE_ALLOWLIST.items() if "DELETE" in granted}
-    assert deletes == {"search_searchdocument"}, "DELETE is proven necessary only there"
+    assert deletes == set(), "the gateway deletes nothing"
+    assert "UPDATE" not in db_role.WRITE_ALLOWLIST["mcp_writes_mcpwriteproposal"]
+    for table in db_role.FORMER_BUSINESS_WRITES:
+        assert db_role.is_denied(table), table
     assert db_role.GATEWAY_WRITES == {
-        "mcp_writes_mcpwriteproposal": ("INSERT", "UPDATE"),
+        "mcp_writes_mcpwriteproposal": ("INSERT",),
         "mcp_writes_mcpwriteevent": ("INSERT",),
+        "mcp_writes_mcpwritecounter": ("INSERT", "UPDATE"),
         "audit_securityauditevent": ("INSERT",),
     }
 
@@ -267,7 +266,7 @@ def test_the_writer_deletes_truncates_and_creates_nothing(writer_role, statement
 
 
 @transactional
-def test_the_writer_reads_what_it_verifies_tokens_with_and_writes_an_allowed_table(writer_role):
+def test_the_writer_reads_what_it_verifies_tokens_with_and_writes_only_its_own_table(writer_role):
     matter = factories.MatterFactory()
     role, password = writer_role
     with _connect(role, password) as conn, conn.cursor() as cursor:
@@ -279,12 +278,23 @@ def test_the_writer_reads_what_it_verifies_tokens_with_and_writes_an_allowed_tab
         # A permitted write, rolled back: the allow-list is a grant, not a wish.
         cursor.execute("BEGIN")
         cursor.execute(
-            "UPDATE matters_matter SET title = title WHERE id = %s RETURNING id", [matter.pk]
+            "INSERT INTO mcp_writes_mcpwritecounter (id, principal, bucket, period,"
+            " period_start, count, first_at, last_at) VALUES (gen_random_uuid(), 'global',"
+            " 'probe', '10m', now(), 1, now(), now()) ON CONFLICT (principal, bucket, period,"
+            " period_start) DO UPDATE SET count = mcp_writes_mcpwritecounter.count + 1"
+            " RETURNING count"
         )
         assert cursor.fetchone() is not None
-        cursor.execute("SELECT id FROM matters_matter WHERE id = %s FOR UPDATE", [matter.pk])
-        assert cursor.fetchone() is not None
         cursor.execute("ROLLBACK")
+        # And since docs/adr/0234 no business row, not even a row lock on one.
+        for statement in (
+            "UPDATE matters_matter SET title = title WHERE id = %s",
+            "SELECT id FROM matters_matter WHERE id = %s FOR UPDATE",
+        ):
+            cursor.execute("BEGIN")
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                cursor.execute(statement, [matter.pk])
+            cursor.execute("ROLLBACK")
 
 
 @transactional
@@ -354,7 +364,7 @@ def test_the_role_the_command_made_has_no_privilege_problem(writer_role):
     [
         ('GRANT INSERT ON accounts_user TO "{role}"', "must never write"),
         ('GRANT UPDATE ON mcp_access_mcptoken TO "{role}"', "must never write"),
-        ('GRANT DELETE ON matters_entry TO "{role}"', "beyond its allow-list"),
+        ('GRANT DELETE ON matters_entry TO "{role}"', "must never write"),
         ('GRANT INSERT ON matters_matterengagement TO "{role}"', "beyond its allow-list"),
         ('GRANT TRUNCATE ON matters_entry TO "{role}"', "TRUNCATE"),
         # Column-level grants, which has_table_privilege does not see.
@@ -427,8 +437,9 @@ def test_print_sql_changes_nothing_and_names_no_password():
     out = io.StringIO()
     call_command("mcp_writer_db_role", "--print-sql", stdout=out)
     text = out.getvalue()
-    assert 'GRANT INSERT ON TABLE "matters_entry" TO "juristid_mcp_writer";' in text
-    assert 'GRANT INSERT, UPDATE ON TABLE "mcp_writes_mcpwriteproposal"' in text
+    assert 'GRANT INSERT ON TABLE "mcp_writes_mcpwriteproposal" TO "juristid_mcp_writer";' in text
+    assert 'GRANT INSERT, UPDATE ON TABLE "mcp_writes_mcpwritecounter"' in text
+    assert "matters_entry" not in text and "matters_matter" not in text
     assert "mcp_writes_mcpwriteapproval" not in text
     assert "accounts_user" not in text
     assert "PASSWORD '" not in text

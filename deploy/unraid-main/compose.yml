@@ -72,6 +72,59 @@ x-db-env: &db-env
   POSTGRES_PORT: "5432"
   POSTGRES_SSLMODE: disable
 
+# The parser boundary (SEC-008, docs/adr/0230). Every untrusted file is opened
+# in one of these containers and nowhere else: no network at all, no env_file
+# (so no database password, no secret key, no AI key exists here to leak), a
+# read-only root, a scratch tmpfs as the only writable disk, and memory, CPU
+# and process ceilings for the whole container on top of the per-file limits
+# `isolation_server` puts on each child. The callers reach it over a Unix
+# socket on a tmpfs volume shared with exactly one of them.
+x-parser-service: &parser-service
+  image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
+  restart: unless-stopped
+  logging: *bounded-logs
+  # PID 1 reaps whatever a killed parser tree leaves reparented to it.
+  init: true
+  network_mode: none
+  read_only: true
+  environment:
+    # A deployed stack says so (see `web`): `config/test_safety.py` refuses to
+    # run the test suite in any environment carrying this marker. The parser
+    # child never sees it (its environment is allow-listed, docs/adr/0230).
+    JURISTID_RUNTIME: deployed
+    JURISTID_PARSER_SCRATCH: /scratch
+    # Per-file ceilings; a caller may ask for less, never more. The memory
+    # ceiling is RLIMIT_AS for the child and everything it starts; mem_limit
+    # below is the cgroup-wide one, and it must stay above it plus the
+    # scratch tmpfs (which is charged to the same cgroup) plus the service.
+    JURISTID_PARSER_MAX_MEMORY_BYTES: "2147483648"
+    JURISTID_PARSER_MAX_FILE_BYTES: "268435456"
+    JURISTID_PARSER_MAX_INPUT_BYTES: "134217728"
+  tmpfs:
+    - /scratch:size=256m,mode=0700,uid=10001,gid=10001
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  mem_limit: 2560m
+  memswap_limit: 2560m
+  cpus: 1.0
+  pids_limit: 32
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -m
+      - app.documents.extraction.isolation_server
+      - --check
+      - --socket
+      - /run/juristid-parser/parser.sock
+    interval: 6h
+    timeout: 15s
+    start_period: 120s
+    start_interval: 5s
+    retries: 3
+
 services:
   db:
     # The tag for the reader, the digest for Docker (ADR 0179). `postgres:18`
@@ -191,6 +244,11 @@ services:
       DERIVATIVE_ROOT: /app/derivatives
       LEGACY_SOURCE_ROOT: /app/legacy-source
       HISTORICAL_SOURCE_ROOT: /srv/historical-source
+      # Files are parsed in `batch-parser`, never in this container: the
+      # nightly register reads run here under `docker exec` with the AI keys
+      # added, and operator corpus runs start here (docs/adr/0230).
+      DOCUMENT_PARSER_ISOLATION: service
+      DOCUMENT_PARSER_SOCKET: /run/juristid-parser/parser.sock
       # Migrations and seeding are controlled one-off steps, never container
       # start-up work (master specification 24.2).
       SEED_DEV_DATA: "0"
@@ -213,6 +271,8 @@ services:
       # survive and be backed up; the other may be deleted and rebuilt from it
       # (docs/adr/0014).
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/derivatives:/app/derivatives
+      # The batch parser's socket, and only its socket (docs/adr/0230).
+      - parser_batch_socket:/run/juristid-parser
       # OneNote page XML, kept as source evidence beside the register.
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/legacy-source:/app/legacy-source
       # The historical corpus, READ-ONLY. The importer reads it and never
@@ -318,6 +378,11 @@ services:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
       <<: *db-env
+      # This container holds the database password, so it never opens a file
+      # itself: `intake-parser` does, with none of it (docs/adr/0230). The
+      # reader refuses to start with `inprocess`.
+      DOCUMENT_PARSER_ISOLATION: service
+      DOCUMENT_PARSER_SOCKET: /run/juristid-parser/parser.sock
       SEED_DEV_DATA: "0"
       # This is a deployed stack, and it says so. `config/test_safety.py`
       # refuses to start the test suite in any environment carrying this
@@ -329,7 +394,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Started, not healthy: a reader whose parser is restarting hands each
+      # file back and waits (PARSER_UNAVAILABLE), so nothing is lost by
+      # starting it first, and gating on health would couple two restarts.
+      intake-parser:
+        condition: service_started
     volumes:
+      # The intake parser's socket, and only its socket (docs/adr/0230).
+      - parser_intake_socket:/run/juristid-parser
       # The staged `Uus teema` files, READ-ONLY — the same volume `web` writes.
       #
       # Read-only because that is the whole of what this process does with
@@ -351,6 +423,42 @@ services:
     pids_limit: 128
     networks:
       - internal
+
+  # Where a file picked on `Uus teema` is opened (SEC-008, docs/adr/0230).
+  #
+  # The only thing it shares with `intake-reader` is the socket volume. It
+  # does not mount the staging volume: the reader sends the one file it has
+  # claimed, so a parser that is taken over can read that file and nothing
+  # else. It has no network, so it cannot reach `db` even to try a password it
+  # does not have.
+  intake-parser:
+    <<: *parser-service
+    container_name: juristid-main-intake-parser
+    command:
+      - python
+      - -m
+      - app.documents.extraction.isolation_server
+      - --socket
+      - /run/juristid-parser/parser.sock
+    volumes:
+      - parser_intake_socket:/run/juristid-parser
+
+  # The same boundary for everything `web` parses: the nightly Riigikogu
+  # document reads (run in `web` by `docker exec`, with the AI keys in their
+  # environment) and operator corpus runs. A second instance rather than a
+  # shared one, so a long nightly file never stands in front of somebody's
+  # `Uus teema` form and an out-of-memory kill in one cannot touch the other.
+  batch-parser:
+    <<: *parser-service
+    container_name: juristid-main-batch-parser
+    command:
+      - python
+      - -m
+      - app.documents.extraction.isolation_server
+      - --socket
+      - /run/juristid-parser/parser.sock
+    volumes:
+      - parser_batch_socket:/run/juristid-parser
 
   # Search freshness: what keeps the index current after a vocabulary change.
   #
@@ -943,3 +1051,21 @@ volumes:
   # not the lifetime of a container
   # (deploy/unraid-main/RECOVERY.md, docs/adr/0064).
   pending_uploads:
+
+  # The parser sockets (docs/adr/0230). tmpfs, so nothing a parser child
+  # writes beside the socket can fill a disk (1 MiB, swept after every file),
+  # and owned by the image's `juristid` user so both ends can open it. One per
+  # caller: `intake-reader` cannot reach the batch parser, and `web` cannot
+  # reach the intake one. Not data, not backed up, gone with the containers.
+  parser_intake_socket:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,mode=0700,uid=10001,gid=10001
+  parser_batch_socket:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,mode=0700,uid=10001,gid=10001

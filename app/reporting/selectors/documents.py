@@ -127,13 +127,19 @@ def extraction_pending(context: ReportingContext) -> MetricResult:
     return _state_result(context, keys.EXTRACTION_PENDING, queued)
 
 
+#: Both sentences are carried by their metrics (other tabs, the CSV) and left out
+#: of Andmekvaliteet only (`reporting.views.QUALITY_PAGE_OMITTED_NOTES`, UX-002).
+INTAKE_READ_NOTE = (
+    "Need failid loeti teema loomise ajal ja leitu pakuti vormile. "
+    "Püsivat teksti neist ei tehtud, seega ei ole nende sisu otsitav — "
+    "see on teadlik valik, mitte puudujääk."
+)
+INTAKE_DELIBERATE_NOTE = "See on teadlik valik (docs/adr/0072), mitte tegemata töö."
+
+
 def extraction_intake_read(context: ReportingContext) -> MetricResult:
     result = _state_result(context, keys.EXTRACTION_INTAKE_READ, read_at_intake(context))
-    return result.with_note(
-        "Need failid loeti teema loomise ajal ja leitu pakuti vormile. "
-        "Püsivat teksti neist ei tehtud, seega ei ole nende sisu otsitav — "
-        "see on teadlik valik, mitte puudujääk."
-    )
+    return result.with_note(INTAKE_READ_NOTE)
 
 
 def extraction_failed(context: ReportingContext) -> MetricResult:
@@ -203,8 +209,8 @@ def searchable_document_coverage(context: ReportingContext) -> MetricResult:
     if intake:
         notes.append(
             f"{intake} faili loeti teema loomise ajal ja nende sisust ei tehtud "
-            f"püsivat teksti, seega ei ole need sisu järgi otsitavad. See on "
-            f"teadlik valik (docs/adr/0072), mitte tegemata töö."
+            f"püsivat teksti, seega ei ole need sisu järgi otsitavad. "
+            f"{INTAKE_DELIBERATE_NOTE}"
         )
 
     percentage = round(100.0 * extracted / open_count) if open_count else 0

@@ -88,15 +88,20 @@ def test_the_scheduled_check_is_counted_aside_as_the_systems(department_head, sp
     assert event.payload["follow_up"]["automatic"] is True
 
 
-def test_the_page_says_the_system_made_it(client, department_head, specialist, ministry):
+def test_the_page_keeps_the_systems_steps_out_of_the_persons_acts(
+    client, department_head, specialist, ministry
+):
     matter = create_matter(title="Saadetud lehel", owner=specialist, actor=specialist)
     mark_sent(matter, specialist, [ministry])
     client.force_login(department_head)
 
-    body = client.get(PAGE).content.decode()
+    response = client.get(PAGE)
+    body = response.content.decode()
 
-    assert "data-automatic-steps" in body
-    assert "ei loeta kellegi tegevuseks: <b>1</b>" in body
+    # Still counted apart from the person's acts; the sentence that printed the
+    # count was in «Mida see ei näita», which the owner removed (UX-004).
+    assert response.context["page"].coverage.automatic_steps == 1
+    assert "data-automatic-steps" not in body
     assert "määras järgmise tegevuse: " not in body
 
 

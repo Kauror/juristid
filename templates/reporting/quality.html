@@ -15,8 +15,9 @@ group counts towards the attention total.
 Extraction readiness is not in that list at all. It is a property of this
 system's own pipeline rather than of the record, and while it sat among the
 queues readers took it for an unresolved safety question about the corpus. It is
-reported in `Teksti eraldamine` below, in full, with what it means said out
-loud.
+reported in `Teksti eraldamine` below, in full; what each state means is in
+the table's «Märkus» column and in the metric definitions, not in a paragraph
+(the owner removed those, UX-002, 2026-11-26).
 
 Legitimate archive sparsity is not listed at all. An ARCHIVE Matter with no next
 action, an old Matter with no modern stage, a OneNote-only Matter with no
@@ -34,7 +35,7 @@ bytes in OneNote itself are all correct states of the record
     <h2 class="sectionlabel" id="kvaliteet-naitajad-heading">Näitajad</h2>
     <div class="metricgrid">
       {% for result in cards %}
-        {% include "reporting/_metric.html" with result=result %}
+        {% include "reporting/_metric.html" with result=result hide_snapshot_corpus_basis=True %}
       {% endfor %}
     </div>
   </section>
@@ -78,27 +79,6 @@ bytes in OneNote itself are all correct states of the record
 
   <section aria-labelledby="kvaliteet-eraldamine-heading">
     <h2 class="sectionlabel" id="kvaliteet-eraldamine-heading">Teksti eraldamine</h2>
-    <p class="chart__summary">
-      Viis eri seisundit, mida ei liideta. Järjekorras olev fail ei ole
-      ebaõnnestumine, ja allkirjaümbrik ei ole kumbki: seda ei avata teadlikult.
-    </p>
-    {% comment %}
-      Said in words on the page, not only in a metric definition somebody would
-      have to open. Two of the five states read as problems and are not, and
-      the reasons differ: one is a decision about a format, the other a decision
-      about when reading happens. A reader who takes either for outstanding work
-      has been told the wrong thing by the page rather than by the data
-      (Statistika QA §4, docs/adr/0072).
-    {% endcomment %}
-    <p class="chart__summary">
-      „Loetud teema loomisel“ tähendab, et faili loeti siis, kui teemat alles
-      loodi, ja et leitu pakuti vormile. Neid faile ei loeta uuesti ning nende
-      sisust ei tehta püsivat teksti, seega ei leia neid sisu järgi otsides —
-      see on teadlik valik, mitte tegemata töö. Kui vorm loetust soovitusi ei
-      paku, jääb teema loomisel lisatud fail järjekorda nagu iga teine fail.
-      Failid ise on alati avatavad teema juurest, nagu kõik teised.
-    </p>
-
     <section class="chart" aria-labelledby="eraldamine-jaotus-heading">
       <div class="chart__head">
         <h3 class="chart__title" id="eraldamine-jaotus-heading">Tõendiversioonide seisund</h3>
@@ -142,7 +122,7 @@ bytes in OneNote itself are all correct states of the record
 
     <div class="metricgrid metricgrid--spaced">
       {% for result in extraction %}
-        {% include "reporting/_metric.html" with result=result %}
+        {% include "reporting/_metric.html" with result=result hide_snapshot_corpus_basis=True %}
       {% endfor %}
     </div>
   </section>

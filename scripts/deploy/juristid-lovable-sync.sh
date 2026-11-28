@@ -90,7 +90,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
-. "$SCRIPT_DIR/lib.sh" # lock_fd_proven (the inherited-lock contract)
+. "$SCRIPT_DIR/lib.sh" # lock_fd_proven (the inherited-lock contract), share_set_proof
 
 APPDATA=${JURISTID_SYNC_APPDATA:-/mnt/user/appdata/juristid-main}
 REPO=$APPDATA/repo
@@ -107,6 +107,11 @@ CAPTURE_SOURCE=${JURISTID_SYNC_CAPTURE_SOURCE:-/mnt/user/juristid-main/source}
 SYNC_LOCK=${JURISTID_SYNC_LOCK:-/tmp/juristid-lovable-sync.lock}
 HOST_LOCK=${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}
 ONENOTE_TIMEOUT=3600
+# ADR 0231: a docker client `timeout` gave up on is itself killed this long after.
+KILL_AFTER=60
+# The application's group inside the image (Dockerfile: gid 10001): the one-off
+# that checks a set's proof reads it as that account (lib.sh `share_set_proof`).
+APP_GID=${JURISTID_SYNC_APP_GID:-10001}
 
 TRIGGER=scheduled
 ON_DEMAND=0
@@ -132,6 +137,25 @@ cleanup() {
 trap cleanup EXIT
 exec >>"$LOG" 2>&1
 say() { echo "$(date -u +%FT%TZ) $*"; }
+
+# leftover_gone NAME RC - after a `timeout` (RC 124, or 137 once the client was
+# killed), the container must not outlive it (ADR 0231). Every one-off container
+# here runs with --init, so the SIGTERM docker forwards reaches python (which, as
+# PID 1, ignored it: the timeout never ended a run before) and the container ends
+# with its client. One still there is killed and waited for: this run keeps the
+# runner's lock until it is gone. Any other RC: nothing to do.
+leftover_gone() {
+  local name=$1 rc=$2 waited=0
+  case "$rc" in 124 | 137) ;; *) return 0 ;; esac
+  while [ -n "$(docker ps -q --filter "name=^${name}\$" 2>/dev/null || true)" ]; do
+    if [ "$waited" = 0 ]; then
+      say "WARN $name outlived its timeout; killing it"
+      docker kill "$name" >/dev/null 2>&1 || true
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+}
 
 # One runner: the runner's flock. The nightly cycle waits for it (bounded), KEEPS
 # it and starts this script with the descriptor inherited and named in
@@ -176,10 +200,11 @@ if [ "$ON_DEMAND" = 0 ]; then
   PRUNE_ARGS=(prune-observations)
   if [ "$TRIGGER" = manual ]; then PRUNE_ARGS+=(--manual); fi
   prc=0
-  timeout "$RUN_TIMEOUT" docker run --rm --name "juristid-main-lovable-prune-$$" \
+  timeout --kill-after="$KILL_AFTER" "$RUN_TIMEOUT" docker run --rm --name "juristid-main-lovable-prune-$$" \
     --network juristid-main-internal --env-file "$ENV_FILE" \
-    --cpus 1 --memory 1g --pids-limit 256 --log-driver none \
+    --cpus 1 --memory 1g --pids-limit 256 --log-driver none --init \
     --entrypoint python "$IMAGE" manage.py lovable_sync "${PRUNE_ARGS[@]}" </dev/null || prc=$?
+  leftover_gone "juristid-main-lovable-prune-$$" "$prc"
   case "$prc" in
     0) say "prune END ok" ;;
     2) say "prune SKIP already done for this night" ;;
@@ -215,6 +240,12 @@ take_backup() {
       BACKUP_SET="sets/$(basename "$SET_PATH")"
       BACKUP_DIR="$SET_PATH"
       say "backup $BACKUP_SET verified (level 2)"
+      # SEC-011 writes the set 0700/0600 as root; the run reads its proof as the
+      # application's account. Only the proof's three objects are opened to that
+      # group (r96 integration). Should it fail, the run refuses the set itself.
+      if ! share_set_proof "$SET_PATH" "$APP_GID"; then
+        say "WARN the set's proof could not be opened to group $APP_GID: the run will refuse it"
+      fi
     else
       say "WARN backup verification failed: nothing is written"
     fi
@@ -225,10 +256,13 @@ take_backup() {
 
 # No Lovable credentials here: the database and the image only.
 plain_manage() {
-  timeout "$RUN_TIMEOUT" docker run --rm --name "juristid-main-sync-request-$$" \
+  local rc=0
+  timeout --kill-after="$KILL_AFTER" "$RUN_TIMEOUT" docker run --rm --name "juristid-main-sync-request-$$" \
     --network juristid-main-internal --env-file "$ENV_FILE" \
-    --cpus 1 --memory 1g --pids-limit 256 --log-driver none \
-    --entrypoint python "$IMAGE" manage.py "$@" </dev/null
+    --cpus 1 --memory 1g --pids-limit 256 --log-driver none --init \
+    --entrypoint python "$IMAGE" manage.py "$@" </dev/null || rc=$?
+  leftover_gone "juristid-main-sync-request-$$" "$rc"
+  return "$rc"
 }
 
 # The Lovable container: Docker reads the credentials file as root; the container
@@ -241,12 +275,15 @@ one_off_manage() {
   if [ -n "$SET" ] && [ -n "$SET_DIR" ]; then
     proof=(-v "$SET_DIR:/backup-set:ro" -e LOVABLE_SYNC_BACKUP_DIR=/backup-set)
   fi
-  timeout "$RUN_TIMEOUT" docker run --rm --name "juristid-main-lovable-sync-$$" \
+  local rc=0
+  timeout --kill-after="$KILL_AFTER" "$RUN_TIMEOUT" docker run --rm --name "juristid-main-lovable-sync-$$" \
     --network juristid-main-internal \
     --env-file "$ENV_FILE" --env-file "$CREDENTIALS" -e JURISTID_LOVABLE_SYNC=1 \
     -e LOVABLE_SYNC_BACKUP_SET="$SET" "${proof[@]}" \
-    --cpus 1 --memory 1g --pids-limit 256 --log-driver none \
-    --entrypoint python "$IMAGE" manage.py "$@" </dev/null
+    --cpus 1 --memory 1g --pids-limit 256 --log-driver none --init \
+    --entrypoint python "$IMAGE" manage.py "$@" </dev/null || rc=$?
+  leftover_gone "juristid-main-lovable-sync-$$" "$rc"
+  return "$rc"
 }
 one_off() { one_off_manage lovable_sync "$@"; }
 
@@ -275,7 +312,7 @@ if [ "$ON_DEMAND" = 1 ]; then
       if [ -n "$BACKUP_SET" ] && [ -n "$BACKUP_DIR" ]; then
         onenote_proof=(-v "$BACKUP_DIR:/backup-set:ro" -e LOVABLE_SYNC_BACKUP_DIR=/backup-set)
       fi
-      timeout "$ONENOTE_TIMEOUT" docker run --rm --name "juristid-main-onenote-import-$$" \
+      timeout --kill-after="$KILL_AFTER" "$ONENOTE_TIMEOUT" docker run --rm --name "juristid-main-onenote-import-$$" \
         --network juristid-main-internal --env-file "$ENV_FILE" \
         -e JURISTID_ONENOTE_CAPTURE_IMPORT=1 -e REAL_DATA_ALLOWED=1 \
         -e JURISTID_ONENOTE_CAPTURE_ROOT=/capture \
@@ -284,9 +321,10 @@ if [ "$ON_DEMAND" = 1 ]; then
         -v "$APPDATA/evidence:/app/evidence" \
         -v "$APPDATA/legacy-source:/app/legacy-source" \
         -v "$APPDATA/derivatives:/app/derivatives" \
-        --cpus 1 --memory 2g --pids-limit 256 --log-driver none \
+        --cpus 1 --memory 2g --pids-limit 256 --log-driver none --init \
         --entrypoint python "$IMAGE" manage.py data_sync_requests run-next --kind onenote \
         </dev/null || orc_onenote=$?
+      leftover_gone "juristid-main-onenote-import-$$" "$orc_onenote"
       say "onenote END rc=$orc_onenote"
       ;;
     "NOT_DUE NO_REQUEST") ;;

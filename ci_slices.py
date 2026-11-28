@@ -63,6 +63,7 @@ PER_SHARD_VARIABLES: dict[str, tuple[str, ...]] = {
         "DERIVATIVE_ROOT",
         "LEGACY_SOURCE_ROOT",
         "PENDING_UPLOAD_ROOT",
+        "DOCUMENT_PARSER_SCRATCH_ROOT",
         "EXTRACTION_WORKER_HEARTBEAT_PATH",
         "INTAKE_READER_HEARTBEAT_PATH",
         "E2E_BASE_URL",
@@ -146,6 +147,9 @@ def shard_environment(suite: str, shard: int, position: int) -> dict[str, str]:
             "DERIVATIVE_ROOT": str(root / "derivatives"),
             "LEGACY_SOURCE_ROOT": str(root / "legacy-source"),
             "PENDING_UPLOAD_ROOT": str(root / "pending-uploads"),
+            # SEC-008 (docs/adr/0230): where `subprocess` mode makes each
+            # parser child's private directory.
+            "DOCUMENT_PARSER_SCRATCH_ROOT": str(root / "parser-scratch"),
             "EXTRACTION_WORKER_HEARTBEAT_PATH": str(root / "extraction-worker.heartbeat"),
             "INTAKE_READER_HEARTBEAT_PATH": str(root / "intake-reader.heartbeat"),
             "E2E_BASE_URL": f"http://127.0.0.1:{application}",
@@ -168,6 +172,7 @@ def directories_to_create(environment: Mapping[str, str]) -> list[str]:
         "DERIVATIVE_ROOT",
         "LEGACY_SOURCE_ROOT",
         "PENDING_UPLOAD_ROOT",
+        "DOCUMENT_PARSER_SCRATCH_ROOT",
         "E2E_LOCAL_AUTH_MAIL_DIR",
         "E2E_SCREENSHOT_DIR",
     )

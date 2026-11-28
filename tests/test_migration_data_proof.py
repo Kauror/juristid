@@ -39,6 +39,12 @@ FROM_ZERO = "A fresh database migrates from zero"
 #: RunPython migrations the step-back does not reach, and the populated test that
 #: proves each one. `(app, migration) -> "path::test"`.
 POPULATED_PROOFS: dict[tuple[str, str], str] = {
+    # SEC-009 (docs/adr/0234): upgrade from the r94 schema over r94-shaped rows —
+    # outstanding format-1 proposals retired, executed history kept.
+    ("mcp_writes", "0002_trusted_approval_and_budgets"): (
+        "tests/test_mcp_write_format_migration.py::"
+        "test_upgrade_from_r94_retires_open_proposals_and_keeps_executed_history"
+    ),
     ("matters", "0008_multiple_source_organisations"): (
         "tests/test_multiple_senders_migration.py::"
         "test_reversing_refuses_once_a_matter_has_two_senders"

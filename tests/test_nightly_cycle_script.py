@@ -32,16 +32,36 @@ LIB = ROOT / "scripts" / "deploy" / "lib.sh"
 BASH = shutil.which("bash") or "bash"
 TALLINN = ZoneInfo("Europe/Tallinn")
 
-# `docker exec … manage.py <command>`: recorded, answered with `rc-<command>`;
+# `docker exec … manage.py <command>` and `docker exec … python -m
+# app.core.nightly_bounded run --step S --seconds B … -- <command>` (ADR 0231):
+# recorded, answered with `rc-<command>`; the supervisor's line goes to `runs`.
+# `nightly_bounded status --step S` answers 3 (alive) while `alive-<S>` exists;
+# `stop` removes it, or answers 70 (stuck) while `stuck-<S>` exists; both are
+# recorded in `bounded`. `docker inspect` answers "true" (the container runs).
 # `nightly_outcome --step S` prints `outcome-<S>` (a JSON object) or SUCCEEDED.
 # `block-<command>` makes a command wait until that file is removed (≤ 20 s).
 FAKE_DOCKER = r"""#!/usr/bin/env bash
+if [ "$1" = inspect ]; then echo true; exit 0; fi
 [ "$1" = exec ] || exit 97
-args=("$@"); cmd=""; step=""
+args=("$@"); cmd=""; step=""; verb=""
 for ((i = 0; i < ${#args[@]}; i++)); do
   [ "${args[$i]}" = manage.py ] && cmd="${args[$((i + 1))]}"
+  [ "${args[$i]}" = app.core.nightly_bounded ] && verb="${args[$((i + 1))]}"
   [ "${args[$i]}" = --step ] && step="${args[$((i + 1))]}"
+  [ "${args[$i]}" = -- ] && [ -z "$cmd" ] && cmd="${args[$((i + 1))]}"
 done
+if [ "$verb" = status ]; then
+  echo "status $step" >> "$FAKE_DIR/bounded"
+  [ -e "$FAKE_DIR/alive-$step" ] && exit 3
+  exit 0
+fi
+if [ "$verb" = stop ]; then
+  echo "stop $step" >> "$FAKE_DIR/bounded"
+  [ -e "$FAKE_DIR/stuck-$step" ] && exit 70
+  rm -f "$FAKE_DIR/alive-$step"
+  exit 0
+fi
+[ "$verb" = run ] && echo "$step ${args[*]}" >> "$FAKE_DIR/runs"
 if [ "$cmd" = nightly_outcome ]; then
   echo "ask $step" >> "$FAKE_DIR/calls"
   echo "$step ${args[*]}" >> "$FAKE_DIR/asks"
@@ -52,8 +72,9 @@ if [ "$cmd" = nightly_outcome ]; then
   exit 0
 fi
 echo "start $cmd" >> "$FAKE_DIR/calls"
-# The lane that started this command dies with it (the host killed it).
-[ -e "$FAKE_DIR/kill-lane-$cmd" ] && kill -9 "$PPID"
+# The lane that started this command dies with it (the host killed it). The
+# lane is the parent of the `timeout` that runs this client.
+[ -e "$FAKE_DIR/kill-lane-$cmd" ] && kill -9 "$(awk '{print $4}' "/proc/$PPID/stat")"
 [ "$cmd" = watch_government_agenda ] && touch "$FAKE_DIR/agenda-started"
 if [ "$cmd" = watch_registers ] && [ -e "$FAKE_DIR/wait-for-agenda" ]; then
   for _ in $(seq 1 100); do [ -e "$FAKE_DIR/agenda-started" ] && break; sleep 0.1; done
@@ -786,3 +807,208 @@ def test_a_manual_recovery_does_not_wait_for_one_oclock(host) -> None:
     assert time.monotonic() - began < 60
     log = _cycle_log(host)
     assert "WAIT the other lanes" not in log and "LANES start" not in log
+
+
+# -- execution budgets: the work in the container is gone before the lock (ADR 0231) --
+
+
+def _runs(host: dict[str, Path]) -> dict[str, str]:
+    path = host["fake"] / "runs"
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    return {line.split()[0]: line for line in lines}
+
+
+def _bounded_calls(host: dict[str, Path]) -> list[str]:
+    path = host["fake"] / "bounded"
+    return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
+
+def start_with(host: dict[str, Path], **extra: str) -> subprocess.Popen:
+    return subprocess.Popen(  # noqa: S603
+        [BASH, str(SCRIPT)],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**_env(host, WINTER_MIDNIGHT), **extra},
+    )
+
+
+def test_every_container_step_runs_under_its_budget_and_is_checked_gone(host) -> None:
+    result = run(host)
+    assert result.returncode == 0, result.stdout + result.stderr
+    runs = _runs(host)
+    budgets = {"register-watch": 4080, "register-sweep": 2280, "government-agenda": 2280}
+    for step, seconds in budgets.items():
+        line = runs[step]
+        assert f"--step {step} --seconds {seconds} --grace 300 --kill-after 30 --" in line, line
+    assert "riigikogu" not in runs, "not installed: never started"
+    checked = [line for line in _bounded_calls(host) if line.startswith("status ")]
+    for step in budgets:
+        assert f"status {step}" in checked, step
+    # Every verdict was kept for Haldus too.
+    asks = (host["fake"] / "asks").read_text(encoding="utf-8")
+    assert asks.count("--record") == 4 and "--night 2026-01-15" in asks
+
+
+def test_a_step_stopped_at_its_budget_is_classified_with_the_timeout_code(host) -> None:
+    (host["fake"] / "rc-watch_registers").write_text("124")
+    _outcome(host, "register-watch", "FAILED", "TIMEOUT: stopped at its execution budget")
+    result = run(host)
+    assert result.returncode == 1
+    asks = (host["fake"] / "asks").read_text(encoding="utf-8").splitlines()
+    watch = next(line for line in asks if line.startswith("register-watch "))
+    assert "--rc 124" in watch
+    assert outcomes(host)["register-watch"].startswith("FAILED")
+    assert "rc=124" in outcomes(host)["register-watch"]
+    # The other lane still ran to its end (one lane failing never stops the other).
+    assert outcomes(host)["government-agenda"].startswith("SUCCEEDED")
+
+
+def test_work_left_running_is_stopped_before_the_lane_goes_on(host) -> None:
+    (host["fake"] / "alive-register-watch").write_text("")
+    result = run(host)
+    assert result.returncode == 0, result.stdout + result.stderr
+    bounded = _bounded_calls(host)
+    assert bounded.index("status register-watch") < bounded.index("stop register-watch")
+    assert not (host["fake"] / "alive-register-watch").exists()
+    log = _cycle_log(host)
+    assert log.index("STOP register-watch") < log.index("STEP register-sweep start")
+
+
+def test_work_that_cannot_be_verified_gone_keeps_the_cycle_lock(host) -> None:
+    (host["fake"] / "alive-government-agenda").write_text("")
+    (host["fake"] / "stuck-government-agenda").write_text("")
+    cycle = start_with(host, JURISTID_NIGHTLY_STUCK_RETRY_SECONDS="1")
+    stuck = host["state"] / f"{WINTER_NIGHT}.stuck"
+    try:
+        _wait_for(stuck, 90)
+        # While stuck, a release cannot take the cycle lock.
+        release = release_takes_the_cycle_lock(host)
+        out, _ = release.communicate(timeout=60)
+        assert release.returncode != 0, out
+        assert cycle.poll() is None, "the cycle does not end while the work may still run"
+    finally:
+        (host["fake"] / "stuck-government-agenda").unlink()
+    cycle.wait(timeout=90)
+    assert "cleared" in stuck.read_text(encoding="utf-8")
+    assert (host["state"] / f"{WINTER_NIGHT}.completed").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a POSIX SIGTERM to bash; Windows terminates outright")
+def test_a_cycle_stopped_from_outside_stops_the_steps_first(host) -> None:
+    (host["fake"] / "block-watch_registers").write_text("")
+    (host["fake"] / "alive-register-watch").write_text("")
+    cycle = start_with(host)
+    try:
+        deadline = time.monotonic() + 60
+        while "start watch_registers" not in calls(host):
+            assert time.monotonic() < deadline, "the watch never started"
+            time.sleep(0.1)
+        cycle.terminate()
+        cycle.wait(timeout=60)
+    finally:
+        (host["fake"] / "block-watch_registers").unlink(missing_ok=True)
+    assert cycle.returncode == 143
+    assert "stop register-watch" in _bounded_calls(host)
+    assert not (host["fake"] / "alive-register-watch").exists()
+
+
+# -- the real thing on Linux: the real flock and the real supervisor ---------------------
+
+# `docker exec [--env-file F] WEB python -m app.core.nightly_bounded ...` runs that
+# module here, as the "container"; `manage.py nightly_outcome` answers SUCCEEDED for
+# rc 0 and FAILED otherwise; `docker inspect` says the container runs.
+LOCAL_DOCKER = r"""#!/usr/bin/env bash
+if [ "$1" = inspect ]; then echo true; exit 0; fi
+[ "$1" = exec ] || exit 97
+shift
+while [ "$1" = --env-file ]; do shift 2; done
+shift
+args=("$@")
+rc=0; step=""; outcome=0
+for ((j = 0; j < ${#args[@]}; j++)); do
+  [ "${args[$j]}" = nightly_outcome ] && outcome=1
+  [ "${args[$j]}" = --rc ] && rc="${args[$((j + 1))]}"
+  [ "${args[$j]}" = --step ] && step="${args[$((j + 1))]}"
+done
+if [ "$outcome" = 1 ]; then
+  if [ "$rc" = 0 ]; then o=SUCCEEDED; else o=FAILED; fi
+  printf 'NIGHTLY-OUTCOME {"outcome": "%s", "reason": "rc %s", "step": "%s"}\n' "$o" "$rc" "$step"
+  exit 0
+fi
+cd "$REPO_ROOT" && exec "$PYTHON" "${args[@]:1}"
+"""
+
+
+FLOCK = shutil.which("flock") or "flock"
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or not shutil.which("flock") or not os.path.isdir("/proc/self"),
+    reason="the real flock and process groups: Linux only",
+)
+def test_real_flock_the_lock_is_held_until_the_steps_work_is_gone(host, tmp_path) -> None:
+    """A step outruns its budget. The real supervisor terminates it; the cycle's real
+    flock is held throughout and is free only once the step's process is gone."""
+    import sys
+
+    real_bin = tmp_path / "realbin"
+    _executable(real_bin / "docker", LOCAL_DOCKER)
+    marker = tmp_path / "step-pid"
+    code = (
+        f"import os, time; open('{marker.as_posix()}', 'w').write(str(os.getpid())); "
+        "time.sleep(300)"
+    )
+    # A copy of the script whose in-container commands are that sleeping shell; the
+    # repository's own script is not changed.
+    script = SCRIPT.read_text(encoding="utf-8")
+    patched = script.replace(
+        '--kill-after "$KILL_AFTER" -- "$@" </dev/null',
+        f'--kill-after 2 -- shell -c "{code}" </dev/null',
+    )
+    assert patched != script
+    copy = tmp_path / "deploy" / "juristid-nightly-cycle.sh"
+    copy.parent.mkdir(parents=True)
+    copy.write_text(patched, encoding="utf-8")
+    shutil.copy(LIB, copy.parent / "lib.sh")
+    env = {
+        **_env(host, WINTER_MIDNIGHT),
+        "PATH": f"{real_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "REPO_ROOT": str(ROOT),
+        "PYTHON": sys.executable,
+        "JURISTID_NIGHTLY_PID_DIR": str(tmp_path / "pids"),
+        "DJANGO_SECRET_KEY": os.environ.get("DJANGO_SECRET_KEY", "cycle-test"),
+        # 4080 s → 4 s, 2280 s → 2 s; the grace 300 s → 0 s.
+        "JURISTID_NIGHTLY_BUDGET_SCALE": "1020",
+    }
+    (host["nightly"]).mkdir(parents=True, exist_ok=True)
+    (host["nightly"] / "PAUSED-government-agenda").write_text("")
+    (host["nightly"] / "PAUSED-register-sweep").write_text("")
+    cycle = subprocess.Popen(  # noqa: S603
+        [BASH, str(copy)],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        _wait_for(marker, 90)
+        step = int(marker.read_text())
+        held = subprocess.run(  # noqa: S603
+            [FLOCK, "-n", str(host["cycle_lock"]), "true"], check=False
+        )
+        assert held.returncode != 0, "the cycle holds its lock while the step runs"
+        cycle.wait(timeout=120)
+    finally:
+        if cycle.poll() is None:
+            cycle.kill()
+    stat = Path(f"/proc/{step}/stat")
+    assert not stat.exists() or stat.read_text().rsplit(")", 1)[1].split()[0] in ("Z", "X")
+    free = subprocess.run(  # noqa: S603
+        [FLOCK, "-n", str(host["cycle_lock"]), "true"], check=False
+    )
+    assert free.returncode == 0, "the lock is free once the work is gone"
+    completed = (host["state"] / f"{WINTER_NIGHT}.completed").read_text(encoding="utf-8")
+    assert "register-watch     FAILED" in completed and "rc=124" in completed

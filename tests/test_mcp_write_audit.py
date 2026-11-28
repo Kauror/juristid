@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import io
 import uuid
-from datetime import timedelta
 
 import pytest
 from django.core.management import call_command
@@ -20,7 +19,6 @@ from django.db import connection, transaction
 from django.db.utils import DatabaseError
 from django.test import RequestFactory
 from django.urls import reverse
-from django.utils import timezone
 
 from app.audit.enums import AuthAssurance, AuthMethod, ChangeEventType
 from app.audit.models import ChangeEvent
@@ -36,11 +34,9 @@ from app.core.errors import ImmutableRecordError
 from app.mcp_writes import proposals
 from app.mcp_writes.commit import commit
 from app.mcp_writes.models import (
-    ApprovalMethod,
     McpWriteApproval,
     McpWriteEvent,
     McpWriteProposal,
-    ProposalStatus,
 )
 from tests import factories
 from tests import test_mcp_write_proposals_support as support
@@ -68,17 +64,7 @@ def executed(monkeypatch):
         raw_arguments={"matter": str(matter.pk), "title": "Uus pealkiri"},
     )
     proposal = McpWriteProposal.objects.get(pk=answer["proposal"]["id"])
-    now = timezone.now()
-    McpWriteApproval.objects.create(
-        proposal=proposal,
-        user=user,
-        grant=proposal.grant,
-        arguments_digest=proposal.arguments_digest,
-        approved_at=now,
-        expires_at=now + timedelta(minutes=10),
-        method=ApprovalMethod.TOTP,
-    )
-    McpWriteProposal.objects.filter(pk=proposal.pk).update(status=ProposalStatus.APPROVED)
+    support.approve_and_save(proposal)
     assert commit(access=access, user=user, proposal_id=str(proposal.pk))["status"] == "executed"
     proposal.refresh_from_db()
     return {"user": user, "matter": matter, "proposal": proposal}

@@ -129,6 +129,9 @@ def test_it_shares_nothing_with_the_rehearsal(
 #: it reaches `mcp` and the internet, never `db`, `web` or `tunnel`. The write
 #: gateway (docs/adr/0189) is on `internal` for `db` and `mcp_write` for `mcp`,
 #: never `mcp_edge`; `mcp` is on all three.
+#: The no-network parsers (SEC-008, docs/adr/0230): `network_mode: none` and no
+#: network at all — stricter than `internal`, asserted as such below.
+PARSERS = ("intake-parser", "batch-parser")
 EXPECTED_NETWORKS = {
     "mcp": ["internal", "mcp_edge", "mcp_write"],
     "mcp-tunnel": ["mcp_edge"],
@@ -145,6 +148,10 @@ def test_the_stack_uses_its_own_networks_and_joins_no_other(compose: dict[str, A
     for network in networks.values():
         assert network.get("external") is not True
     for name, service in compose["services"].items():
+        if name in PARSERS:
+            assert service.get("network_mode") == "none", name
+            assert "networks" not in service, name
+            continue
         assert list(service["networks"]) == EXPECTED_NETWORKS.get(name, ["internal"]), name
 
 
@@ -161,10 +168,12 @@ def test_only_mcp_shares_a_network_with_the_tunnel_client(compose: dict[str, Any
     reachable = {
         name
         for name, service in services.items()
-        if name != MCP_TUNNEL and tunnel_networks & set(service["networks"])
+        if name != MCP_TUNNEL and tunnel_networks & set(service.get("networks", []))
     }
     assert reachable == {MCP}
-    on_edge = {name for name, service in services.items() if "mcp_edge" in service["networks"]}
+    on_edge = {
+        name for name, service in services.items() if "mcp_edge" in service.get("networks", [])
+    }
     assert on_edge == {MCP, MCP_TUNNEL}
     for name in ("db", "web", "tunnel", "mcp-writer"):
         assert "mcp_edge" not in services[name]["networks"], name
@@ -181,7 +190,9 @@ def test_the_write_network_holds_the_mcp_server_and_the_gateway_only(
     services = compose["services"]
     assert compose["networks"]["mcp_write"]["internal"] is True
     assert compose["networks"]["mcp_write"]["driver"] == "bridge"
-    on_write = {name for name, service in services.items() if "mcp_write" in service["networks"]}
+    on_write = {
+        name for name, service in services.items() if "mcp_write" in service.get("networks", [])
+    }
     assert on_write == {MCP, MCP_WRITER}
     shared = set(services[MCP_TUNNEL]["networks"]) & set(services[MCP_WRITER]["networks"])
     assert shared == set(), "the tunnel client shares a network with the write gateway"
@@ -891,8 +902,12 @@ def test_every_storage_class_has_a_mount(compose: dict[str, Any]) -> None:
     assert "/home/nonroot/.cloudflared" in targets["tunnel"]
     assert {"/app/evidence", "/app/derivatives", "/app/legacy-source"} <= targets["web"]
     # And the reader has none of them. It reads staged bytes and writes rows;
-    # an evidence tree would be reach without purpose (docs/adr/0072).
-    assert targets[READER] == {UPLOAD_TARGET}
+    # an evidence tree would be reach without purpose (docs/adr/0072). Since
+    # SEC-008 it also holds its parser's socket volume — and only that
+    # (docs/adr/0230); the parsers hold their socket and nothing else.
+    assert targets[READER] == {UPLOAD_TARGET, "/run/juristid-parser"}
+    for parser in PARSERS:
+        assert targets[parser] == {"/run/juristid-parser"}, parser
 
 
 def test_the_source_corpus_is_read_only_on_every_service_that_sees_it(

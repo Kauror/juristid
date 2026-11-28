@@ -129,7 +129,9 @@ def test_the_head_reaches_the_page_from_tehtud(page, base_url, planted, width):
     expect(row.locator("[data-after]")).to_have_text("Idee")
     expect(page.locator("[data-outputs]")).to_be_visible()
     expect(page.locator("[data-snapshots]")).to_be_visible()
-    expect(page.locator("[data-coverage]")).to_be_visible()
+    # «Mida see ei näita» was removed by the owner (UX-004, 2026-11-26).
+    expect(page.locator("[data-coverage]")).to_have_count(0)
+    expect(page.get_by_role("heading", name="Mida see ei näita")).to_have_count(0)
     assert not document_overflows(page)
 
     link = row.get_by_role("link")
@@ -187,7 +189,8 @@ def test_an_empty_window_says_so(page, base_url):
     expect(page.locator("[data-changes-unrecorded]")).to_have_text(
         "Sel perioodil muudatusi veel ei salvestatud."
     )
-    expect(page.locator("[data-unrecorded]")).to_be_visible()
+    # The rail's coverage sentence went with «Mida see ei näita» (UX-004).
+    expect(page.locator("[data-unrecorded]")).to_have_count(0)
     expect(page.locator("[data-partial]")).to_have_count(0)
     expect(page.get_by_role("heading", name="Muudatuste arv teadmata")).to_be_visible()
     expect(page.locator("[data-detail] tbody tr")).to_have_count(0)
@@ -268,4 +271,48 @@ def test_a_refused_range_message_is_not_covered(page, base_url, width):
     assert not notice.evaluate(_NOT_CLIPPED)["clipped"]
     expect(page.locator("[data-period-inline] input[name='alates']")).to_be_visible()
     expect(page.locator(".uxdg__periodbody")).to_have_count(0)
+    assert not document_overflows(page)
+
+
+#: Where each cell's *content* sits, for every column of the last body row and
+#: of the «Kokku» row: the cell boxes of one column always line up, so the
+#: misalignment the owner saw (BUG-003) was inside them — padding and alignment.
+_PEOPLE_EDGES = """() => {
+  const table = document.querySelector('[data-people] table');
+  const body = [...table.querySelectorAll('tbody tr')].pop();
+  const foot = table.querySelector('tfoot tr[data-person-total]');
+  const edges = (row) => [...row.cells].map((cell) => {
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    const text = range.getBoundingClientRect();
+    const box = cell.getBoundingClientRect();
+    const style = getComputedStyle(cell);
+    return {
+      left: text.left, right: text.right, boxRight: box.right, height: box.height,
+      padRight: parseFloat(style.paddingRight), border: parseFloat(style.borderTopWidth),
+    };
+  });
+  return {body: edges(body), foot: edges(foot)};
+}"""
+
+
+@pytest.mark.parametrize("width", [1440, 1024, 375])
+def test_the_kokku_row_lines_up_with_its_columns(page, base_url, planted, width):
+    page.set_viewport_size({"width": width, "height": 900})
+    sign_in(page, base_url, HEAD)
+    page.goto(f"{base_url}{PAGE_PATH}?periood=30")
+
+    edges = page.evaluate(_PEOPLE_EDGES)
+    body, foot = edges["body"], edges["foot"]
+    assert len(body) == len(foot) == 6
+    # The name column starts where the names do; every figure ends where its
+    # column's figures end, the last one included.
+    assert abs(body[0]["left"] - foot[0]["left"]) < 1, (body[0], foot[0])
+    for column, (above, total) in enumerate(zip(body[1:], foot[1:], strict=True), start=1):
+        assert abs(above["right"] - total["right"]) < 1, (column, above, total)
+        assert total["padRight"] == above["padRight"] > 0, (column, above, total)
+        assert total["right"] <= total["boxRight"] - total["padRight"] + 0.5
+    # One row height, and a separator above the total.
+    assert abs(body[1]["height"] - foot[1]["height"]) < 1
+    assert all(cell["border"] > 0 for cell in foot)
     assert not document_overflows(page)

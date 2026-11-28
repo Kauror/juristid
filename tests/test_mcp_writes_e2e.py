@@ -23,6 +23,7 @@ with connections of their own.
 from __future__ import annotations
 
 import io
+import re
 from datetime import timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -144,7 +145,8 @@ def _prepare(mcp: w.Mcp, operation: str, arguments: dict[str, Any]) -> dict[str,
 def _approve(client: Client, prepared: dict[str, Any], code: str | None) -> str:
     page = client.get(_path(prepared["approval_url"]))
     assert page.status_code == 200, page.content.decode()[:600]
-    form = {"otsus": "kinnita"}
+    shown = re.search(r'name="sidumine" value="([0-9a-f]{64})"', page.content.decode())
+    form = {"otsus": "kinnita", "sidumine": shown.group(1) if shown else ""}
     if code is not None:
         form["kood"] = code
     answered = client.post(_path(prepared["approval_url"]), form)
@@ -342,7 +344,8 @@ def test_an_administrator_without_a_business_role_never_gets_write():
         call_command("mcp_access", "grant-write", "--user", admin.upn, stdout=io.StringIO())
 
 
-def test_revoke_write_between_approval_and_commit_stops_the_change(client, monkeypatch):
+def test_revoke_write_between_prepare_and_approval_stops_the_change(client, monkeypatch):
+    """Since docs/adr/0234 approving is saving: what is honoured is a revoke before it."""
     moment = w.freeze_totp(monkeypatch)
     mari = factories.UserFactory(upn="mari.maasikas@example.invalid")
     matter = factories.MatterFactory(owner=mari)
@@ -356,10 +359,16 @@ def test_revoke_write_between_approval_and_commit_stops_the_change(client, monke
         "add_matter_note",
         {"matter": matter.display_reference, "text": NOTE, "occurred_on": "2026-10-01"},
     )
-    _approve(client, note, w.code_at(secret, moment, 1))
     call_command(
         "mcp_access", "revoke-write", "--user", mari.upn, "--reason", "test", stdout=io.StringIO()
     )
+    page = client.get(_path(note["approval_url"]))
+    assert 'value="kinnita"' not in page.content.decode()
+    refused = client.post(
+        _path(note["approval_url"]),
+        {"otsus": "kinnita", "sidumine": "0" * 64, "kood": w.code_at(secret, moment, 1)},
+    )
+    assert "Kinnitatud" not in refused.content.decode()
     result = mcp.call("commit_prepared_action", {"proposal_id": note["proposal_id"]})
     assert result["isError"] is True
     assert Entry.objects.filter(matter=matter).count() == before
@@ -406,11 +415,16 @@ def test_an_approval_is_refused_for_a_stale_matter_and_nothing_is_saved(client, 
         "assign_matter",
         {"matter": matter.display_reference, "action": "assign", "responsible_person": "Teine"},
     )
-    _approve(client, assign, w.code_at(secret, moment, 1))
-    # Meanwhile somebody hands the Matter on in the browser.
+    # Before the approval somebody hands the Matter on in the browser.
     from app.matters.services import assign_matter
 
     assign_matter(matter=Matter.objects.get(pk=matter.pk), owner=other, actor=mari)
+    page = client.get(_path(assign["approval_url"]))
+    assert 'value="kinnita"' not in page.content.decode()
+    client.post(
+        _path(assign["approval_url"]),
+        {"otsus": "kinnita", "sidumine": "0" * 64, "kood": w.code_at(secret, moment, 1)},
+    )
     result = mcp.call("commit_prepared_action", {"proposal_id": assign["proposal_id"]})
     assert result["isError"] is True
     assert McpWriteProposal.objects.get(pk=assign["proposal_id"]).status == ProposalStatus.STALE
@@ -469,10 +483,11 @@ def test_one_correlation_id_ties_tool_call_proposal_approval_commit_and_audit(
         McpWriteEventType.COMMITTED,
     ):
         assert events[kind].correlation_id == proposal.correlation_id, kind
-    # The commit tool call is found from the commit event, and the business rows
-    # the commit wrote carry the proposal's id.
+    # The commit tool call is found from the receipt event (since docs/adr/0234
+    # the approval page saves; the commit call reports), and the business rows
+    # the approval wrote carry the proposal's id.
     assert (
-        events[McpWriteEventType.COMMITTED].detail["call_correlation_id"]
+        events[McpWriteEventType.RECEIPT_DELIVERED].detail["call_correlation_id"]
         == (commit_call["correlation_id"])
     )
     assert McpWriteApproval.objects.get(proposal=proposal).user == mari

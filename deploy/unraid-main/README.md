@@ -9,7 +9,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Auth mode | `shared_gate` (temporary; see below) |
 | Public URL | `https://juristid.orgusaar.ee` — behind the shared gate |
 | Compose project | `juristid-main` |
-| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-intake-sweeper`, `juristid-main-notifications`, `juristid-main-tunnel` |
+| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-intake-parser`, `juristid-main-batch-parser` (ADR 0230, `PARSER-ISOLATION.md`), `juristid-main-searchindex`, `juristid-main-intake-sweeper`, `juristid-main-notifications`, `juristid-main-tunnel` |
 | Network | `juristid-main-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-main/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -176,7 +176,7 @@ Edit `JURISTID_SHARED_GATE_PASSWORD` in the host's environment file and
 **recreate** the application services with the running release's exports:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-parser batch-parser intake-reader searchindex intake-sweeper notifications
 ```
 
 Not `docker compose restart`: a restart keeps the container's original
@@ -550,6 +550,24 @@ its log, recover it by hand: `juristid-nightly-cycle.sh --manual`. Pause it with
 `PAUSED-<step>`). The cycle holds `/tmp/juristid-nightly-cycle.lock` from start to
 end; a release or a restore takes the same lock first and refuses while the
 cycle runs, and the cycle refuses to start under them.
+
+**Execution budgets (ADR 0231).** Every in-container step runs under
+`python -m app.core.nightly_bounded`: register watch 68 min, Riigikogu 98 min, the
+sweep and the agenda 38 min each; every register call and model request stops five
+minutes before that, and at the budget the step's processes are terminated and
+verified gone. The cycle releases its lock only once nothing of a step is left
+running in the container. A step stopped at its budget is `FAILED` with reason
+`TIMEOUT` (`BUSY`: its previous run was still alive; `STUCK`: not verified gone —
+`nightly/state/<night>.stuck` exists and the cycle is holding its lock). By hand:
+
+```bash
+docker exec juristid-main-web python -m app.core.nightly_bounded status --step register-watch
+docker exec juristid-main-web python -m app.core.nightly_bounded stop --step register-watch
+```
+
+`status` answers `gone` (exit 0) or `alive` (exit 3); `stop` terminates the step's
+process group and verifies it gone (exit 0), or answers `stuck` (70). Haldus →
+Registrite jälgimine → «Öine tsükkel» shows each step's last verdict.
 
 ## Recurring operations — refreshing the register
 
@@ -1574,11 +1592,12 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 
 If it would recreate `db` or `tunnel`, name the services that run the release
 image instead — every one of them, read off `compose.yml` (today `web`,
-`intake-reader`, `searchindex`, `intake-sweeper` and `notifications`), so none is left on the
+`intake-parser`, `batch-parser`, `intake-reader`, `searchindex`, `intake-sweeper` and
+`notifications`), so none is left on the
 old image:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-parser batch-parser intake-reader searchindex intake-sweeper notifications
 ```
 
 `--no-build` is not decoration. `compose.yml` has a `build:` stanza, and a plain

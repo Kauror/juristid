@@ -2,8 +2,9 @@
 
 The `mcp` process never writes. A write tool asks `mcp-writer` — a separate
 process with its own database role, reachable only over the internal
-`mcp_write` network — to *prepare* a proposal or to *commit* one the person
-has already approved in Juristid:
+`mcp_write` network — to *prepare* a proposal or to fetch the *receipt* of one
+(`/v1/commit`; the person's «Kinnita» on Juristid's own page already saved it, the
+gateway executes nothing, docs/adr/0234):
 
     POST {MCP_WRITE_GATEWAY_URL}/v1/prepare  {"operation": str, "arguments": {...}}
     POST {MCP_WRITE_GATEWAY_URL}/v1/commit   {"proposal_id": str}
@@ -31,12 +32,12 @@ certain: a refusal the gateway gives before anything executes, or a request
 that never reached it. Once a request was sent, a timeout, a broken
 connection, the gateway's own ``timeout`` or ``internal_error``, an unknown
 code or an unreadable answer leave the outcome *unknown* — the gateway's
-worker may still finish a commit a second later. A commit then says so, and
+worker may still finish a save a second later. A receipt request then says so, and
 that calling commit_prepared_action again with the same proposal_id is safe
 (it is idempotent: a saved proposal answers its stored receipt); a prepare
-says a proposal may exist but nothing changes until it is approved and
-committed. «Nothing was saved» there would have the model prepare the change
-again and the person approve it twice. Nothing is logged
+says a proposal may exist but nothing changes until the person presses
+«Kinnita» on Juristid's approval page. «Nothing was saved» there would have the
+model prepare the change again and the person approve it twice. Nothing is logged
 but the operation's kind, the outcome and exception *types* — never the
 token, the key, the arguments or the answer's text.
 """
@@ -92,9 +93,17 @@ REFUSAL_TEXT: dict[str, str] = {
     ),
     "expired": "This proposal has expired unapproved. Nothing was saved.",
     "declined": "The user declined this proposal in Juristid. Nothing was saved.",
-    "approval_mismatch": "This proposal's approval does not match it. Nothing was saved.",
-    "already_failed": "This proposal already failed and cannot be committed. Nothing was saved.",
+    "approval_mismatch": (
+        "This proposal no longer matches what was approved. Nothing was saved; prepare it again."
+    ),
+    "already_failed": (
+        "This proposal already failed. Nothing was saved; prepare it again if still wanted."
+    ),
     "too_large": "The change is too large for Juristid to accept. Nothing was saved.",
+    "rate_limited": (
+        "Juristid's limit for requests through ChatGPT was reached. Nothing was saved or "
+        "changed. Wait as the message says before trying again; do not retry at once."
+    ),
     "method_not_allowed": "Juristid's change service refused the request. Nothing was saved.",
 }
 
@@ -115,7 +124,7 @@ COMMIT_UNKNOWN_TEXT = (
 )
 PREPARE_UNKNOWN_TEXT = (
     "Juristid did not confirm the proposal. A proposal may exist, but nothing in Juristid "
-    "changes until the user approves it in Juristid and commit_prepared_action saves it. "
+    "changes until the user approves it on the Juristid approval page. "
     "Ask the user before preparing the change again."
 )
 

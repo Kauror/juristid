@@ -167,6 +167,72 @@ def seconds_until_expiry(claims: dict[str, Any]) -> int:
     return max(0, expiry - int(time.time()))
 
 
+# -- the session this mode establishes ------------------------------------------
+#
+# The middleware used to let any authenticated session through whose account's
+# address matched the assertion. That is a statement about the *account*, not
+# about the *session*: a persona chosen behind the shared gate, a development
+# sign-in or a personal-password session naming the same person would have
+# carried on — with its own keys, its own expiry and whatever administrator
+# state it held — once the deployment switched to Access (SEC-012). A session is
+# reused only when it carries the marker below, written by this mode at the
+# moment it signed the person in from a verified assertion, and only while
+# every fact the marker records is still true.
+
+#: Session key for the provenance marker written at an Access sign-in.
+SESSION_MARKER = "cf_access:session"
+
+#: What the marker says established the session. A constant, so a marker some
+#: future mode writes under the same key can never be read as this one's.
+PROVENANCE = "cloudflare_access"
+
+
+def mark_session(session: Any, user: Any, *, email: str, claims: dict[str, Any]) -> None:
+    """Record, in a session this mode just signed in, what established it."""
+    session[SESSION_MARKER] = {
+        "via": PROVENANCE,
+        "user": str(user.pk),
+        "email": email,
+        "sub": str(claims.get("sub") or ""),
+        "expires_at": int(claims.get("exp") or 0),
+    }
+
+
+def session_holds(session: Any, user: Any, *, email: str, claims: dict[str, Any]) -> bool:
+    """Whether this authenticated session may serve a request carrying ``claims``.
+
+    Every condition is about the session *and* the assertion now in front of
+    it, which has already been verified for this request:
+
+    * the session was established by this mode (`SESSION_MARKER`, `PROVENANCE`)
+      for this account — a session from the shared gate, `none` or
+      `local_password` has no marker, whatever address its account carries;
+    * for the identity this assertion names: the same address, and the same
+      Cloudflare subject (`sub`), or none on either side;
+    * the account is still one Access may sign in: active (Django has already
+      answered an inactive account as anonymous, asked again here) and not
+      synthetic;
+    * inside the lifetime of the assertion that established it — a session
+      never outlives its sign-in, whatever its cookie says.
+
+    ``False`` means the caller ends the session and decides the request from
+    the assertion alone, as for a first visit.
+    """
+    marker = session.get(SESSION_MARKER)
+    if not isinstance(marker, dict) or marker.get("via") != PROVENANCE:
+        return False
+    if marker.get("user") != str(getattr(user, "pk", "")):
+        return False
+    if marker.get("email") != email or (getattr(user, "upn", "") or "").lower() != email:
+        return False
+    if not hmac.compare_digest(str(marker.get("sub") or ""), str(claims.get("sub") or "")):
+        return False
+    if not getattr(user, "is_active", False) or getattr(user, "is_synthetic", True):
+        return False
+    expires_at = marker.get("expires_at")
+    return isinstance(expires_at, int) and expires_at > int(time.time())
+
+
 # -- signing out ---------------------------------------------------------------
 #
 # Under Access this application does not own the sign-in: Cloudflare does, and

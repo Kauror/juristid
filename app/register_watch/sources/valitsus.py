@@ -34,6 +34,13 @@ stored agenda, itself parsed and matched to its session date (`site_answers`); a
 page that is not that agenda — a maintenance page, a challenge, anything — is no
 control. «Not yet published» is said only when the discovery pages were read and
 list nothing for the day; when they could not be read, publication is unconfirmed.
+
+**Deadlines** (SEC-010, ADR 0231). Every read goes through `sources.http`, so the
+nightly step's whole-call deadline bounds it. A read stopped by a deadline
+(`http.DeadlineExceeded`) is a source failure like a timeout. Once the run's own
+deadline has passed, discovery stops (the listings it did not reach count as
+unread) and a lookup ends at once as SOURCE_ERROR — never «not yet published»,
+never «not found».
 """
 
 from __future__ import annotations
@@ -44,7 +51,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from app.register_watch.sources.http import FetchError, get_text
+from app.register_watch.sources import http
+from app.register_watch.sources.http import DeadlineExceeded, FetchError, get_text
 
 HOST = "valitsus.ee"
 MONTHS = (
@@ -139,6 +147,8 @@ class Discovery:
     read: list[str] = field(default_factory=list)
     #: ``(path, error)`` of every discovery page that could not be read.
     failures: list[tuple[str, FetchError]] = field(default_factory=list)
+    #: The run's deadline stopped discovery (SEC-010): what was not read is unread.
+    out_of_time: bool = False
 
     @property
     def ok(self) -> bool:
@@ -160,10 +170,15 @@ class Discovery:
 
 
 def _read(path: str, found: Discovery) -> str | None:
+    if found.out_of_time:
+        return None  # the deadline stopped discovery: the rest is unread, not tried
     try:
+        http.check_deadline(f"{HOST} päevakorra otsing")
         page = get_text(HOST, path)
     except FetchError as error:
         found.failures.append((path, error))
+        if isinstance(error, DeadlineExceeded) and http.out_of_time():
+            found.out_of_time = True
         return None
     found.read.append(path)
     return page
@@ -383,6 +398,19 @@ def look(
         try:
             page = get_text(HOST, path)
         except FetchError as error:
+            if isinstance(error, DeadlineExceeded) and http.out_of_time():
+                # The run's time is spent (SEC-010): nothing after this can be read,
+                # and what was refused or missing so far proves nothing. A source
+                # failure, whatever the other addresses said. (One slow call cut at
+                # `CALL_SECONDS` with time left is an ordinary error below.)
+                problems.append(f"{HOST}{path}: {str(error)[:160]}")
+                return Lookup(
+                    day,
+                    SOURCE_ERROR,
+                    url=url,
+                    detail=f"{HOST}{path}: {error!s}"[:300],
+                    problems=problems,
+                )
             if error.status == 404:
                 continue
             if error.status == 403:

@@ -1861,9 +1861,14 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # tests/test_mcp_access_enrolment.py, tests/test_mcp_access_consent_identity.py).
     "mcp_access:authorize": "D: OAuth consent for an AI client; grant + personal code",
     "mcp_access:enrol": "D: confirms the person's own MCP authenticator",
+    # B — since docs/adr/0234 the approval page saves the change it shows, through
+    # the operation's canonical service. Stricter than business write:
+    # `may_write` is `may_write_business_content` *and* an ACTIVE, write-enabled
+    # grant of this persona's own, and the grant's personal code is asked on top
+    # (tests/test_mcp_write_approval.py, tests/test_mcp_write_commit.py).
     "mcp_writes:approve": (
-        "D: approves the person's own AI-prepared change; gate + own persona + may_write + "
-        "personal code; writes no business row"
+        "B: saves the person's own AI-prepared change; gate + own persona + may_write "
+        "(business write + write-enabled grant) + personal code"
     ),
     # B — stricter than business write, and already stricter. DEPARTMENT_HEAD is
     # a subset of the business writers, so `may_review_work_victory` implies the

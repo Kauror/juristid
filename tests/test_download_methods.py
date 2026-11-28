@@ -142,9 +142,16 @@ def test_options_is_refused_even_where_csrf_is_enforced(urls, specialist, route)
 
 @pytest.mark.parametrize("route", ROUTES)
 def test_an_anonymous_unsafe_request_is_refused_before_sign_in(urls, route):
-    response = Client().post(urls[route])
+    # A form body (urlencoded) reaches the route, which refuses the method.
+    response = Client().post(urls[route], content_type="application/x-www-form-urlencoded")
 
     assert response.status_code == 405
+    assert _downloads() == 0
+
+    # A multipart body is refused earlier still, unread, by the SEC-013 boundary
+    # (docs/adr/0233; r96 integration): no download either way.
+    refused = Client().post(urls[route])
+    assert refused.status_code in (302, 401, 403)
     assert _downloads() == 0
 
 

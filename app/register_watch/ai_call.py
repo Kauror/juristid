@@ -21,6 +21,8 @@ from app.register_watch import house_style
 
 DEFAULT_MODEL = "claude-opus-5-5"
 UNREADABLE = "vastus ei olnud loetav"
+#: The `Failure` reason when the run's time was spent before the request (ADR 0231).
+OUT_OF_TIME = "ajapiir täis"
 #: Client timeouts, kept as they were: the watch (ADR 0217) 120 s; the new-drafts
 #: sweep and the Government agenda 180 s since ADR 0218.
 WATCH_TIMEOUT = 120.0
@@ -77,8 +79,16 @@ def call_items(
 
     ``prompt`` is called inside the guard, so a prompt that cannot be built is a
     failed request, like the call itself."""
+    from app.register_watch.sources import http
+
+    left = http.remaining()
+    if left is not None and left <= 0:
+        # The nightly step's time is spent (ADR 0231): no request is started.
+        return Failure("request", OUT_OF_TIME)
     try:
         client = client or make_client(timeout)
+        if left is not None:
+            client = _within(client, timeout, left)
         response = client.beta.messages.create(
             model=getattr(settings, setting, DEFAULT_MODEL),
             max_tokens=max_tokens,
@@ -103,6 +113,19 @@ def call_items(
         return {key(row): row for row in json.loads(text)["items"]}
     except (ValueError, KeyError, TypeError):
         return Failure("unreadable", UNREADABLE)
+
+
+def _within(client: Any, timeout: float, left: float) -> Any:
+    """The client bounded by the run's time left: its timeout no longer than what is
+    left, and no retries a second try could not finish in (ADR 0231). The SDK's
+    timeout bounds each phase of a request, not the whole of it; the nightly
+    step's hard limit (`app.core.nightly_bounded`) is what ends a response that
+    trickles past it."""
+    with_options = getattr(client, "with_options", None)
+    if with_options is None:
+        return client
+    bounded = min(timeout, left)
+    return with_options(timeout=bounded, max_retries=2 if left >= 3 * timeout else 0)
 
 
 def clean_line(value: Any) -> str:

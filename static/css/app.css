@@ -3077,6 +3077,15 @@ fieldset.field > legend {
   white-space: nowrap;
 }
 
+/* A page's import chip in Dokumendid can name several states («1 fail imporditud
+ * · 1 fail on veel importimata · 1 fail kopeerimine ebaõnnestus»). Nowrap made it
+ * wider than a 375 px screen and the whole page scrolled sideways; there it wraps
+ * inside its row instead. Short chips look exactly as before. */
+.filelist .statechip {
+  white-space: normal;
+  max-width: 100%;
+}
+
 .statechip--ok {
   color: var(--status-success);
   border-color: var(--status-success-border);
@@ -16689,6 +16698,38 @@ a.jcal__daynum {
 
 .chtable__detail {
   min-width: 52rem;
+}
+
+/* «Vastutajate kaupa» (BUG-003). `.table` pads only `thead th` and `tbody td`,
+   so the row headers and the whole «Kokku» row fell back to the browser's 1px
+   cell padding: the totals sat a column's padding to the right of the figures
+   above them and the last one touched the table's edge. The same padding and
+   row height as a body cell, and a separator above the total. */
+.chtable .table tbody th[scope="row"],
+.chtable .table tfoot th,
+.chtable .table tfoot td {
+  padding: var(--spacing-15) var(--spacing-35);
+  height: 34px;
+  vertical-align: middle;
+}
+
+.chtable .table tbody th[scope="row"],
+.chtable .table tfoot th {
+  text-align: left;
+}
+
+.chtable .table tbody th[scope="row"] {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.chtable .table tbody tr:last-child th[scope="row"] {
+  border-bottom: none;
+}
+
+.chtable .table tfoot th,
+.chtable .table tfoot td {
+  border-top: 1px solid var(--border-strong);
+  font-weight: var(--typography-weight-semibold);
 }
 
 /* A Teema's title wraps here rather than being cut: the change table is read

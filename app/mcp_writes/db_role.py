@@ -1,9 +1,11 @@
-"""The `mcp-writer` process's own PostgreSQL role: least privilege for approved writes.
+"""The `mcp-writer` process's own PostgreSQL role: it prepares and reports, it never executes.
 
-The write gateway (`mcp-writer`, docs/adr/0189) is the one process that executes
-an approved MCP proposal, through the canonical services the pages call. It
-cannot be read-only — writing is its job — so what bounds it is the role it
-connects as, `juristid_mcp_writer`:
+The write gateway (`mcp-writer`, docs/adr/0189) is reachable, through `mcp`,
+from the AI client's side. Since format 2 (SEC-009, docs/adr/0234) it executes
+nothing: a change is saved by Juristid's approval page on `web`, in the same
+transaction as its person's approval. So the role it connects as,
+`juristid_mcp_writer`, holds no write privilege on any business table, cannot
+change a proposal once stored, and cannot forge an approval:
 
 * **LOGIN**, and NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOINHERIT,
   NOREPLICATION, NOBYPASSRLS; a member of no role (a member can `SET ROLE` to
@@ -11,25 +13,33 @@ connects as, `juristid_mcp_writer`:
 * no CREATE on the database or on schema public, no TRUNCATE, REFERENCES or
   TRIGGER anywhere: no DDL, no bulk wipe;
 * SELECT on every table in public **except** `django_session` — the browser's
-  bearer material, which a process answering bearer tokens never needs;
-* INSERT / UPDATE / DELETE **only** as `WRITE_ALLOWLIST` states, table by
-  table, each with the reason. The list is what the canonical services of the
-  approved operations actually write, proven by running every one of them
-  under this very role (tests/test_mcp_writer_allowlist.py) — plus the
-  gateway's own tables and its security audit rows (`GATEWAY_WRITES`);
+  bearer material, which a process answering bearer tokens never needs (it
+  reads the business tables to resolve and preview a proposed change);
+* INSERT / UPDATE **only** as `WRITE_ALLOWLIST` states, which is exactly the
+  gateway's own bookkeeping (`GATEWAY_WRITES`): it *inserts* a proposal (no
+  UPDATE: what a proposal proposes and how it ends are written by `web`, and a
+  database trigger refuses any change to what it proposes, by anyone),
+  appends events and security audit rows, and counts its budgets. Proven by
+  running the gateway's own suites under this very role
+  (tests/test_mcp_writer_role_runs_*.py) and by the refusals in
+  tests/test_mcp_writer_cannot.py;
 * **no write, ever**, on the tables `DENIED_WRITE_PREFIXES` and
   `DENIED_WRITE_TABLES` name: accounts and their credentials and second
   factors, every MCP grant, token, authenticator, code, throttle and event,
   the approvals (only `web` writes an approval — that row *is* the human's
-  consent, so the process that executes must not be able to forge one), and
-  Django's own tables;
+  consent), and Django's own tables — and, since format 2, **no business
+  table** either: a write privilege anywhere outside `WRITE_ALLOWLIST` is a
+  start-up error (juristid.E050);
 * role settings applied at every login: `statement_timeout` and
   `idle_in_transaction_session_timeout` = `MCP_WRITE_CALL_TIMEOUT_SECONDS`,
   `temp_file_limit` (superuser-only to raise) and a `CONNECTION LIMIT`.
 
 Future tables a migration adds become *readable* through the default
-privilege, never writable: a release whose operations write a new table adds
-it to the allow-list and re-runs ``manage.py mcp_writer_db_role --apply``.
+privilege, never writable. Re-running ``manage.py mcp_writer_db_role --apply``
+after a release re-asserts the role: everything is revoked and exactly this
+module's grants are given back, so the r94 role's business-table writes are
+removed by the first run of this release's command (docs/mcp/OPERATIONS.md,
+«Writer role after r96»).
 
 `privilege_problems_writer` is what the `mcp-writer` process checks about the
 role it is connected as before it serves anything (juristid.E050): each
@@ -58,6 +68,7 @@ __all__ = [
     "DEFAULT_ROLE",
     "DENIED_WRITE_PREFIXES",
     "DENIED_WRITE_TABLES",
+    "FORMER_BUSINESS_WRITES",
     "GATEWAY_WRITES",
     "REQUIRED_READABLE",
     "TEMP_FILE_LIMIT",
@@ -80,75 +91,45 @@ DEFAULT_ROLE = "juristid_mcp_writer"
 #: Readable by nobody but `web`: a session key is a signed-in gate session.
 WITHHELD_TABLES = ("django_session",)
 
-#: The gateway's own bookkeeping (CONTRACT §5, agent C's models). A proposal is
-#: created at prepare and moved through its statuses at commit; an event is
-#: appended and never changed (append-only, so INSERT alone).
+#: The gateway's own bookkeeping (CONTRACT §5; SEC-009/SEC-014). A proposal is
+#: inserted at prepare and never updated by the gateway (its status is moved
+#: by `web`, and a trigger keeps what it proposes fixed); an event and a
+#: security audit row are appended and never changed (append-only, so INSERT
+#: alone); a budget counter is one upsert (INSERT … ON CONFLICT DO UPDATE).
 GATEWAY_WRITES: dict[str, tuple[str, ...]] = {
-    "mcp_writes_mcpwriteproposal": ("INSERT", "UPDATE"),
+    "mcp_writes_mcpwriteproposal": ("INSERT",),
     "mcp_writes_mcpwriteevent": ("INSERT",),
+    "mcp_writes_mcpwritecounter": ("INSERT", "UPDATE"),
     # The gateway's security audit rows (a refused token, a refused commit),
     # append-only like the change history: INSERT alone.
     "audit_securityauditevent": ("INSERT",),
 }
 
-#: Table → the write privileges the role holds on it, and nothing else.
-#:
-#: Derived by running each approved operation's canonical service(s) under this
-#: role and under a statement recorder (tests/test_mcp_writer_allowlist.py);
-#: that test fails both when a service needs a grant missing here and when a
-#: grant here is used by no operation. UPDATE is also what a row lock
-#: (`SELECT … FOR UPDATE`, the Matter lock every canonical write takes) needs.
-#: No DELETE anywhere unless an entry says why.
-WRITE_ALLOWLIST: dict[str, tuple[str, ...]] = {
-    # The Matter itself: created (`create_matter`), retitled and summarised
-    # (`set_matter_title`, `set_brief_summary`), its owner and response-deadline
-    # columns changed (`assign_matter`, the deadline services), and row-locked
-    # by every canonical write (`lock_open_matter_for_business_write`).
-    "matters_matter": ("INSERT", "UPDATE"),
-    # The `YYYY_N` reference counter `create_matter` allocates from: locked and
-    # incremented, and created by `get_or_create` for the first Matter of a year.
-    "matters_matterreferencesequence": ("INSERT", "UPDATE"),
-    # «Uus asi»: the notice an assignment raises for the new owner, and the
-    # previous owner's notice it retires (`create_matter` with an owner,
-    # `assign_matter`).
-    "matters_matterassignmentnotice": ("INSERT", "UPDATE"),
-    # Chronology entries: a note (`add_matter_other`), a meeting
-    # (`add_matter_meeting`), the result of a completed step
-    # (`complete_current_action`).
-    "matters_entry": ("INSERT",),
-    # The save-once ledger (docs/adr/0167): the proposal id passed as
-    # `once_token` makes a replayed commit save nothing twice.
-    "matters_mattersaveonce": ("INSERT",),
-    # `record_procedural_link`: the row, and its idempotency lock on an address
-    # already recorded (`select_for_update(no_key=True)`).
-    "matters_matterprocedurallink": ("INSERT", "UPDATE"),
-    # The opinion deadline's request history (`request_response_deadline`,
-    # `change_response_deadline`): an append-only record — a moved or replaced
-    # request adds a row; the current deadline itself is a Matter column.
-    "matters_matterresponsedeadline": ("INSERT",),
-    # The current step: a new one, the one it supersedes, the one completed
-    # (`set_next_action`, `change_current_action`, `complete_current_action`).
-    "workflow_nextaction": ("INSERT", "UPDATE"),
-    # The Matter's plan (docs/adr/0142): a new Matter in a stage gets its
-    # planned steps (`create_matter`), and completing a plan-derived step marks
-    # that step done (`complete_current_action`); both lock the row first.
-    "workflow_matterplanstep": ("INSERT", "UPDATE"),
-    # An opinion's follow-up check: completing it records its outcome
-    # (`complete_current_action` on a follow-up action). Never created here.
-    "workflow_opinionfollowup": ("UPDATE",),
-    # `add_important_date`.
-    "intelligence_matterimportantdate": ("INSERT",),
-    # The change history every canonical service appends to (append-only:
-    # audit triggers refuse UPDATE and DELETE whatever the grant says).
-    "audit_changeevent": ("INSERT",),
-    # The search projection the services refresh in the same transaction
-    # (app/search/indexing.py, child_indexing.py). DELETE is the one proven
-    # necessary here: a child row's projection is replaced by deleting its
-    # stale documents and inserting the new ones. It is derived data, rebuilt
-    # by `rebuild_search_index` from the canonical tables, never a record.
-    "search_searchdocument": ("INSERT", "UPDATE", "DELETE"),
-    **GATEWAY_WRITES,
-}
+#: Table → the write privileges the role holds on it, and nothing else: the
+#: gateway's own tables. Until r94 this also listed every business table the
+#: approved operations' canonical services write (the gateway executed them at
+#: commit); since format 2 the approval page on `web` executes, and those
+#: privileges are exactly what a compromised gateway must not have.
+WRITE_ALLOWLIST: dict[str, tuple[str, ...]] = dict(GATEWAY_WRITES)
+
+#: What the r94 role could write and this one cannot — the business tables the
+#: approved operations' canonical services write, now only from `web`. Kept by
+#: name so the role check and tests/test_mcp_writer_cannot.py can say so.
+FORMER_BUSINESS_WRITES = (
+    "matters_matter",
+    "matters_matterreferencesequence",
+    "matters_matterassignmentnotice",
+    "matters_entry",
+    "matters_mattersaveonce",
+    "matters_matterprocedurallink",
+    "matters_matterresponsedeadline",
+    "workflow_nextaction",
+    "workflow_matterplanstep",
+    "workflow_opinionfollowup",
+    "intelligence_matterimportantdate",
+    "audit_changeevent",
+    "search_searchdocument",
+)
 
 #: Never writable, whatever the allow-list is later edited to say. A prefix
 #: covers every table an app has now and adds later.
@@ -192,8 +173,12 @@ _WRITE_PRIVILEGES = ("INSERT", "UPDATE", "DELETE")
 
 
 def is_denied(table: str) -> bool:
-    """A table the writer must never write, by name."""
-    return table in DENIED_WRITE_TABLES or table.startswith(DENIED_WRITE_PREFIXES)
+    """A table the writer must never write, by name (a business table included, since r96)."""
+    return (
+        table in DENIED_WRITE_TABLES
+        or table in FORMER_BUSINESS_WRITES
+        or table.startswith(DENIED_WRITE_PREFIXES)
+    )
 
 
 def role_settings(*, statement_timeout_seconds: int) -> dict[str, str]:

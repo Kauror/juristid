@@ -2,11 +2,13 @@
 {% block title %}Kinnita muudatus · {{ application_name }}{% endblock %}
 
 {% comment %}
-  The approval of one change an AI client prepared (docs/adr/0189). Everything
-  shown is the stored preview, autoescaped, exactly as it was prepared; the
-  page re-checked the record before offering «Kinnita» and offers no button
-  for a stale or finished proposal. The persona says whose page this is; the
-  code from «Juristidi MCP autentija» is what approves.
+  The approval of one change an AI client prepared (docs/adr/0189, 0234).
+  Everything shown is the preview this page derived itself from the
+  proposal's arguments (never the gateway's stored copy), autoescaped; the
+  form carries the binding digest of exactly this preview, and «Kinnita»
+  approves and saves only that. No button for a stale, mismatched or finished
+  proposal. The persona says whose page this is; the code from «Juristidi MCP
+  autentija» is what approves.
 {% endcomment %}
 
 {% block content %}
@@ -25,6 +27,7 @@
 
   <section class="panel acctenrol">
     <p><strong>{{ operation_label }}</strong></p>
+    {% if preview %}
     {% if preview.summary %}<p>{{ preview.summary }}</p>{% endif %}
     {% if preview.target %}
       <p>
@@ -36,10 +39,11 @@
         {% if preview.target.record_label %}· {{ preview.target.record_label }}{% endif %}
       </p>
     {% endif %}
-    <p class="acctnote">Muudatuse valmistas ette sinu ChatGPT ühendus. Tegutsed kasutajana <strong>{{ persona.display_name }}</strong>. Kinnitamise aeg lõpeb {{ proposal.expires_at|date:"d.m.Y H:i" }}.</p>
+    {% endif %}
+    <p class="acctnote">Ette valmistanud sinu ChatGPT ühendus. Kasutaja: <strong>{{ persona.display_name }}</strong>. Kinnitada saab kuni {{ proposal.expires_at|date:"d.m.Y H:i" }}.</p>
   </section>
 
-  {% if preview.changes %}
+  {% if preview and preview.changes %}
     <h2 class="acctsection__title">Mis muutub</h2>
     <div class="tablewrap">
       <table class="table">
@@ -55,38 +59,29 @@
     </div>
   {% endif %}
 
-  {% if preview.consequences %}
+  {% if preview and preview.consequences %}
     <h2 class="acctsection__title">Tagajärjed</h2>
     <ul>{% for line in preview.consequences %}<li>{{ line }}</li>{% endfor %}</ul>
   {% endif %}
 
-  {% if preview.unchanged %}
+  {% if preview and preview.unchanged %}
     <h2 class="acctsection__title">Mis ei muutu</h2>
     <ul>{% for line in preview.unchanged %}<li>{{ line }}</li>{% endfor %}</ul>
   {% endif %}
 
-  {% if preview.warnings %}
+  {% if preview and preview.warnings %}
     <div class="notice notice--warning" role="note">
       <ul>{% for line in preview.warnings %}<li>{{ line }}</li>{% endfor %}</ul>
     </div>
-  {% endif %}
-
-  {% if can_withdraw %}
-    <form method="post" class="card card--form form" novalidate>
-      {% csrf_token %}
-      <p class="acctnote">Kui sa ei soovi seda muudatust enam, tühista kinnitus enne, kui ChatGPT selle salvestab.</p>
-      <div class="form__actions">
-        <button type="submit" name="otsus" value="tuhista" class="button button--quiet">Tühista kinnitus</button>
-      </div>
-    </form>
   {% endif %}
 
   {% if can_approve or can_decline %}
     <form method="post" class="card card--form form" novalidate>
       {% csrf_token %}
       {% if can_approve %}
+        <input type="hidden" name="sidumine" value="{{ binding }}">
         {% if recent %}
-          <p class="acctnote">Sisestasid autentija koodi selles seansis äsja. Kinnitamiseks vajuta «Kinnita».</p>
+          <p class="acctnote">Autentija kood on selles seansis äsja sisestatud.</p>
         {% else %}
           <label class="field">
             <span class="field__label">Kood rakendusest «Juristidi MCP autentija»</span>
@@ -102,7 +97,7 @@
                    autofocus>
           </label>
         {% endif %}
-        <p class="acctnote">Kinnita ainult siis, kui palusid selle muudatuse ise ja just praegu. Iga kinnitus kehtib ainult sellele ühele muudatusele.</p>
+        <p class="acctnote"><strong>«Kinnita» salvestab muudatuse kohe.</strong> Kinnita ainult siis, kui palusid seda ise.</p>
       {% endif %}
       <div class="form__actions">
         {% if can_approve %}<button type="submit" name="otsus" value="kinnita" class="button button--primary">Kinnita</button>{% endif %}
