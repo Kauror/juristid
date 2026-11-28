@@ -716,7 +716,7 @@ def test_a_set_taken_verified_shared_and_restored_end_to_end(tmp_path: Path):
         "--record",
     )
     assert verified.returncode == 0, verified.stdout + verified.stderr
-    assert _mode(set_dir / "VERIFIED-L2") == 0o600  # as written: private, before the share
+    assert _mode(set_dir / "VERIFIED-L2") == 0o600  # private as written, before the share
 
     # Before the share the application's account (here: the same user, so only the
     # modes can be compared) would see a 0600 marker in a 0700 directory.

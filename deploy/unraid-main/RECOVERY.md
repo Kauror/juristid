@@ -384,7 +384,7 @@ private whatever umask cron gives it:
 | What | Mode | Owner |
 |---|---|---|
 | a new set directory (`sets/<stamp>`, while building `<stamp>.partial`) | 0700 | the account running the backup (root on the host) |
-| `database.dump`, `manifest.json`, `SHA256SUMS`, `*.files0` | 0600 | the same |
+| `database.dump`, `manifest.json`, `SHA256SUMS`, `*.files0`, `VERIFIED-L2` (written by `--record`) | 0600 | the same |
 | a pool object copied for the first time | 0600 (directories 0700) | kept from the source: 10001 on the host |
 | a pool object already in the pool | **unchanged** | unchanged |
 | a set the Lovable/OneNote lane took and verified: its directory, `VERIFIED-L2`, `SHA256SUMS`, `database.dump` (r96) | 0750 / 0640, group 10001 | root; the group is the application's |
