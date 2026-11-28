@@ -32,7 +32,7 @@ the Matter's current owner (app/matters/work_items.py).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from django.utils import timezone
@@ -48,6 +48,7 @@ from app.matters.recent_activity import RecentActivity, build_recent_activity
 from app.matters.register_filters import OPEN_FULL, OPINION_DRAFTING, register_url
 from app.matters.seis_help import (
     IN_PROGRESS_HELP,
+    MY_ATTENTION_HELP,
     MY_NO_ACTION_HELP,
     MY_OPINIONS_DRAFTING_HELP,
     MY_OPINIONS_DUE_HELP,
@@ -742,6 +743,8 @@ class MyWork:
     quick: list[QuickRow] = field(default_factory=list)
     stats: PersonStats | None = None
     opinions: OpinionWork | None = None
+    #: «Selle nädala ülevaade» and the previews beside it (r97).
+    overview: Any = None
     open_matters: int = 0
     overdue: int = 0
     week: int = 0
@@ -894,14 +897,12 @@ def build_my_work(
     #
     # **Shorter explanations, owner's review of 2026-10-30.** Each `i` is one
     # sentence now, and the week figure has none. No count moved.
+    attention = population(wi.WORK_NEEDS_ATTENTION)
+    # **The four primary figures come first** (r97 §6): Tähtaja ületanud,
+    # Vajavad tähelepanu, Arvamused koostamisel, Menetluses teemad. The other
+    # three keep their definitions and follow. «üle tähtaja» counts rows (the
+    # band it opens), «vajab tähelepanu» and the other three count Teemad.
     seis = [
-        SeisFigure(
-            "open",
-            open_matters,
-            _counted(open_matters, "teema menetluses", "teemat menetluses"),
-            _register_url(subject),
-            help=IN_PROGRESS_HELP,
-        ),
         SeisFigure(
             "overdue",
             overdue,
@@ -909,6 +910,28 @@ def build_my_work(
             f"#{wi.BAND_OVERDUE}",
             "danger",
             help=MY_OVERDUE_HELP,
+        ),
+        SeisFigure(
+            "attention",
+            attention,
+            _counted(attention, "teema vajab tähelepanu", "teemat vajab tähelepanu"),
+            _work_url(subject, wi.WORK_NEEDS_ATTENTION),
+            "warning",
+            help=MY_ATTENTION_HELP,
+        ),
+        SeisFigure(
+            "opinions_drafting",
+            opinions.in_preparation,
+            _counted(opinions.in_preparation, "arvamus koostamisel", "arvamust koostamisel"),
+            opinions.preparation_url,
+            help=MY_OPINIONS_DRAFTING_HELP,
+        ),
+        SeisFigure(
+            "open",
+            open_matters,
+            _counted(open_matters, "teema menetluses", "teemat menetluses"),
+            _register_url(subject),
+            help=IN_PROGRESS_HELP,
         ),
         SeisFigure(
             "week",
@@ -936,14 +959,27 @@ def build_my_work(
             opinions.due_url,
             help=MY_OPINIONS_DUE_HELP,
         ),
-        SeisFigure(
-            "opinions_drafting",
-            opinions.in_preparation,
-            _counted(opinions.in_preparation, "arvamus koostamisel", "arvamust koostamisel"),
-            opinions.preparation_url,
-            help=MY_OPINIONS_DRAFTING_HELP,
-        ),
     ]
+
+    from app.matters.week_overview import build_week_overview
+
+    overview = build_week_overview(
+        user,
+        subject,
+        today,
+        items=everything,
+        is_self=is_self,
+        due_this_week=opinions.due_this_week,
+        due_url=opinions.due_url,
+        overdue_before_week=drafting_matters(user)
+        .filter(owner=subject)
+        .filter(
+            date_range_q(
+                "response_deadline", start=None, end=opinions.week_start - timedelta(days=1)
+            )
+        )
+        .count(),
+    )
 
     quick: list[QuickRow] = []
     if not is_self:
@@ -993,6 +1029,7 @@ def build_my_work(
         quick=quick,
         stats=person_stats(user, subject, today),
         opinions=opinions,
+        overview=overview,
         open_matters=open_matters,
         overdue=overdue,
         week=week,

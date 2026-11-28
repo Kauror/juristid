@@ -1,0 +1,8 @@
+{% if rows %}
+  <ul class="wo__list">
+  {% for row in rows %}
+    <li><a href="{{ row.url }}" title="{{ row.matter.title }}">{{ row.matter.title }}</a>
+      <span class="wo__muted">{% if row.day %}<time datetime="{{ row.day|date:'Y-m-d' }}">{{ row.day|date:"d.m.Y" }}</time>{% endif %}{% if row.note %} · {{ row.note }}{% endif %}</span></li>
+  {% endfor %}
+  </ul>
+{% else %}<p class="wo__empty">{{ empty }}</p>{% endif %}

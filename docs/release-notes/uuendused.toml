@@ -17,6 +17,9 @@ date = 2026-11-28
 basis = "deployment"
 prs = [731, 733, 734, 735, 736, 737]
 changes = [
+  "Minu asjad: ülal on neli põhinäitajat (tähtaja ületanud, vajavad tähelepanu, arvamused koostamisel, menetluses teemad); iga number avab täpselt need kirjed, mida ta loeb.",
+  "Minu asjad: uus «Selle nädala ülevaade» (arvamused, muud tegevused, jõustumised), «Eelmine nädal», «Minu 7 päeva tähtajad», «Saadetud arvamused», «Uued teemad», «Lähimad jõustumised» ja «Sissetulev seire». Tähtaja edasilükkamist ei loeta tehtud tööks; ülevaatamise kuupäev ei ole üle tähtaja kohustus.",
+  "Nädala ülevaate numbrid avavad lehe «Minu asjad → nädal», mille saab eemaldada lingiga «Eemalda eelseadistus»; salvestatud vaateid see ei muuda.",
   "Statistika → Andmekvaliteet: korduvad selgitustekstid on eemaldatud.",
   "Osakond → Muudatused: plokk «Mida see ei näita» on eemaldatud ja tabeli «Vastutajate kaupa» rida «Kokku» on veergudega joondatud.",
   "Teema → Dokumendid: OneNote'i kuupäevade ja impordi selgitused on eemaldatud; OneNote'i link jääb alles. Mitme impordiseisundiga lehel ei lähe leht enam telefonis küljele laiali.",
