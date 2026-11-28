@@ -477,7 +477,7 @@ def test_an_imported_opinion_without_an_actor_follows_the_owner_on_the_sent_day(
 
 
 def test_open_requests_are_counted_as_requests_with_their_own_identity(specialist) -> None:
-    start, end = week_now()
+    _start, end = week_now()
     one = create_matter(owner=specialist, actor=specialist, title="Nõue", response_deadline=end)
     ctx = ctx_of(specialist, timezone.localdate())
     recs = wo.records(ctx, wo.OWED, ctx.week.counted)
