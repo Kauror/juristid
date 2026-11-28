@@ -262,9 +262,11 @@ def test_the_allowance_of_a_rolled_back_claim_is_free_for_the_next_user(world, m
     """A parked claim that then fails must not leave the next person refused."""
     a, b = world["people"]["a"], world["people"]["b"]
     gate = threading.Event()
+    a_parked = threading.Event()
 
     def digest(**kwargs: Any) -> str:
         if threading.current_thread().name == "a":
+            a_parked.set()
             gate.wait(timeout=20)
             raise RuntimeError("a's preparation breaks after its claim")
         return real(**kwargs)
@@ -282,8 +284,10 @@ def test_the_allowance_of_a_rolled_back_claim_is_free_for_the_next_user(world, m
     first = threading.Thread(target=run, args=(a,), name="a")
     second = threading.Thread(target=run, args=(b,), name="b")
     first.start()
+    # a must hold its claim before b starts, or b may legitimately take the allowance first.
+    assert a_parked.wait(timeout=20), "a never reached its parking point"
     second.start()
-    second.join(timeout=2)  # b waits on a's claim (or has not started to)
+    second.join(timeout=2)  # b waits on a's claim
     gate.set()
     first.join(timeout=30)
     second.join(timeout=30)

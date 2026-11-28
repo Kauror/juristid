@@ -610,7 +610,7 @@ def test_the_application_account_reads_the_proof_and_nothing_else(tmp_path: Path
     import json
     import tempfile
 
-    base = Path(tempfile.mkdtemp(prefix="juristid-proof-", dir="/tmp"))
+    base = Path(tempfile.mkdtemp(prefix="juristid-proof-"))
     try:
         base.chmod(0o711)
         target = _private_set(base, "20261127T220008Z")
