@@ -177,7 +177,7 @@ def ai_usage(request: HttpRequest) -> HttpResponse:
             charts=[
                 _series(
                     "cost",
-                    "Teadaolev hinnanguline maksumus päevas (eurosenti; teadmata maksumusega päringuid ei ole sees)",
+                    "Teadaolev maksumus päevas (eurosenti; teadmata hinnaga päringuid pole sees)",
                     [
                         (f"{d.day}.{d.month}", int(t.cost_eur * 100))
                         for d, t in summary.by_day.items()

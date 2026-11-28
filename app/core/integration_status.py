@@ -289,7 +289,8 @@ def _watch(now: dt.datetime) -> Source:
         source.state, source.line = _daily(source.last_success, now)
         if completed is not None and completed.errors:
             source.state = ATTENTION
-            source.line = f"Viimane käivitus lõppes {len(completed.errors)} lugemisveaga: kontroll oli osaline"
+            n = len(completed.errors)
+            source.line = f"Viimane käivitus lõppes {n} lugemisveaga: kontroll oli osaline"
     unjudged = WatchFinding.objects.filter(
         status=FindingStatus.PENDING, relevance=Relevance.UNJUDGED
     ).count()
@@ -299,7 +300,7 @@ def _watch(now: dt.datetime) -> Source:
     source.limits.append("Allikate avaldamiskuupäeva ei jälgita; vaadatakse viimast lugemist.")
     source.limits.append(
         "Värskus loeb ainult vigadeta käivitust; allikate kaupa katvust käivitus ei salvesta, "
-        f"vaid vigade loendi{' (viimasel: ' + str(attempt.targets_checked) + ' sihti)' if attempt else ''}."
+        "vaid vigade loendi."
     )
     return source
 

@@ -33,9 +33,9 @@ from django.utils import timezone
 
 from app.ai_usage.models import (
     AiAttempt,
-    AttemptCoverage,
     AiLedgerGap,
     AiOperation,
+    AttemptCoverage,
     AttemptOutcome,
     Outcome,
     UsageStatus,
@@ -208,6 +208,8 @@ class Recorder:
         self._done = True
         now = timezone.now()
         try:
+            attempts: list[AiAttempt]
+            coverage: str
             if skipped:
                 attempts, coverage = [], AttemptCoverage.NONE
             else:

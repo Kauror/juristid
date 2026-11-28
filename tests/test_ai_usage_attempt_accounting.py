@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - the `sleeps` fixture is imported to be used as an argument
 """Physical-attempt accounting boundaries (r98 final corrections, item 4), against the real SDK.
 
 A confirmed physical attempt is a request the client actually sent (an httpx request event).

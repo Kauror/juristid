@@ -739,14 +739,32 @@ class LovableParityReport(models.Model):
     """
 
     at = models.DateTimeField(db_index=True)
+    #: «full» (the whole eligible population) or «sample».
     mode = models.CharField(max_length=16)
+    #: «snapshot»: the reading the nightly synchronisation stored (no Lovable traffic);
+    #: «fresh»: a reading taken for this verification by an operator (`lovable_parity --fresh`).
+    source = models.CharField(max_length=12, default="snapshot", db_default="snapshot")
+    #: When the compared source reading was taken, and its digest.
     snapshot_taken_at = models.DateTimeField(null=True, blank=True)
     snapshot_sha256 = models.CharField(max_length=64, blank=True)
+    #: The synchronisation run whose stored reading this compared (snapshot), or was compared
+    #: against to tell source changes since the night (fresh).
+    run_key = models.CharField(max_length=40, blank=True)
     teemad = models.PositiveIntegerField()
+    #: The sample drawn (None = not sampled), the population it came from, its seed.
+    sample_size = models.PositiveIntegerField(null=True, blank=True)
+    eligible = models.PositiveIntegerField(default=0)
+    seed = models.CharField(max_length=40, blank=True)
     counts = models.JSONField(default=dict)
     mismatches = models.JSONField(default=list)
     held = models.JSONField(default=list)
     unverified = models.JSONField(default=list)
+    #: Fresh mode: differences explained by a source change since the synchronisation, and
+    #: kind → references of what changed at the source.
+    changed_since_sync = models.JSONField(default=list)
+    source_changes = models.JSONField(default=dict)
+    #: A code (never a message) when the comparison could not be made.
+    error = models.CharField(max_length=40, blank=True)
 
     class Meta:
         ordering = ["-at"]

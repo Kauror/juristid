@@ -36,7 +36,6 @@ from app.ai_usage.models import (
     AiOperation,
     AiPrice,
     AttemptCoverage,
-    AttemptOutcome,
     Outcome,
     UsageStatus,
 )
@@ -132,7 +131,7 @@ def ledger() -> dict[str, AiOperation]:
     )
     f = _op("candidates", at(D2, 12, 0), Outcome.SUCCEEDED, 3)
     _att(f, 1, at(D2, 12, 0), input_tokens=1000, output_tokens=10, fallback_observed=True)
-    return dict(a=a, b=b, c=c, d=d, e=e, f=f)
+    return {"a": a, "b": b, "c": c, "d": d, "e": e, "f": f}
 
 
 def _sum(**filters: Any) -> report.Summary:
@@ -403,11 +402,11 @@ def test_daily_drill_down_links_keep_the_applicable_filters(ledger, admin):
     )
     links = [row[3] for row in page.context["day_rows"]]
     assert links and all(
-        "teenus=candidates" in l
-        and f"mudel={M}" in l
-        and "tulemus=FAILED" in l
-        and "periood=custom" in l
-        for l in links
+        "teenus=candidates" in link
+        and f"mudel={M}" in link
+        and "tulemus=FAILED" in link
+        and "periood=custom" in link
+        for link in links
     )
     one_day = admin.get(reverse("haldus:ai_usage"), {**RANGE, "alates": D2.isoformat()})
     assert set(one_day.context["summary"].by_day) == {D2}

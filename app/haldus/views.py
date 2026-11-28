@@ -11,11 +11,13 @@ writes (docs/adr/0186).
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from django.conf import settings
 from django.db import DatabaseError
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
@@ -379,12 +381,14 @@ def lovable(request: HttpRequest) -> HttpResponse:
         }
         for hold in standing_holds()
     ]
+    diag = _lovable_diagnostics(request)
     return render(
         request,
         "haldus/lovable.html",
         _context(
             request,
             "lovable",
+            diag=diag,
             sync_pages=sync_pages("lovable"),
             observation=observation,
             health=health,
@@ -402,6 +406,40 @@ def lovable(request: HttpRequest) -> HttpResponse:
             closure_holds_mode=holds_mode,
         ),
     )
+
+
+def _lovable_diagnostics(request: HttpRequest) -> Any:
+    """The run ledger and the independent verification in counts and references; a Teema
+    is linked only for a reader who may already open it, and the links are to the existing
+    authorised workflows (nothing here resolves anything or writes to Lovable)."""
+    from django.db.models import Q
+
+    from app.legacy_import import lovable_diagnostics
+    from app.matters.models import Matter
+
+    diag = lovable_diagnostics.collect()
+    shown = {d.reference for view in diag.parity for d in view.discrepancies}
+    numbers: dict[tuple[int, int], str] = {}
+    for reference in shown:
+        year, _, number = reference.partition("_")
+        if year.isdigit() and number.isdigit():
+            numbers[(int(year), int(number))] = reference
+    visible: dict[str, str] = {}
+    if numbers:
+        wanted = Q()
+        for pair in numbers:
+            wanted |= Q(reference_year=pair[0], reference_number=pair[1])
+        for matter in Matter.objects.visible_to(request.user).filter(wanted):
+            reference = numbers.get((matter.reference_year, matter.reference_number), "")
+            visible[reference] = reverse("matters:matter_detail", args=[matter.pk])
+    for view in diag.parity:
+        for item in view.discrepancies:
+            item.matter_url = visible.get(item.reference, "")
+            if item.kind == "held":
+                item.hold_url = (
+                    f"{reverse('haldus:data_sync_release_hold')}?viide={quote(item.reference)}"
+                )
+    return diag
 
 
 def _observation_summary(request: HttpRequest) -> dict[str, Any]:

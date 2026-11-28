@@ -1,4 +1,4 @@
-"""Price and rate entry: validated, overlap-free, transactional, never rewriting (r98 final, item 6)."""
+"""Price and rate entry: validated, overlap-free, transactional, never rewriting (r98 final)."""
 
 from __future__ import annotations
 
@@ -22,15 +22,15 @@ TODAY = dt.date.today()
 
 
 def _add(**kw):
-    values = dict(
-        model="m1",
-        currency="USD",
-        input_per_mtok="4",
-        output_per_mtok="20",
-        effective_from=dt.date(2026, 1, 1),
-        source_url=SRC,
-        verified_on=TODAY,
-    )
+    values = {
+        "model": "m1",
+        "currency": "USD",
+        "input_per_mtok": "4",
+        "output_per_mtok": "20",
+        "effective_from": dt.date(2026, 1, 1),
+        "source_url": SRC,
+        "verified_on": TODAY,
+    }
     values.update(kw)
     return prices.add_price(**values)
 
@@ -58,15 +58,15 @@ def test_invalid_entries_are_refused_and_leave_nothing(bad):
 
 def test_the_database_itself_refuses_a_negative_rate_and_a_backwards_range():
     for fields in ({"input_per_mtok": Decimal("-1")}, {"effective_to": dt.date(2025, 1, 1)}):
-        values = dict(
-            model="m",
-            currency="USD",
-            input_per_mtok=Decimal("1"),
-            output_per_mtok=Decimal("1"),
-            effective_from=dt.date(2026, 1, 1),
-            source_url=SRC,
-            verified_on=TODAY,
-        )
+        values = {
+            "model": "m",
+            "currency": "USD",
+            "input_per_mtok": Decimal("1"),
+            "output_per_mtok": Decimal("1"),
+            "effective_from": dt.date(2026, 1, 1),
+            "source_url": SRC,
+            "verified_on": TODAY,
+        }
         values.update(fields)
         with pytest.raises(IntegrityError), transaction.atomic():
             AiPrice.objects.create(**values)

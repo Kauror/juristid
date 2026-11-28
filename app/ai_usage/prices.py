@@ -41,6 +41,13 @@ def _number(value: Any, name: str, *, required: bool = True) -> Decimal | None:
     return number
 
 
+def _required(value: Any, name: str) -> Decimal:
+    number = _number(value, name)
+    if number is None:
+        raise ValidationError(f"{name} is required")
+    return number
+
+
 def _source(url: str) -> str:
     if not url.startswith("https://"):
         raise ValidationError("source_url must be an https:// page")
@@ -74,8 +81,8 @@ def add_price(
         model=model,
         tier=tier,
         currency=currency,
-        input_per_mtok=_number(input_per_mtok, "input_per_mtok"),
-        output_per_mtok=_number(output_per_mtok, "output_per_mtok"),
+        input_per_mtok=_required(input_per_mtok, "input_per_mtok"),
+        output_per_mtok=_required(output_per_mtok, "output_per_mtok"),
         cache_read_per_mtok=_number(cache_read_per_mtok, "cache_read", required=False),
         cache_creation_per_mtok=_number(cache_creation_per_mtok, "cache_creation", required=False),
         effective_from=effective_from,
@@ -92,7 +99,11 @@ def add_price(
     if latest is not None and latest.effective_to is None:
         latest.effective_to = effective_from - dt.timedelta(days=1)
         latest.save(update_fields=["effective_to"])
-    elif latest is not None and latest.effective_to >= effective_from:
+    elif (
+        latest is not None
+        and latest.effective_to is not None
+        and latest.effective_to >= effective_from
+    ):
         raise ValidationError("the new price would overlap an earlier revision")
     price.full_clean()
     price.save()
