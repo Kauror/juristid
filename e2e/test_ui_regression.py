@@ -1830,6 +1830,23 @@ def test_dashboard(page, base_url):
     compare("osakond", capture(page, "osakond"))
 
 
+def test_the_department_head_overview(page, base_url):
+    """«Selle nädala ülevaade» as the department head sees it (r97).
+
+    The `osakond` capture is a specialist's, so it does not hold the head-only
+    band. Clipped to that band: the rest of the head's page — Meeskond, Tehtud, the
+    digest — is dated, and is not what this protects. Its clock-derived text (the
+    week range) is held by `NORMALISED_TEXT`.
+    """
+    signed_in(page, base_url, OSAKOND_PINNED, persona=HEAD)
+    compare("osakond-juht", capture(page, "osakond-juht", clip_to=".wo--dept"))
+
+
+def test_light_department_head_overview(page, base_url):
+    signed_in(in_light(page), base_url, OSAKOND_PINNED, persona=HEAD)
+    compare("hele-osakond-juht", light_capture(page, "hele-osakond-juht", clip_to=".wo--dept"))
+
+
 #: The closed-disclosure shapes on Osakond, and the element whose presence
 #: proves each one is actually holding something back on this run.
 #:
