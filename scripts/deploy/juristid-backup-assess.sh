@@ -61,7 +61,7 @@ if [ -r /etc/samba/smb-shares.conf ]; then
   say smb_exports_backups "$(grep -ci '^\[backups\]' /etc/samba/smb-shares.conf)"
 fi
 if command -v docker >/dev/null 2>&1; then
-  say containers_mounting_backups "$(docker inspect -f '{{.Name}} {{range .Mounts}}{{.Source}} {{end}}' $(docker ps -aq) 2>/dev/null | grep -ci 'backups')"
+  say containers_mounting_backups "$(docker ps -aq | xargs -r docker inspect -f '{{.Name}} {{range .Mounts}}{{.Source}} {{end}}' 2>/dev/null | grep -ci 'backups')"
 fi
 
 # Off-host: only whether a configuration marker exists (the procedure is OFFHOST-BACKUP.md).
