@@ -50,3 +50,10 @@
 .mystats__colbtn.is-selected { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .mystats__colbtn:focus-visible { outline: var(--focus-ring-width) solid var(--focus-ring); outline-offset: var(--focus-ring-offset-width); }
 .wo__figs, .wo__list, .wo__empty { font-size: var(--typography-size-base); }
+.wk__table, .wk__table td, .wk__table th { overflow-wrap: anywhere; }
+@media (max-width: 40rem) {
+  .wk__table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .wk__table, .wk__table tbody { display: block; }
+  .wk__table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr); padding-block: var(--spacing-2); border-bottom: 1px solid var(--border-default); }
+  .wk__table tbody th, .wk__table tbody td { display: block; border-bottom: 0; padding: 0 var(--spacing-2); }
+}
