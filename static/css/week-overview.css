@@ -33,3 +33,10 @@
 .wo__table .is-late th, .wo__table .is-late td { background: var(--surface-hover); }
 .wo__status { white-space: nowrap; }
 .wk__ref { white-space: nowrap; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+@media (max-width: 40rem) {
+  .wo__scroll { max-height: none; overflow: visible; }
+  .wo__table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .wo__table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 var(--spacing-2); padding-block: var(--spacing-1); border-bottom: 1px solid var(--border-default); }
+  .wo__table tbody th, .wo__table tbody td { border-bottom: 0; padding: 0; }
+  .wo__table tbody th { grid-column: 1 / -1; }
+}
