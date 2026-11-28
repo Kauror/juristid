@@ -1,6 +1,6 @@
 # 0232 — Credential links rotate the session, Access reuses only its own sessions, and backups are written private
 
-Date: 2026-11-26 · Status: proposed (security round of 2026-11-26, package C: SEC-006, SEC-007, SEC-011, SEC-012; developed and tested only — nothing merged, deployed or switched on; the authentication mode of every deployment is unchanged)
+Date: 2026-11-26 · Status: Implemented in the r96 candidate (SEC-006, SEC-007, SEC-011, SEC-012; built and tested; **not active in production** until release 96 is deployed. The authentication mode of every deployment is unchanged. Backups: only objects written after the deploy are private; existing artefacts stay as they are until the owner-approved remediation of RECOVERY.md, and `JURISTID_BACKUP_REQUIRE_PRIVATE` stays unset until then. The shared gate's persona risk remains an accepted, deferred residual risk)
 
 Numbering (after integration in r96): 0230 parser isolation (SEC-008), 0231
 nightly deadlines (SEC-010), 0232 this record, 0233 multipart boundary (SEC-013),

@@ -1,7 +1,11 @@
 # 0234 — MCP changes are approved and saved on Juristid's own page; the gateway is budgeted and cannot write business data
 
-Date: 2026-11-26 · Status: Proposed (security round of 2026-11-26, Package E: SEC-009 and
-SEC-014; built and tested on a branch only — nothing merged, deployed or switched on)
+Date: 2026-11-26 · Status: Implemented in the r96 candidate (security round of 2026-11-26, Package E: SEC-009
+and SEC-014; built and tested, with real database roles). **Not active in production**: the
+migration `mcp_writes/0002` and the new code arrive with release 96; the gateway role loses its
+business-table writes only when the operator runs `mcp_writer_db_role --apply` and verifies it
+before the gateway restarts; the ChatGPT connector keeps showing the old tool descriptions until
+a workspace admin refreshes and publishes it. SEC-009/014 residual risks are listed below)
 
 Amends: 0189 §1 («Commit … executes the approved proposal»), §2 (the writer role's
 allow-list) and §5 (who writes the business rows). Unchanged: 0189 §3 (the write scope),
@@ -195,6 +199,6 @@ counters by principal key (ids and client hash prefixes, never a token or a clie
 
 ## Reversibility
 
-Reverting the code and re-running r94's `mcp_writer_db_role --apply` restores the r94
-behaviour; the migration reverses (triggers, table and columns dropped; retired proposals
+Reverting the code and re-running the previous release's (r95, b70608dc) `mcp_writer_db_role --apply` restores its
+behaviour (README-r96 holds the exact rollback gates, including expiring format-2 proposals first); the migration reverses (triggers, table and columns dropped; retired proposals
 stay EXPIRED, their events are history).

@@ -1,6 +1,6 @@
 # 0231 — Every nightly call and step has a deadline, and the cycle lock outlives the work
 
-Date: 2026-11-26 · Status: proposed (security round 26.11.2026, SEC-010; prepared and tested only — no production schedule, host script or configuration changed, nothing merged or deployed)
+Date: 2026-11-26 · Status: Implemented in the r96 candidate (SEC-010; built and tested; **not active in production** until release 96 is deployed and the host scripts are updated — production (r95) runs the nightly cycle without these deadlines; no schedule changes)
 
 Numbering (after integration): 0230 parser isolation (SEC-008), 0232 credential links,
 Access sessions and private backups (SEC-006/007/011/012), 0233 multipart boundary

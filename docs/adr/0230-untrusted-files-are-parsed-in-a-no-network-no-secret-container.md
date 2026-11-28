@@ -1,6 +1,6 @@
 # 0230 — Untrusted files are parsed in a no-network, no-secret container
 
-Date: 2026-11-26 · Status: proposed (SEC-008, security round of 26.11.2026; prepared and tested only — nothing merged, deployed or changed on the host)
+Date: 2026-11-26 · Status: Implemented in the r96 candidate (SEC-008; built and tested, including the real service in Docker; **not active in production**: it takes effect only when release 96 is deployed — Compose creates `intake-parser` and `batch-parser`, the reader and web are recreated in service mode; until then production (r95) parses in the calling process. The intake wall of 240 s / queue 30 s is an owner decision of 28.11.2026)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 0219 — «Monitooring» gathers the new drafts, the Government's agenda and the registers' list
 
-Date: 2026-11-22 · Status: proposed (owner brief 2026-11-22, «make a new tab up top and call it monitooring»; four answers the same day; release awaits owner review); amendments 2026-11-26 and 2026-11-26b (r95) proposed
+Date: 2026-11-22 · Status: proposed (owner brief 2026-11-22, «make a new tab up top and call it monitooring»; four answers the same day; release awaits owner review); amendments 2026-11-26 and 2026-11-26b (r95) deployed 26.11.2026 17:47Z
 
 ## Context
 
@@ -151,7 +151,7 @@ rule for this ADR's agenda, ADR 0218's new drafts and ADR 0217's nightly watch):
 - **The cap on offered Teemad (400 newest) is counted**, logged as a number and,
   for the new-drafts sweep, written on its run; it is not raised.
 
-## Amendment 2026-11-26 (r95, proposed) — an agenda not yet published is not a failure
+## Amendment 2026-11-26 (r95, deployed 26.11.2026) — an agenda not yet published is not a failure
 
 **Context.**
 - The first complete r94 night (26.11.2026) ended its agenda step PARTIAL.
@@ -194,7 +194,7 @@ rule for this ADR's agenda, ADR 0218's new drafts and ADR 0217's nightly watch):
 - The night before publication no longer turns the cycle and the morning monitor red. A refusal by the site, a 429, a 5xx, a timeout or an unreadable page still does.
 - The control read costs one request, and only on a night that met a 403.
 
-## Amendment 2026-11-26b (r95, BUG-001, proposed) — the agenda is found through the site's own links
+## Amendment 2026-11-26b (r95, BUG-001, deployed 26.11.2026) — the agenda is found through the site's own links
 
 **Context.**
 - The 26.11.26 agenda was published on 25.11.2026 at 18:14, at `/uudised/valitsuse-261126-istungi-kommenteeritud-paevakord-0`. The plain address held an *unpublished* page and answered 403 («Ligipääs keelatud»). The night of 26.11 guessed only the plain address and the long form and reported «not yet published». The amendment above would have made that a clean night: a 403 was taken as evidence of non-publication.

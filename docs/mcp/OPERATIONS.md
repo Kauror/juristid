@@ -767,7 +767,7 @@ administrator without a business role never writes, whatever a token says.
 | --- | --- | --- | --- | --- | --- |
 | `web` | `juristid-main-web` | `juristid.env` + `MCP_WRITES_ENABLED` (nothing else new) | owner | `internal` | serves the approval page; never calls the gateway |
 | `mcp` | `juristid-main-mcp` | `juristid-mcp.env` + `MCP_WRITES_ENABLED`, `MCP_WRITE_GATEWAY_KEY`; `MCP_WRITE_GATEWAY_URL=http://10.213.250.10:8002` from compose.yml | `juristid_mcp`, SELECT only, read-only sessions — unchanged | `internal`, `mcp_edge`, `mcp_write` | `db`; the gateway over `mcp_write` |
-| `mcp-writer` | `juristid-main-mcp-writer` | `juristid-mcp-writer.env` only | `juristid_mcp_writer` (prepares and reports only; no business-table write since r96, below) | `internal`, `mcp_write` | `db`; listens on `10.213.250.10:8002` — its fixed `mcp_write` address — and nowhere else; no host port |
+| `mcp-writer` | `juristid-main-mcp-writer` | `juristid-mcp-writer.env` only | `juristid_mcp_writer` (prepares and reports only once `mcp_writer_db_role --apply` has narrowed it — until the operator runs it the role still holds the r95 business-table writes; below) | `internal`, `mcp_write` | `db`; listens on `10.213.250.10:8002` — its fixed `mcp_write` address — and nowhere else; no host port |
 | `mcp-tunnel` | `juristid-main-mcp-tunnel` | unchanged | — | `mcp_edge` only | `mcp` — **not** `mcp-writer`: the two share no network |
 
 `mcp_write` (`juristid-main-mcp-write`) is `internal: true` — no route off the
@@ -1076,7 +1076,7 @@ env change and a recreate of `mcp-writer`.
 - **Code running inside `mcp` holds the gateway key.** It still needs a
   person's token with `juristid.write` and, for any effect, that person's
   approval on Juristid's page with their authenticator.
-- **Code running inside `mcp-writer`** can, since r96, insert proposals,
+- **Code running inside `mcp-writer`** can, once the role is narrowed (`mcp_writer_db_role --apply`, below), insert proposals,
   events, security audit rows and budget counters — nothing else. It cannot
   change a stored proposal (no UPDATE; a trigger refuses it for every role),
   forge an approval, or write any business table; it can still *read* every
