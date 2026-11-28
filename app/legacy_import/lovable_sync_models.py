@@ -729,3 +729,27 @@ class LovableOwnerAlias(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.name} → {self.user_id}"
+
+
+class LovableParityReport(models.Model):
+    """One independent parity verification (r98): counts and (reference, field) pairs only.
+
+    Never a title, a name or a step: the values compared are business content and stay
+    where they are. «Held», «explained» and «unverified» are kept apart from matches.
+    """
+
+    at = models.DateTimeField(db_index=True)
+    mode = models.CharField(max_length=16)
+    snapshot_taken_at = models.DateTimeField(null=True, blank=True)
+    snapshot_sha256 = models.CharField(max_length=64, blank=True)
+    teemad = models.PositiveIntegerField()
+    counts = models.JSONField(default=dict)
+    mismatches = models.JSONField(default=list)
+    held = models.JSONField(default=list)
+    unverified = models.JSONField(default=list)
+
+    class Meta:
+        ordering = ["-at"]
+
+    def __str__(self) -> str:
+        return f"parity {self.at:%Y-%m-%d} {self.mode}"
