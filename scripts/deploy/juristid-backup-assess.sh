@@ -12,7 +12,7 @@
 #                    restore rehearsal is NOT knowable here (operator reports hold it)
 #   off-host         none unless an off-host repository is configured (OFFHOST-BACKUP.md): this
 #                    script only reports whether the configuration marker exists
-set -u
+set -euo pipefail
 ROOT="${1:-/mnt/user/backups/juristid-main}"
 now=$(date +%s)
 
@@ -26,7 +26,7 @@ sets=$(find "$ROOT/sets" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
 say sets_total "$(printf '%s\n' "$sets" | grep -c .)"
 say sets_partial "$(find "$ROOT/sets" -mindepth 1 -maxdepth 1 \( -name '*.partial' -o -name '*.tmp' \) 2>/dev/null | wc -l)"
 
-newest=$(printf '%s\n' "$sets" | grep -v partial | tail -1)
+newest=$(printf '%s\n' "$sets" | grep -v partial | tail -1 || true)
 if [ -n "$newest" ]; then
   say newest_set "$(basename "$newest")"
   say newest_age_hours "$(( (now - $(stat -c %Y "$newest")) / 3600 ))"

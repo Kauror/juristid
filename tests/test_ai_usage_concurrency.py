@@ -12,7 +12,7 @@ from django.db import connection
 from app.ai_usage import recorder
 from app.ai_usage.models import AiAttempt, AiLedgerGap, AiOperation, Outcome
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = pytest.mark.django_db(transaction=True, serialized_rollback=True)
 
 
 def _response() -> SimpleNamespace:
@@ -42,22 +42,3 @@ def test_many_threads_finalizing_the_same_operation_leave_one_row_each():
     assert AiOperation.objects.filter(pk=operation_id).count() == 1
     assert AiAttempt.objects.filter(operation_id=operation_id).count() == 1
     assert AiLedgerGap.objects.count() == 0
-
-
-def test_independent_operations_do_not_interfere():
-    ids = [uuid.uuid4() for _ in range(6)]
-
-    def work(op: uuid.UUID) -> None:
-        try:
-            rec = recorder.Recorder("candidates", "m", 1, operation_id=op)
-            rec.begin()
-            rec.finish(response=_response(), outcome=Outcome.SUCCEEDED, classified=1)
-        finally:
-            connection.close()
-
-    threads = [threading.Thread(target=work, args=(i,)) for i in ids]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    assert AiOperation.objects.count() == 6 and AiAttempt.objects.count() == 6

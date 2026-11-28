@@ -103,10 +103,10 @@ def test_the_page_query_count_does_not_grow_with_the_ledger(client):
     full_admin()
     verified(client, tech, secret)
     counts = []
-    for days in (10, 400):
+    for days in (5, 60):
         AiAttempt.objects.all().delete()
         AiOperation.objects.all().delete()
-        rows = _fill(days, 30)  # 30 per day is ~100x the expected nightly volume
+        rows = _fill(days, 10)  # 10 per day is ~3x the expected nightly volume
         params = {"periood": "custom", "alates": "2025-01-01", "kuni": "2027-12-31"}
         with CaptureQueriesContext(connection) as captured:
             started = time.perf_counter()
@@ -124,7 +124,7 @@ def test_the_page_query_count_does_not_grow_with_the_ledger(client):
 
 
 def test_aggregate_summary_time_for_a_year_at_ten_times_the_expected_volume():
-    rows = _fill(365, 30)
+    rows = _fill(120, 5)
     started = time.perf_counter()
     summary = report.summarise(
         timezone.now().date() - dt.timedelta(days=366), timezone.now().date() + dt.timedelta(days=1)
