@@ -64,6 +64,10 @@ class AiOperation(models.Model):
     run_ref = models.CharField(max_length=64, blank=True)
     started_at = models.DateTimeField(db_index=True)
     finished_at = models.DateTimeField(null=True, blank=True)
+    #: The latest instant a live request could still be running (the step's own deadline
+    #: plus its grace, or the client's worst case). Past it with no result, the operation
+    #: is interrupted, never "still running"; before it, it is not touched.
+    expected_end_at = models.DateTimeField(null=True, blank=True)
     outcome = models.CharField(max_length=24, choices=Outcome.choices, default=Outcome.IN_PROGRESS)
     #: Items put to the model, and rows of its answer / rows the caller accepted.
     items_presented = models.PositiveIntegerField(null=True, blank=True)
@@ -102,9 +106,16 @@ class AiAttempt(models.Model):
     cache_read_tokens = models.PositiveIntegerField(null=True, blank=True)
     cache_creation_tokens = models.PositiveIntegerField(null=True, blank=True)
     stop_reason = models.CharField(max_length=40, blank=True)
-    #: True when the model that answered is not the one asked for (server-side
-    #: fallback); None when no answer was seen. Inferred, not reported.
+    #: Explicit provider evidence only (a `fallback_message` iteration): True served by a
+    #: fallback, False reported without one, None when the response said nothing about it.
+    #: A different answering model alone is not evidence (aliases resolve to dated ids).
     fallback_observed = models.BooleanField(null=True, blank=True)
+    #: When a server-side fallback model served the answer (`usage.iterations` carries a
+    #: `fallback_message` entry): that model and its own reported tokens. The top-level
+    #: tokens are then not attributable to one model, so the cost is unknown.
+    fallback_model = models.CharField(max_length=80, blank=True)
+    fallback_input_tokens = models.PositiveIntegerField(null=True, blank=True)
+    fallback_output_tokens = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         constraints = [

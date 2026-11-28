@@ -113,9 +113,10 @@ class Cost:
     currency: str = ""
     price_id: int | None = None
     lower_bound: bool = False  # cache tokens were not reported
+    reason: str = ""  # why eur is None: no_usage, no_price, no_rate, cache_price, fallback
 
 
-UNKNOWN = Cost(None)
+UNKNOWN = Cost(None, reason="no_usage")
 
 
 def cost_of(
@@ -128,12 +129,17 @@ def cost_of(
     output_tokens: int | None,
     cache_read: int | None,
     cache_creation: int | None,
+    fallback_served: bool | None = None,
 ) -> Cost:
+    if fallback_served:
+        # The top-level tokens of a fallback-served answer are not attributable to one
+        # model's price (the provider reports per-iteration usage); never guess.
+        return Cost(None, reason="fallback")
     if status != UsageStatus.MEASURED or input_tokens is None or output_tokens is None:
         return UNKNOWN
     price = book.price(model, day) if model else None
     if price is None:
-        return UNKNOWN
+        return Cost(None, reason="no_price")
     total = (
         Decimal(input_tokens) * price.input_per_mtok
         + Decimal(output_tokens) * price.output_per_mtok
@@ -144,12 +150,12 @@ def cost_of(
     ):
         if tokens:
             if rate is None:
-                return UNKNOWN  # billed category with no price: do not guess
+                return Cost(None, reason="cache_price")  # billed, unpriced: do not guess
             total += Decimal(tokens) * rate
     original = total / MILLION
     per_eur = book.per_eur(price.currency, day)
     if per_eur is None:
-        return Cost(None, original, price.currency, price.pk)
+        return Cost(None, original, price.currency, price.pk, reason="no_rate")
     return Cost(
         original / per_eur,
         original,
@@ -169,6 +175,7 @@ def attempt_cost(book: PriceBook, attempt: AiAttempt) -> Cost:
         output_tokens=attempt.output_tokens,
         cache_read=attempt.cache_read_tokens,
         cache_creation=attempt.cache_creation_tokens,
+        fallback_served=attempt.fallback_observed,
     )
 
 
@@ -190,6 +197,7 @@ class Totals:
     cost_eur: Decimal = Decimal(0)
     unknown_cost_attempts: int = 0
     cache_unknown: int = 0
+    unknown_reasons: dict[str, int] = field(default_factory=dict)
     items_presented: int = 0
     items_classified: int = 0
 
@@ -211,6 +219,7 @@ class Totals:
             self.failed_attempts += 1
         if cost.eur is None:
             self.unknown_cost_attempts += 1
+            self.unknown_reasons[cost.reason] = self.unknown_reasons.get(cost.reason, 0) + 1
         else:
             self.cost_eur += cost.eur
             if cost.lower_bound:
@@ -241,6 +250,15 @@ def _percentile(values: list[int], q: float) -> int | None:
     ordered = sorted(values)
     index = max(0, min(len(ordered) - 1, round(q * (len(ordered) - 1))))
     return ordered[index]
+
+
+def effective_outcome(op: AiOperation, now: dt.datetime) -> str:
+    """The stored outcome, except that a request still IN_PROGRESS past the latest instant
+    it could be running is shown interrupted (its result is unknown). Reading never writes."""
+    if op.outcome != Outcome.IN_PROGRESS:
+        return str(op.outcome)
+    limit = op.expected_end_at or (op.started_at + dt.timedelta(hours=3))
+    return str(Outcome.INTERRUPTED) if limit < now else str(Outcome.IN_PROGRESS)
 
 
 def operations_in(
@@ -275,16 +293,18 @@ def summarise(
     durations: list[int] = []
     per_service_durations: dict[str, list[int]] = defaultdict(list)
     unpriced: set[str] = set()
+    now = timezone.now()
     for op in operations:
+        outcome = effective_outcome(op, now)
         for bucket in (totals, by_service[op.service], by_day[local_date(op.started_at)]):
             bucket.operations += 1
             bucket.items_presented += op.items_presented or 0
             bucket.items_classified += op.items_classified or 0
-            if op.outcome in GOOD:
+            if outcome in GOOD:
                 bucket.ops_good += 1
-            elif op.outcome != Outcome.IN_PROGRESS:
+            elif outcome != Outcome.IN_PROGRESS:
                 bucket.ops_failed += 1
-        by_outcome[op.outcome] += 1
+        by_outcome[outcome] += 1
     rows = AiAttempt.objects.filter(operation_id__in=ids).values(
         "operation_id",
         "started_at",
@@ -298,6 +318,7 @@ def summarise(
         "retry_class",
         "outcome",
         "duration_ms",
+        "fallback_observed",
     )
     for row in rows:
         op = by_op[row["operation_id"]]
@@ -311,8 +332,9 @@ def summarise(
             output_tokens=row["output_tokens"],
             cache_read=row["cache_read_tokens"],
             cache_creation=row["cache_creation_tokens"],
+            fallback_served=row["fallback_observed"],
         )
-        if row["usage_status"] == UsageStatus.MEASURED and cost.eur is None:
+        if row["usage_status"] == UsageStatus.MEASURED and cost.reason == "no_price":
             unpriced.add(model_name)
         for bucket in (
             totals,

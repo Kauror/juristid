@@ -76,6 +76,8 @@ def error_kind(error: BaseException) -> str:
         return "connection"
     if name == "DeadlineExceeded":
         return "deadline"
+    if not isinstance(error, Exception):
+        return "interrupted"  # a supervisor's StepTerminated, KeyboardInterrupt
     return "other"
 
 
@@ -94,6 +96,9 @@ class Recorder:
     service: str
     requested_model: str
     presented: int | None = None
+    #: Seconds a live request may still run: the step budget left plus the supervisor's
+    #: grace and kill delay, or the client's worst case (three phases and backoff).
+    may_run_seconds: float = 900.0
     operation_id: uuid.UUID = field(default_factory=uuid.uuid4)
     run_ref: str = field(default_factory=lambda: _run_ref.get())
     started_at: Any = field(default_factory=timezone.now)
@@ -140,6 +145,7 @@ class Recorder:
             "started_at": self.started_at,
             "items_presented": self.presented,
             "outcome": outcome,
+            "expected_end_at": self.started_at + timedelta(seconds=self.may_run_seconds),
         }
         if finished is not None:
             defaults.update(
@@ -217,6 +223,8 @@ def _attempt_outcome(event: _Event, is_last: bool, error: BaseException | None) 
             return AttemptOutcome.TIMEOUT
         if kind == "connection":
             return AttemptOutcome.CONNECTION_ERROR
+        if kind == "interrupted":
+            return AttemptOutcome.INTERRUPTED
     return AttemptOutcome.UNKNOWN
 
 
@@ -233,7 +241,15 @@ def _read_usage(row: AiAttempt, response: Any) -> None:
     row.actual_model = model[:80] if isinstance(model, str) else ""
     stop = getattr(response, "stop_reason", "")
     row.stop_reason = stop[:40] if isinstance(stop, str) else ""
-    row.fallback_observed = row.actual_model != row.requested_model if row.actual_model else None
+    iterations = getattr(usage, "iterations", None)
+    if isinstance(iterations, list):
+        served = [i for i in iterations if getattr(i, "type", "") == "fallback_message"]
+        row.fallback_observed = bool(served)
+        if served:
+            fb_model = getattr(served[-1], "model", "")
+            row.fallback_model = fb_model[:80] if isinstance(fb_model, str) else ""
+            row.fallback_input_tokens = _count(served[-1], "input_tokens")
+            row.fallback_output_tokens = _count(served[-1], "output_tokens")
     row.input_tokens = _count(usage, "input_tokens")
     row.output_tokens = _count(usage, "output_tokens")
     row.cache_read_tokens = _count(usage, "cache_read_input_tokens")
@@ -246,10 +262,12 @@ def _read_usage(row: AiAttempt, response: Any) -> None:
 
 def reconcile_stale(now: Any = None) -> int:
     """Operations still IN_PROGRESS long after they began: their result is unknown."""
-    cutoff = (now or timezone.now()) - STALE_AFTER
-    return AiOperation.objects.filter(outcome=Outcome.IN_PROGRESS, started_at__lt=cutoff).update(
-        outcome=Outcome.INTERRUPTED
+    now = now or timezone.now()
+    running = AiOperation.objects.filter(outcome=Outcome.IN_PROGRESS)
+    due = running.filter(expected_end_at__lt=now) | running.filter(
+        expected_end_at__isnull=True, started_at__lt=now - STALE_AFTER
     )
+    return due.update(outcome=Outcome.INTERRUPTED)
 
 
 def set_classified(operation_id: uuid.UUID | None, count: int) -> None:

@@ -77,7 +77,7 @@ def test_a_successful_request_is_one_operation_one_attempt():
     assert attempt.outcome == AttemptOutcome.OK
     assert (attempt.input_tokens, attempt.output_tokens) == (10, 5)
     assert attempt.usage_status == UsageStatus.MEASURED
-    assert attempt.actual_model == "served-1" and attempt.fallback_observed is True
+    assert attempt.actual_model == "served-1" and attempt.fallback_observed is None
     # cache fields the response did not carry are unknown, not zero
     assert attempt.cache_read_tokens is None and attempt.cache_creation_tokens is None
 
@@ -89,7 +89,7 @@ def test_cache_tokens_are_kept_when_reported():
     _call(FakeClient(lambda r: _ok(usage=usage, model=MODEL)))
     attempt = AiAttempt.objects.get()
     assert (attempt.cache_read_tokens, attempt.cache_creation_tokens) == (40, 0)
-    assert attempt.fallback_observed is False
+    assert attempt.fallback_observed is None  # no iterations reported: nothing said
 
 
 def _client_with_attempts(statuses: list[int | None], monkeypatch: Any, final: Any) -> None:
@@ -391,3 +391,52 @@ def test_the_page_is_for_the_technical_administrator_only(client):
     assert "AI kasutus" in body and "PROMPT" not in body
     csv = client.get(reverse("haldus:ai_usage_csv"))
     assert csv.status_code == 200 and "text/csv" in csv["Content-Type"]
+
+
+# -- interrupted and unfinished operations (R98-C02) ----------------------------------------------
+
+
+class StepTerminated(BaseException):
+    """Named like `app.core.nightly_bounded.StepTerminated`: not an `Exception`."""
+
+
+def test_a_supervisor_termination_is_recorded_as_interrupted_and_still_propagates():
+    def terminate(request: Any) -> Any:
+        raise StepTerminated
+
+    with pytest.raises(StepTerminated):
+        _call(FakeClient(terminate))
+    op = AiOperation.objects.get()
+    attempt = op.attempts.get()
+    assert (op.outcome, op.error_kind) == (Outcome.INTERRUPTED, "interrupted")
+    assert attempt.outcome == AttemptOutcome.INTERRUPTED and attempt.input_tokens is None
+
+
+def test_a_request_still_inside_its_window_is_not_called_interrupted():
+    now = timezone.now()
+    live = AiOperation.objects.create(
+        service="candidates",
+        requested_model=MODEL,
+        started_at=now - dt.timedelta(minutes=20),
+        expected_end_at=now + dt.timedelta(minutes=10),
+        outcome=Outcome.IN_PROGRESS,
+    )
+    recorder.reconcile_stale()
+    live.refresh_from_db()
+    assert live.outcome == Outcome.IN_PROGRESS
+    assert report.effective_outcome(live, now) == Outcome.IN_PROGRESS
+
+
+def test_a_killed_request_is_not_active_forever():
+    now = timezone.now()
+    killed = AiOperation.objects.create(
+        service="candidates",
+        requested_model=MODEL,
+        started_at=now - dt.timedelta(hours=2),
+        expected_end_at=now - dt.timedelta(hours=1, minutes=30),  # SIGKILL: no result row
+        outcome=Outcome.IN_PROGRESS,
+    )
+    assert report.effective_outcome(killed, now) == Outcome.INTERRUPTED  # shown so at once
+    assert recorder.reconcile_stale() == 1  # and stored so by the next request
+    killed.refresh_from_db()
+    assert killed.outcome == Outcome.INTERRUPTED and not killed.attempts.exists()

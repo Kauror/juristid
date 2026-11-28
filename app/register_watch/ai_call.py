@@ -102,9 +102,14 @@ def call_items(
 
     model = getattr(settings, setting, DEFAULT_MODEL)
     rec = ledger.Recorder(service, str(model), presented) if service else None
+    left = http.remaining()
+    if rec is not None and left is not None:
+        # the step's budget left, the supervisor's grace (300 s) and kill delay (60 s)
+        rec.may_run_seconds = max(left, 0.0) + 360.0
+    elif rec is not None:
+        rec.may_run_seconds = 3 * timeout * 3 + 300.0
     if rec is not None:
         setattr(usage, LEDGER_ATTRIBUTE, rec.operation_id)
-    left = http.remaining()
     if left is not None and left <= 0:
         # The nightly step's time is spent (ADR 0231): no request is started.
         if rec is not None:
@@ -126,7 +131,14 @@ def call_items(
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
         )
-    except Exception as error:  # the model is an aid; every caller goes on without it
+    except BaseException as error:
+        if not isinstance(error, Exception):
+            # The supervisor's SIGTERM (`StepTerminated`) or an interrupt: the outcome of the
+            # request is unknown. Recorded, then let go on as it was.
+            if rec is not None:
+                rec.finish(error=error, outcome=Outcome.INTERRUPTED)
+            raise
+        # the model is an aid; every caller goes on without it
         if rec is not None:
             rec.finish(error=error, outcome=Outcome.FAILED)
         status = getattr(error, "status_code", None)
