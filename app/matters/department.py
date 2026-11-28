@@ -292,7 +292,7 @@ def build_department(
         # The same component and the same resolver as Minu asjad, over the
         # head's department scope and the page's one read of the work model.
         page.overview = week_overview.build_week_overview(
-            week_overview.make_ctx(viewer, week_overview.DEPARTMENT, None, today),
+            week_overview.make_ctx(viewer, week_overview.DEPARTMENT, None, today, facts=facts),
             items=items,
         )
 

@@ -216,6 +216,8 @@ class Ctx:
     week: Any
     last: Any
     data: SeriesData | None = None
+    #: The sent opinions, read once per request (the page may hand its own read in).
+    facts: list[Any] | None = None
     #: First day each history figure is reliably recorded (`reliable_since`).
     reliable: dict[str, date | None] = field(default_factory=dict)
 
@@ -224,9 +226,11 @@ class Ctx:
         return None if self.subject is None else str(self.subject.pk)
 
 
-def make_ctx(viewer: Any, scope: str, subject: Any, today: date) -> Ctx:
+def make_ctx(
+    viewer: Any, scope: str, subject: Any, today: date, *, facts: list[Any] | None = None
+) -> Ctx:
     week = stat_periods.current(today)
-    ctx = Ctx(viewer, scope, subject, today, week, week.previous)
+    ctx = Ctx(viewer, scope, subject, today, week, week.previous, facts=facts)
     if scope == SELF:
         ctx.data = load_series(subject, today, ctx.last.start, week.until)
         ctx.reliable = ctx.data.reliable
@@ -396,7 +400,9 @@ def sent_recs(ctx: Ctx, span: Any) -> list[Rec]:
     """Opinions sent in ``span``: one person's by Minu statistika's credit, or all of them."""
     from app.reporting import opinions
 
-    facts = ctx.data.facts if ctx.data is not None else opinions.opinion_facts(ctx.viewer)
+    if ctx.facts is None:
+        ctx.facts = ctx.data.facts if ctx.data is not None else opinions.opinion_facts(ctx.viewer)
+    facts = ctx.facts
     chosen = []
     for fact in facts:
         if not span.start <= fact.sent_on <= span.end:

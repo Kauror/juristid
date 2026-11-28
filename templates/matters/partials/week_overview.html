@@ -77,7 +77,7 @@ summed into work.
       </ul>
     {% else %}<p class="wo__empty">Jõustumisi pole.</p>{% endif %}
   </section>
-  {% if ov.monitoring or ov.is_department %}
+  {% if ov.monitoring %}
   <section class="wo__block" aria-labelledby="wo-mon">
     <h2 class="wo__h" id="wo-mon">Sissetulev seire {% if ov.monitoring %}<span class="wo__range">sel nädalal</span>{% endif %}<a class="wo__more" href="{% url 'register_watch:review' %}">Monitooring</a></h2>
     {% if ov.monitoring %}{% include "matters/partials/week_figures.html" with figures=ov.monitoring %}{% endif %}

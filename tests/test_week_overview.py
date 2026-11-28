@@ -541,3 +541,40 @@ def test_the_overview_renders_and_never_writes(client, specialist) -> None:
     body = response.content.decode()
     assert "Selle nädala ülevaade" in body and "Minu 7 päeva tähtajad" in body
     assert NextAction.objects.count() == before
+
+
+# --- performance ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("who", ["specialist", "department_head"])
+def test_the_overview_adds_a_bounded_number_of_queries(client, request, monkeypatch, who) -> None:
+    """Measured on a 1,500-Teema synthetic register: +13 (Minu asjad) and +15 (Osakond).
+
+    The ceiling is that cost with a margin, and it does not grow with the number
+    of Teemad or lawyers, which is what an N+1 would do.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    user = request.getfixturevalue(who)
+    for index in range(6):
+        step(a_matter(user, f"Teema {index}"), user, day=FRIDAY)
+    client.force_login(user)
+    path = reverse("matters:my_work" if who == "specialist" else "matters:department")
+    client.get(path)  # warm caches that are not the overview's
+
+    def queries() -> int:
+        with CaptureQueriesContext(connection) as captured:
+            assert client.get(path).status_code == 200
+        return len(captured)
+
+    with_overview = queries()
+    monkeypatch.setattr(
+        wo,
+        "build_week_overview",
+        lambda ctx, items: wo.WeekOverview(
+            ctx.scope, ctx.week.start, ctx.week.end, ctx.last.start, ctx.last.end
+        ),
+    )
+    without = queries()
+    assert with_overview - without <= 25, (with_overview, without)
