@@ -139,6 +139,65 @@ def _ai_usage(request: HttpRequest) -> Signal:
     return Signal("AI kasutus", OK, "Korras", url)
 
 
+def _nightly(request: HttpRequest) -> Signal:
+    """The last recorded cycle: a failed, partial or missing step is the line; else one OK line."""
+    from app.core import integration_status
+
+    url = reverse("haldus:nightly_history")
+    nights = integration_status.history(1)
+    if not nights:
+        return Signal("Öine tsükkel", UNKNOWN, "Öiseid kirjeid ei ole veel salvestatud.", url)
+    night = nights[0]
+    if night.problems:
+        day = f"{night.start.day}.{night.start.month}"
+        text = f"Viimane tsükkel ({day}): {night.problems} sammu vajab tähelepanu."
+        return Signal("Öine tsükkel", PROBLEM, text, url)
+    return Signal("Öine tsükkel", OK, "Viimane tsükkel korras", url)
+
+
+def _freshness(request: HttpRequest) -> Signal:
+    from app.core import integration_status
+
+    waiting = integration_status.attention(integration_status.sources())
+    url = reverse("haldus:freshness")
+    if waiting:
+        return Signal("Allikate värskus", PROBLEM, f"{len(waiting)} allikat vajab tähelepanu.", url)
+    return Signal("Allikate värskus", OK, "Kõik allikad värsked", url)
+
+
+def _processing(request: HttpRequest) -> Signal:
+    from app.documents import processing_health
+
+    health = processing_health.collect()
+    url = reverse("haldus:processing")
+    problems = []
+    if health.counts.get("FAILED"):
+        problems.append(f"{health.counts['FAILED']} ebaõnnestunud")
+    if health.interrupted:
+        problems.append(f"{health.interrupted} katkenud")
+    if problems:
+        return Signal("Dokumentide töötlus", PROBLEM, ", ".join(problems).capitalize() + ".", url)
+    return Signal("Dokumentide töötlus", OK, "Korras", url)
+
+
+def _parity(request: HttpRequest) -> Signal:
+    from app.legacy_import.lovable_sync_models import LovableParityReport
+
+    url = reverse("haldus:freshness")
+    latest = LovableParityReport.objects.order_by("-at").first()
+    if latest is None:
+        return Signal("Lovable'i võrdlus", UNKNOWN, "Sõltumatut võrdlust pole veel tehtud.", url)
+    if latest.mismatches or latest.unverified:
+        text = (
+            f"Viimane võrdlus: {len(latest.mismatches)} lahknevust, "
+            f"{len(latest.unverified)} kontrollimata."
+        )
+        return Signal("Lovable'i võrdlus", PROBLEM, text, url)
+    return Signal(
+        "Lovable'i võrdlus", OK, f"Viimane võrdlus {latest.at.day}.{latest.at.month} puhas", url
+    )
+
+
 def _department(request: HttpRequest) -> Signal | None:
     from app.haldus.views import _candidate_victories
 
@@ -206,6 +265,10 @@ def _system(request: HttpRequest) -> Signal:
 READERS: tuple[tuple[str, str, Callable[[HttpRequest], Signal | None]], ...] = (
     ("lovable", "Lovable", _lovable),
     ("onenote", "OneNote", _onenote),
+    ("oised_tsuklid", "Öine tsükkel", _nightly),
+    ("varskus", "Allikate värskus", _freshness),
+    ("toodeldud", "Dokumentide töötlus", _processing),
+    ("lovable", "Lovable'i võrdlus", _parity),
     ("ai_kasutus", "AI kasutus", _ai_usage),
     ("registrid", "Registrite jälgimine", _register_watch),
     ("osakond", "Töövõidud", _department),

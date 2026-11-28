@@ -147,3 +147,36 @@ def test_the_pages_are_for_the_technical_administrator_only(client):
         page = client.get(reverse(name))
         assert page.status_code == 200
     assert "Kirje puudub" in client.get(reverse("haldus:nightly_history")).content.decode()
+
+
+def _request():
+    from django.test import RequestFactory
+
+    return RequestFactory().get("/haldus/")
+
+
+def test_the_overview_says_unknown_before_any_night_is_recorded_and_flags_a_problem_after():
+    from app.haldus import overview
+
+    assert overview._nightly(_request()).state == overview.UNKNOWN
+    nightly_outcome.remember(
+        _result("register-watch", nightly_outcome.FAILED, "rc 1"), rc=1, cycle_start=START
+    )
+    signal = overview._nightly(_request())
+    assert signal.state == overview.PROBLEM  # a failed (and missing) step is never «korras»
+
+
+def test_the_overview_lines_for_parity_and_processing():
+    from app.haldus import overview
+    from app.legacy_import.lovable_sync_models import LovableParityReport
+
+    assert overview._parity(_request()).state == overview.UNKNOWN
+    LovableParityReport.objects.create(
+        at=timezone.now(),
+        mode="full",
+        teemad=3,
+        counts={"MATCH": 30},
+        mismatches=[["2099_1", "title"]],
+    )
+    assert overview._parity(_request()).state == overview.PROBLEM
+    assert overview._processing(_request()).state == overview.OK
