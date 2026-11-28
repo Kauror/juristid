@@ -495,3 +495,49 @@ def test_charts_and_the_day_drill_down_reconcile_with_the_detail_rows(client):
         assert drilled.context["page"].paginator.count == expected
         assert drilled.context["summary"].totals.attempts == expected
     assert AiAttempt.objects.count() == 5
+
+
+# -- operational visibility (R98-C04, C05, C07) --
+
+
+def _signal():
+    from django.test import RequestFactory
+
+    from app.haldus import overview
+
+    request = RequestFactory().get("/haldus/")
+    return overview._ai_usage(request)
+
+
+def test_the_overview_says_ok_only_when_nothing_is_unknown():
+    from app.haldus import overview
+
+    assert _signal().state == overview.OK
+
+
+def test_an_accounting_gap_is_a_problem_on_the_overview():
+    from app.haldus import overview
+
+    AiLedgerGap.objects.create(at=timezone.now(), service="candidates", kind="write_failed")
+    assert _signal().state == overview.PROBLEM
+
+
+def test_unknown_cost_under_a_threshold_is_never_reported_as_within_budget(settings):
+    from app.haldus import overview
+
+    settings.AI_BUDGET_WARN_EUR = "100"
+    today = timezone.now().astimezone(report.TALLINN).date()
+    _attempt(today, usage_status=UsageStatus.UNAVAILABLE, input_tokens=None, output_tokens=None)
+    signal = _signal()
+    assert signal.state == overview.UNKNOWN and "ei saa kinnitada" in signal.text
+
+
+def test_the_retention_command_is_a_dry_run_that_deletes_nothing():
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    _attempt(dt.date(2024, 1, 5))
+    out = StringIO()
+    call_command("ai_usage_retention", stdout=out)
+    assert AiAttempt.objects.count() == 1 and "nothing deleted" in out.getvalue()

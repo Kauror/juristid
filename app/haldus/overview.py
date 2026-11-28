@@ -110,6 +110,35 @@ def _riigikogu_problem() -> str | None:
     return None
 
 
+def _ai_usage(request: HttpRequest) -> Signal:
+    """AI usage: an accounting gap, or a crossed monthly level, or unknown cost.
+
+    A low measured total is never reported as «within budget» while some cost is unknown.
+    """
+    import datetime as dt
+
+    from django.utils import timezone
+
+    from app.ai_usage import report
+    from app.ai_usage.models import AiLedgerGap
+
+    url = reverse("haldus:ai_usage")
+    gaps = AiLedgerGap.objects.filter(at__gte=timezone.now() - dt.timedelta(days=7)).count()
+    if gaps:
+        text = f"Arvestus on puudulik: {gaps} päringu tulemus on salvestamata."
+        return Signal("AI kasutus", PROBLEM, text, url)
+    month = report.budget()
+    if month.level in {"warn", "escalate"}:
+        return Signal("AI kasutus", PROBLEM, "Kuu hinnanguline maksumus ületab hoiatuspiiri.", url)
+    if month.level == "ok" and not month.complete:
+        text = (
+            f"Maksumus on {month.unknown_cost_attempts} päringu kohta teadmata; "
+            "piirist allpool olemist ei saa kinnitada."
+        )
+        return Signal("AI kasutus", UNKNOWN, text, url)
+    return Signal("AI kasutus", OK, "Korras", url)
+
+
 def _department(request: HttpRequest) -> Signal | None:
     from app.haldus.views import _candidate_victories
 
@@ -177,6 +206,7 @@ def _system(request: HttpRequest) -> Signal:
 READERS: tuple[tuple[str, str, Callable[[HttpRequest], Signal | None]], ...] = (
     ("lovable", "Lovable", _lovable),
     ("onenote", "OneNote", _onenote),
+    ("ai_kasutus", "AI kasutus", _ai_usage),
     ("registrid", "Registrite jälgimine", _register_watch),
     ("osakond", "Töövõidud", _department),
     ("vastutajata", "Töö ilma vastutajata", _without_owner),
