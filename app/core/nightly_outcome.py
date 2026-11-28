@@ -443,7 +443,15 @@ CACHE_KEY = "nightly-step:{step}"
 REMEMBER_SECONDS = 14 * 24 * 3600
 
 
-def remember(result: StepOutcome, *, rc: int, seconds: int | None = None, night: str = "") -> None:
+def remember(
+    result: StepOutcome,
+    *,
+    rc: int,
+    seconds: int | None = None,
+    night: str = "",
+    cycle_start: dt.datetime | None = None,
+    manual: bool = False,
+) -> None:
     """Keep ``result`` as the step's last verdict (counts and codes, never a title)."""
     from django.core.cache import cache
     from django.utils import timezone
@@ -462,6 +470,38 @@ def remember(result: StepOutcome, *, rc: int, seconds: int | None = None, night:
         },
         REMEMBER_SECONDS,
     )
+    if cycle_start is not None:
+        _keep_history(result, rc, seconds, cycle_start, manual)
+
+
+def _keep_history(
+    result: StepOutcome, rc: int, seconds: int | None, cycle_start: dt.datetime, manual: bool
+) -> None:
+    """The durable per-night row (`NightlyStepRecord`). Best effort: the cache entry and the
+    host's own ledger already hold the verdict, so a failure here only costs history."""
+    import logging
+
+    from django.utils import timezone
+
+    from app.core.models import NightlyStepRecord
+
+    try:
+        # `manual` is part of the key: a recovery run never overwrites the scheduled verdict.
+        NightlyStepRecord.objects.update_or_create(
+            cycle_start=cycle_start,
+            step=result.step,
+            manual=manual,
+            defaults={
+                "outcome": result.outcome,
+                "reason": result.reason[:200],
+                "counts": result.counts,
+                "rc": rc,
+                "seconds": seconds,
+                "recorded_at": timezone.now(),
+            },
+        )
+    except Exception:
+        logging.getLogger(__name__).warning("nightly history: could not keep a step record")
 
 
 def remembered() -> list[dict[str, Any]]:

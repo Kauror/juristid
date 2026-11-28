@@ -18,7 +18,12 @@ from app.legacy_import import lovable_source
 from app.legacy_import.lovable_source import HttpTransport, SourceConfig, SourceError
 
 HERE = Path(__file__).resolve().parent
+#: The oracle and its vocabulary moved into the application in r98 so the repeatable parity
+#: verifier can use them; they are guarded where they now live.
+ORACLE_DIR = HERE.parents[1] / "app" / "legacy_import" / "parity"
 ORACLE_SIDE = ("oracle.py", "vocabulary.py")
+#: The only `app` modules the oracle side may import: its own package.
+OWN_PACKAGE = "app.legacy_import.parity"
 
 
 def _imports(path: Path) -> set[str]:
@@ -49,9 +54,16 @@ def test_the_oracle_imports_nothing_from_the_engine_or_the_domain(name):
     `lovable_reading`». Stricter on purpose: no `app.` module at all, so neither
     the engine's helpers nor a domain service can lend the oracle its answer;
     Juristid's rows are read through the model registry."""
-    imported = _imports(HERE / name)
+    imported = _imports(ORACLE_DIR / name)
     assert "<dynamic import>" not in imported
-    assert not {m for m in imported if m == "app" or m.startswith("app.")}, imported
+    outside = {
+        m
+        for m in imported
+        if (m == "app" or m.startswith("app.")) and not m.startswith(OWN_PACKAGE)
+    }
+    # `from app.legacy_import import parity`-style parents are fine only as the package path
+    outside -= {"app", "app.legacy_import"}
+    assert not outside, imported
     assert not {m for m in imported if "lovable_sync" in m or "lovable_reading" in m}
 
 
@@ -83,7 +95,8 @@ SYNTHETIC_YEARS = (1999, 2099)
 
 
 def _contract_files() -> list[Path]:
-    return sorted(p for p in HERE.glob("*.py") if p.name != Path(__file__).name)
+    here = (p for p in HERE.glob("*.py") if p.name != Path(__file__).name)
+    return sorted([*here, *(ORACLE_DIR / name for name in ORACLE_SIDE)])
 
 
 def _text_of(node: ast.AST) -> str | None:

@@ -110,6 +110,115 @@ def _riigikogu_problem() -> str | None:
     return None
 
 
+def _ai_usage(request: HttpRequest) -> Signal:
+    """AI usage: an accounting gap, or a crossed monthly level, or unknown cost.
+
+    A low measured total is never reported as «within budget» while some cost is unknown.
+    """
+    import datetime as dt
+
+    from django.utils import timezone
+
+    from app.ai_usage import report
+    from app.ai_usage.models import AiLedgerGap
+
+    url = reverse("haldus:ai_usage")
+    gaps = AiLedgerGap.objects.filter(at__gte=timezone.now() - dt.timedelta(days=7)).count()
+    if gaps:
+        text = f"Arvestus on puudulik: {gaps} päringu tulemus on salvestamata."
+        return Signal("AI kasutus", PROBLEM, text, url)
+    month = report.budget()
+    known = report.money(month.known_eur)
+    if month.level in {"warn", "escalate"}:
+        text = (
+            f"Kuu teadaolev maksumus ({known}) ületab hoiatuspiiri"
+            + ("" if month.complete else "; arvestus on lisaks puudulik")
+            + "."
+        )
+        return Signal("AI kasutus", PROBLEM, text, url)
+    if not month.complete:
+        why = "; ".join(f"{n} × {report.REASONS[k]}" for k, n in month.reasons.items())
+        policy = (
+            "Piiri ületamist ei saa kinnitada ega välistada."
+            if month.level == "unproven"
+            else "Hoiatuspiire pole seatud."
+        )
+        text = f"Arvestus on puudulik: {why}. Teadaolev alamsumma {known}. {policy}"
+        return Signal("AI kasutus", UNKNOWN, text, url)
+    if not report.AiOperation.objects.exists():
+        return Signal("AI kasutus", OK, "Päringuid pole registreeritud.", url)
+    policy = "piirist allpool" if month.level == "ok" else "hoiatuspiire pole seatud"
+    return Signal("AI kasutus", OK, f"Arvestus täielik: kuu maksumus {known}; {policy}.", url)
+
+
+def _nightly(request: HttpRequest) -> Signal:
+    """The last recorded cycle: a failed, partial or missing step is the line; else one OK line."""
+    from app.core import integration_status
+
+    url = reverse("haldus:nightly_history")
+    found = integration_status.history(3)
+    due = [n for n in found.nights if n.state != integration_status.PENDING]
+    if not due:
+        return Signal(
+            "Öine tsükkel", UNKNOWN, "Ajastatud tsükli kirjeid ei ole veel salvestatud.", url
+        )
+    night = due[0]
+    day = f"{night.start.day}.{night.start.month}"
+    if night.state in {integration_status.FAILED, integration_status.PARTIAL}:
+        text = f"Tsükkel {day}: {night.label.lower()}, {night.problems} sammu vajab tähelepanu."
+        return Signal("Öine tsükkel", PROBLEM, text, url)
+    if night.state == integration_status.MISSING:
+        return Signal("Öine tsükkel", PROBLEM, f"Tsükkel {day} ei jätnud ühtegi kirjet.", url)
+    if night.state == integration_status.RUNNING:
+        return Signal("Öine tsükkel", UNKNOWN, f"Tsükkel {day} käib või ootab veel samme.", url)
+    if night.state == integration_status.DISABLED:
+        return Signal("Öine tsükkel", UNKNOWN, f"Tsükkel {day} jäeti tahtlikult vahele.", url)
+    return Signal("Öine tsükkel", OK, f"Tsükkel {day} lõpetatud", url)
+
+
+def _freshness(request: HttpRequest) -> Signal:
+    from app.core import integration_status
+
+    waiting = integration_status.attention(integration_status.sources())
+    url = reverse("haldus:freshness")
+    if waiting:
+        return Signal("Allikate värskus", PROBLEM, f"{len(waiting)} allikat vajab tähelepanu.", url)
+    return Signal("Allikate värskus", OK, "Kõik allikad värsked", url)
+
+
+def _processing(request: HttpRequest) -> Signal:
+    from app.documents import processing_health
+
+    health = processing_health.collect()
+    url = reverse("haldus:processing")
+    problems = []
+    if health.counts.get("FAILED"):
+        problems.append(f"{health.counts['FAILED']} ebaõnnestunud")
+    if health.interrupted:
+        problems.append(f"{health.interrupted} katkenud")
+    if problems:
+        return Signal("Dokumentide töötlus", PROBLEM, ", ".join(problems).capitalize() + ".", url)
+    return Signal("Dokumentide töötlus", OK, "Korras", url)
+
+
+def _parity(request: HttpRequest) -> Signal:
+    from app.legacy_import.lovable_sync_models import LovableParityReport
+
+    url = reverse("haldus:freshness")
+    latest = LovableParityReport.objects.order_by("-at").first()
+    if latest is None:
+        return Signal("Lovable'i võrdlus", UNKNOWN, "Sõltumatut võrdlust pole veel tehtud.", url)
+    if latest.mismatches or latest.unverified:
+        text = (
+            f"Viimane võrdlus: {len(latest.mismatches)} lahknevust, "
+            f"{len(latest.unverified)} kontrollimata."
+        )
+        return Signal("Lovable'i võrdlus", PROBLEM, text, url)
+    return Signal(
+        "Lovable'i võrdlus", OK, f"Viimane võrdlus {latest.at.day}.{latest.at.month} puhas", url
+    )
+
+
 def _department(request: HttpRequest) -> Signal | None:
     from app.haldus.views import _candidate_victories
 
@@ -177,6 +286,11 @@ def _system(request: HttpRequest) -> Signal:
 READERS: tuple[tuple[str, str, Callable[[HttpRequest], Signal | None]], ...] = (
     ("lovable", "Lovable", _lovable),
     ("onenote", "OneNote", _onenote),
+    ("oised_tsuklid", "Öine tsükkel", _nightly),
+    ("varskus", "Allikate värskus", _freshness),
+    ("toodeldud", "Dokumentide töötlus", _processing),
+    ("lovable", "Lovable'i võrdlus", _parity),
+    ("ai_kasutus", "AI kasutus", _ai_usage),
     ("registrid", "Registrite jälgimine", _register_watch),
     ("osakond", "Töövõidud", _department),
     ("vastutajata", "Töö ilma vastutajata", _without_owner),

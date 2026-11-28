@@ -21,6 +21,7 @@ from typing import Any
 
 from django.conf import settings
 
+from app.ai_usage import recorder
 from app.register_watch import ai_call, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import Relevance, WatchFinding
@@ -134,6 +135,8 @@ def _judge_batch(
         key=itemgetter("id"),
         usage=usage,
         client=client,
+        service="watch_findings",
+        presented=len(findings),
     )
     if isinstance(answers, ai_call.Failure):
         # The watch goes on without the model; the next night asks again.
@@ -154,4 +157,5 @@ def _judge_batch(
         finding.save(update_fields=["relevance", "ai_note", "updated_at"])
         judged += 1
     usage.judged += judged
+    recorder.set_classified(ai_call.last_operation(usage), judged)
     return judged

@@ -7,6 +7,23 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# r98 — AI kasutuse arvestus, öised tsüklid, allikate värskus, dokumentide töötlus. AJUTINE KUUPÄEV 2026-11-30
+# (r97 on 2026-11-29 oma kirjes): muuda tegelikuks paigalduspäevaks; kui r97 ja r98 paigaldatakse samal päeval,
+# ühenda need kaks kirjet üheks (üks kirje päeva kohta) ja jäta mõlema muudatused alles.
+[[day]]
+date = 2026-11-30
+basis = "deployment"
+prs = [741]
+changes = [
+  "Haldus → Integratsioonid → AI kasutus (tehnilisele haldurile): mudelipäringute arv, korduskatsed, vead, tokenid ja hinnanguline maksumus perioodide kaupa. Maksumus on hinnang hinnakirja järgi, mitte arve; teadmata hind või tokenid on märgitud «Maksumus teadmata».",
+  "Haldus → Integratsioonid → AI kasutus: kui arvestus on puudulik (katkestatud päring, salvestamata tulemus, teadmata hind või vana kurss), on summa märgitud «vähemalt» ja «Arvestus puudulik»; hoiatuspiiri puudumine ei tähenda «Korras».",
+  "Haldus → Integratsioonid → Öised tsüklid: viimase 30 öö sammud ja tulemused; öö, mis ei jätnud ühtegi kirjet, on oma reana («Tsükkel puudub täielikult»); käsitsi taastamine ei asenda ajastatud öö tulemust.",
+  "Haldus → Integratsioonid → Allikate värskus: iga allika viimane katse, viimane lõppenud käivitus ja viimane täielikult õnnestunud kontroll; lugemisveaga lõppenud käivitus ei tee allikat värskeks.",
+  "Haldus → Lovable: sünkroonimise diagnostika (viimane katse ja viimane edukas, populatsioonid, muutused, piirid, varukoopia) ja sõltumatu võrdlus Lovable'iga eraldi: kas see on öösel salvestatud lugemise või operaatori uue lugemise järgi, kui suur valim, ja kas tulemus on ajakohane, vananenud või mittetäielik. Puhas valim ega tühi võrdlus ei ole kooskõla tõend.",
+  "Haldus → Integratsioonid → Dokumentide töötlus: töötlemisjärjekord, rikked põhjuste kaupa ja OneNote'i katvus; teadlikult töötlemata failid ei ole rikked.",
+  "Haldus → Ülevaade näitab AI kasutuse, öise tsükli, allikate värskuse, dokumentide töötluse ja Lovable'i võrdluse tähelepanu vajavaid kohti.",
+]
+
 # r97 — ülevaade, nädala töö ja statistika sügavamad lingid (#740; ADR 0235, ilma andmebaasi muudatuseta).
 # PAIGALDUSPÄEV 2026-11-29 (pühapäev) — kontrolli enne paigaldust; kui paigaldus nihkub, muuda
 # see kuupäev tegelikuks paigalduspäevaks (väljalaskekomplekt kontrollib seda ja eraldi päevad ei tohi kattuda).

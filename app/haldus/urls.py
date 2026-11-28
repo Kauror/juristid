@@ -12,10 +12,12 @@ from django.urls import path
 
 from app.accounts import admin_session_views
 from app.haldus import (
+    ai_usage_views,
     data_sync_views,
     letters_views,
     onenote_holds,
     register_watch_views,
+    status_views,
     views,
 )
 
@@ -34,6 +36,12 @@ urlpatterns = [
     path("registrid/", register_watch_views.runs, name="register_watch"),
     path("registrid/allikad/", register_watch_views.sources, name="register_watch_sources"),
     path("registrid/<uuid:pk>/", register_watch_views.run, name="register_watch_run"),
+    # -- AI kasutus: the model's usage ledger (r98, docs/adr/0236) --
+    path("oised-tsuklid/", status_views.nightly_history, name="nightly_history"),
+    path("varskus/", status_views.freshness, name="freshness"),
+    path("dokumentide-tootlus/", status_views.processing, name="processing"),
+    path("ai-kasutus/", ai_usage_views.ai_usage, name="ai_usage"),
+    path("ai-kasutus/csv/", ai_usage_views.ai_usage_csv, name="ai_usage_csv"),
     # -- Andmete sünkroonimine (LS-C): Lovable and OneNote, requests for the host --
     path("andmete-sunkroonimine/", data_sync_views.overview, name="data_sync"),
     path("andmete-sunkroonimine/kontrolli/", data_sync_views.check, name="data_sync_check"),

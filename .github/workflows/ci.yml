@@ -539,6 +539,7 @@ jobs:
       # own migrations, so forgetting is a red build rather than a quiet gap.
       - name: And forwards again from the state a deployment is in
         run: |
+          uv run python manage.py migrate ai_usage zero --noinput
           uv run python manage.py migrate riigikogu zero --noinput
           uv run python manage.py migrate mcp_writes zero --noinput
           uv run python manage.py migrate mcp_access zero --noinput

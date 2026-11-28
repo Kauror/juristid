@@ -1,0 +1,142 @@
+{% extends "haldus/base.html" %}
+{% block title %}AI kasutus · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → AI kasutus (r98, docs/adr/0236): the model's requests, tokens and an
+  estimated cost, read from the ledger only. Estimate = list price × measured
+  tokens; never an invoice. Unknown stays «teadmata», never zero.
+{% endcomment %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="aiusage-state">
+    <h2 class="acctsection__title" id="aiusage-state">Seis</h2>
+    <h3 class="dsync__subtitle">Arvestuse seis</h3>
+    <p>
+      {% if reason_labels %}<span class="statechip statechip--problem">Arvestus puudulik</span>
+        <span class="regwatch__meta">Allpool olevad summad on teadaolevad alamsummad, mitte kogusummad: {{ reason_labels|join:"; " }}.</span>
+      {% else %}<span class="statechip statechip--ok">Arvestus täielik</span>
+        <span class="regwatch__meta">Valitud perioodi summa on kogusumma (hinnangu täpsusega).</span>{% endif %}
+    </p>
+    <dl class="detailgrid">
+      <div><dt>Hinnanguline maksumus täna</dt><dd>{{ today_cost }}{% if not today.complete %} <span class="statechip">alamsumma</span>{% endif %}</dd></div>
+      <div><dt>Hinnanguline maksumus valitud perioodil</dt><dd>{{ period_cost }}{% if summary.totals.unknown_cost_attempts %} + teadmata ({{ summary.totals.unknown_cost_attempts }} päringut){% endif %}</dd></div>
+      <div><dt>Hinnanguline maksumus sel kuul</dt><dd>{% if month.complete %}{{ month_cost }}{% else %}vähemalt {{ month_cost }}{% endif %}</dd></div>
+    </dl>
+    <h3 class="dsync__subtitle">Eelarvepoliitika</h3>
+    <p>
+      {% if month.level == "escalate" %}<span class="statechip statechip--problem">Teadaolev summa ületab kõrgema hoiatuspiiri ({{ month.escalate }} €)</span>
+      {% elif month.level == "warn" %}<span class="statechip statechip--problem">Teadaolev summa ületab hoiatuspiiri ({{ month.warn }} €)</span>
+      {% elif month.level == "ok" %}<span class="statechip statechip--ok">Täielik summa on piirist allpool</span>
+      {% elif month.level == "unproven" %}<span class="statechip">Piiri ei saa kinnitada: arvestus on puudulik, teadaolev alamsumma ei tõesta, et kogusumma on piirist allpool</span>
+      {% else %}<span class="statechip">Hoiatuspiire pole seatud</span>{% endif %}
+    </p>
+    <p class="regwatch__meta">Hinnang põhineb avalikel hinnakirja hindadel ja mõõdetud tokenitel; see ei ole arve. Teadmata hinnaga või tokenita päring on «Maksumus teadmata», mitte null.</p>
+    {% if note %}<p class="regwatch__meta"><span class="statechip">Katvus</span> {{ note }}</p>{% endif %}
+    {% if summary.totals.ops_no_attempt %}<p class="regwatch__meta">{{ summary.totals.ops_no_attempt }} loogilist päringut ei jõudnud HTTP-päringuni (nt ei jäänud aega); need ei ole füüsilised katsed ega arvestuse puudus.</p>{% endif %}
+    {% if summary.unpriced_models %}<p class="regwatch__meta"><span class="statechip">Hind puudub</span> {{ summary.unpriced_models|join:", " }}</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="aiusage-filter">
+    <h2 class="acctsection__title" id="aiusage-filter">Periood ja filtrid</h2>
+    <form method="get" class="filterbar">
+      <label>Periood
+        <select name="periood">{% for key, label in periods %}<option value="{{ key }}"{% if key == f.key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </label>
+      <label>Alates <input type="date" name="alates" value="{{ f.start|date:'Y-m-d' }}"></label>
+      <label>Kuni <input type="date" name="kuni" value="{{ f.end|date:'Y-m-d' }}"></label>
+      <label>Teenus
+        <select name="teenus"><option value="">Kõik</option>{% for key, label in services %}<option value="{{ key }}"{% if key == f.service %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </label>
+      <label>Mudel (vastanud, muidu küsitud) <input type="text" name="mudel" value="{{ f.model }}" maxlength="80"></label>
+      <label>Päringu tulemus
+        <select name="tulemus"><option value="">Kõik</option>{% for key, label in outcomes %}<option value="{{ key }}"{% if key == f.outcome %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </label>
+      <button type="submit" class="button button--secondary">Näita</button>
+    </form>
+    <p class="regwatch__meta">Ajavahemik {{ f.start|date:"j.n.Y" }} – {{ f.end|date:"j.n.Y" }} (Tallinna aja järgi). Päring kuulub sellesse päeva, mil see algas; kõik tema katsed ja kulud loetakse sinna. Filtrid valivad loogilisi päringuid (teenus, tulemus); mudelifilter loeb ainult selle mudeli katseid. Kokkuvõtted, graafikud, tabelid, detailileht ja CSV kasutavad sama valikut.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="aiusage-totals">
+    <h2 class="acctsection__title" id="aiusage-totals">Kokku</h2>
+    <dl class="detailgrid">
+      <div><dt>Loogilised päringud</dt><dd>{{ summary.totals.operations }}</dd></div>
+      <div><dt>Füüsilised katsed</dt><dd>{{ summary.totals.attempts }}</dd></div>
+      <div><dt>Õnnestunud / ebaõnnestunud</dt><dd>{{ summary.totals.ops_good }} / {{ summary.totals.ops_failed }}</dd></div>
+      <div><dt>Korduskatsed</dt><dd>{{ summary.totals.retried_attempts }}</dd></div>
+      <div><dt>Sisend- / väljundtokenid</dt><dd class="mono">{{ summary.totals.input_tokens }} / {{ summary.totals.output_tokens }}</dd></div>
+      <div><dt>Vahemälu (lugemine / loomine)</dt><dd class="mono">{{ summary.totals.cache_read }} / {{ summary.totals.cache_creation }}</dd></div>
+      <div><dt>Aeg vastuse päisteni (mediaan / 95%)</dt><dd>{% if summary.median_ms is not None %}{{ summary.median_ms }} / {{ summary.p95_ms }} ms{% else %}—{% endif %}<br><span class="regwatch__meta">Mõõdetud päringu saatmisest vastuse päisteni, mitte kogu vastuse töötluseni.</span></dd></div>
+      <div><dt>Hinnata päringuid</dt><dd>{{ summary.totals.unknown_cost_attempts }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel" aria-labelledby="aiusage-charts">
+    <h2 class="acctsection__title" id="aiusage-charts">Graafikud</h2>
+    {% for chart in charts %}{% include "haldus/_ai_trend.html" with chart=chart %}{% endfor %}
+  </section>
+
+  <section class="panel" aria-labelledby="aiusage-days">
+    <h2 class="acctsection__title" id="aiusage-days">Päevade kaupa</h2>
+    {% if day_rows %}
+      <div class="accttable"><table class="data-table">
+        <thead><tr><th scope="col">Päev</th><th scope="col">Hinnanguline maksumus (teadaolev)</th><th scope="col"><span class="visually-hidden">Võrdlus</span></th><th scope="col">Loogilisi päringuid</th><th scope="col">Füüsilisi katseid</th><th scope="col">Ebaõnnestunud katseid</th><th scope="col">Korduskatseid</th></tr></thead>
+        <tbody>{% for day, t, cost, link in day_rows %}
+          <tr><td class="regwatchlog__nowrap"><a href="{{ link }}">{{ day|date:"j.n.Y" }}</a></td><td>{{ cost }}{% if t.unknown_cost_attempts %} (+{{ t.unknown_cost_attempts }} teadmata){% endif %}{% if not t.complete %} <span class="statechip">puudulik</span>{% endif %}</td><td><progress max="{{ peak }}" value="{{ t.cost_eur }}" aria-label="Päeva maksumus">{{ cost }}</progress></td><td>{{ t.operations }}</td><td>{{ t.attempts }}</td><td>{{ t.failed_attempts }}</td><td>{{ t.retried_attempts }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% else %}<p class="regwatch__meta">Sellel perioodil ei ole registreeritud ühtegi päringut.</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="aiusage-services">
+    <h2 class="acctsection__title" id="aiusage-services">Teenuste kaupa</h2>
+    {% if service_rows %}
+      <div class="accttable"><table class="data-table">
+        <thead><tr><th scope="col">Teenus</th><th scope="col">Maksumus (teadaolev)</th><th scope="col">Loogilisi päringuid</th><th scope="col">Füüsilisi katseid</th><th scope="col">Vigu</th><th scope="col">Korduskatseid</th><th scope="col">Tokenid (sisse / välja)</th><th scope="col">Aeg päisteni (mediaan / 95%)</th><th scope="col">Klassifitseeritud</th><th scope="col">Maksumus ühe kohta</th></tr></thead>
+        <tbody>{% for label, t, cost, dur in service_rows %}
+          <tr><td>{{ label }}</td><td>{{ cost }}{% if not t.complete %} <span class="statechip">puudulik</span>{% endif %}</td><td>{{ t.operations }}</td><td>{{ t.attempts }}</td><td>{{ t.failed_attempts }}</td><td>{{ t.retried_attempts }}</td><td class="mono">{{ t.input_tokens }} / {{ t.output_tokens }}</td><td>{% if dur and dur.0 is not None %}{{ dur.0 }} / {{ dur.1 }} ms{% else %}—{% endif %}</td><td>{{ t.items_classified }} / {{ t.items_presented }}</td><td>{% if t.cost_per_item is None %}—{% elif t.complete %}{{ t.cost_per_item|floatformat:4 }} €{% else %}vähemalt {{ t.cost_per_item|floatformat:4 }} €{% endif %}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% else %}<p class="regwatch__meta">Andmeid pole.</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="aiusage-models">
+    <h2 class="acctsection__title" id="aiusage-models">Mudelite kaupa (tegelik vastanud mudel)</h2>
+    {% if model_rows %}
+      <div class="accttable"><table class="data-table">
+        <thead><tr><th scope="col">Mudel</th><th scope="col">Maksumus (teadaolev)</th><th scope="col">Füüsilisi katseid</th><th scope="col">Sisendtokenid</th><th scope="col">Väljundtokenid</th><th scope="col">Vahemälu lugemine</th></tr></thead>
+        <tbody>{% for name, t, cost in model_rows %}
+          <tr><td class="mono">{{ name }}</td><td>{{ cost }}{% if not t.complete %} <span class="statechip">puudulik</span>{% endif %}</td><td>{{ t.attempts }}</td><td class="mono">{{ t.input_tokens }}</td><td class="mono">{{ t.output_tokens }}</td><td class="mono">{{ t.cache_read }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    {% else %}<p class="regwatch__meta">Andmeid pole.</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="aiusage-detail">
+    <h2 class="acctsection__title" id="aiusage-detail">Päringud</h2>
+    <p class="regwatch__meta">Ainult metaandmed: päringute sisu ega vastuseid ei salvestata. <a href="{% url 'haldus:ai_usage_csv' %}?{{ query }}">Laadi CSV</a> (kuni {{ row_limit }} rida; kui valik on suurem, lõpeb fail märkega «KATKESTATUD»).</p>
+    {% if rows %}
+      <div class="accttable"><table class="data-table">
+        <thead><tr><th scope="col">Algus</th><th scope="col">Teenus</th><th scope="col">Mudel</th><th scope="col">Katse</th><th scope="col">Tulemus</th><th scope="col">HTTP</th><th scope="col">Aeg päisteni</th><th scope="col">Tokenid (sisse / välja)</th><th scope="col">Maksumus</th><th scope="col">Käivitus</th></tr></thead>
+        <tbody>{% for row in rows %}
+          <tr>
+            <td class="regwatchlog__nowrap">{{ row.attempt.started_at|date:"j.n.Y H:i:s" }}</td>
+            <td>{{ row.attempt.operation.get_service_display }}</td>
+            <td class="mono">{{ row.attempt.actual_model|default:row.attempt.requested_model }}</td>
+            <td>{{ row.attempt.sequence }}{% if not row.attempt.observed %} <span class="regwatch__meta">(tuletatud vastusest)</span>{% endif %}</td>
+            <td>{{ row.attempt.get_outcome_display }}</td>
+            <td>{{ row.attempt.http_status|default:"—" }}</td>
+            <td>{% if row.attempt.headers_ms is None %}—{% else %}{{ row.attempt.headers_ms }} ms{% endif %}</td>
+            <td class="mono">{% if row.attempt.input_tokens is None %}teadmata{% else %}{{ row.attempt.input_tokens }} / {{ row.attempt.output_tokens }}{% endif %}</td>
+            <td>{{ row.cost }}{% if row.lower_bound %} <span class="regwatch__meta">(vahemälu teadmata)</span>{% endif %}{% if row.stale %} <span class="regwatch__meta">(vana hind või kurss)</span>{% endif %}</td>
+            <td class="mono">{{ row.run_ref|default:"—" }}</td>
+          </tr>
+        {% endfor %}</tbody>
+      </table></div>
+      <nav class="pager" aria-label="Lehed">
+        {% if page.has_previous %}<a href="?{{ query }}&amp;leht={{ page.previous_page_number }}">Eelmine</a>{% endif %}
+        <span>Leht {{ page.number }} / {{ page.paginator.num_pages }}</span>
+        {% if page.has_next %}<a href="?{{ query }}&amp;leht={{ page.next_page_number }}">Järgmine</a>{% endif %}
+      </nav>
+    {% else %}<p class="regwatch__meta">Valitud filtritele vastavaid päringuid pole.</p>{% endif %}
+  </section>
+{% endblock %}

@@ -27,6 +27,13 @@ OUT_OF_TIME = "ajapiir täis"
 #: sweep and the Government agenda 180 s since ADR 0218.
 WATCH_TIMEOUT = 120.0
 SWEEP_TIMEOUT = 180.0
+#: Set on `Usage` (not a field, so its counts stay what they were) to the ledger id of
+#: the last logical request; callers read it with `last_operation` (app.ai_usage).
+LEDGER_ATTRIBUTE = "ledger_operation"
+
+
+def last_operation(usage: Usage) -> Any:
+    return getattr(usage, LEDGER_ATTRIBUTE, None)
 
 
 @dataclass
@@ -57,10 +64,21 @@ class Failure:
     stop_reason: str | None = None
 
 
-def make_client(timeout: float) -> Any:
+def make_client(timeout: float, recorder: Any = None) -> Any:
     import anthropic  # imported here: the registers are watched without it when the model is off
 
-    return anthropic.Anthropic(timeout=timeout, max_retries=2)
+    hooked = getattr(anthropic, "DefaultHttpxClient", None)
+    if recorder is None or hooked is None:
+        if recorder is not None:
+            recorder.hooked = False  # nothing watches this client: its requests are not counted
+        return anthropic.Anthropic(timeout=timeout, max_retries=2)
+    # The same client and retries; the hooks only watch each physical request (r98).
+    http_client = hooked(
+        timeout=timeout,
+        event_hooks={"request": [recorder.on_request], "response": [recorder.on_response]},
+    )
+    recorder.hooked = True  # from here on «no hook event» means «no request was sent»
+    return anthropic.Anthropic(timeout=timeout, max_retries=2, http_client=http_client)
 
 
 def call_items(
@@ -74,23 +92,45 @@ def call_items(
     key: Callable[[Any], Hashable],
     usage: Usage,
     client: Any = None,
+    service: str = "",
+    presented: int | None = None,
 ) -> dict[Hashable, Any] | Failure:
     """The answer's ``items`` keyed by ``key(row)``, or why there is none.
 
     ``prompt`` is called inside the guard, so a prompt that cannot be built is a
     failed request, like the call itself."""
+    from app.ai_usage import recorder as ledger
+    from app.ai_usage.models import Outcome
     from app.register_watch.sources import http
 
+    model = getattr(settings, setting, DEFAULT_MODEL)
+    rec = ledger.Recorder(service, str(model), presented) if service else None
     left = http.remaining()
+    if rec is not None and left is not None:
+        # the step's budget left, the supervisor's grace (300 s) and kill delay (60 s)
+        rec.may_run_seconds = max(left, 0.0) + 360.0
+    elif rec is not None:
+        rec.may_run_seconds = 3 * timeout * 3 + 300.0
+    if rec is not None:
+        setattr(usage, LEDGER_ATTRIBUTE, rec.operation_id)
     if left is not None and left <= 0:
         # The nightly step's time is spent (ADR 0231): no request is started.
+        if rec is not None:
+            rec.finish(outcome=Outcome.SKIPPED_NO_TIME, skipped=True)
         return Failure("request", OUT_OF_TIME)
+    if rec is not None:
+        rec.begin()
+    response: Any = None
     try:
-        client = client or make_client(timeout)
+        if client is None and rec is not None:
+            rec.hooked = (
+                True  # our own client carries the hooks; a failure before it sends is no attempt
+            )
+        client = client or make_client(timeout, rec)
         if left is not None:
             client = _within(client, timeout, left)
         response = client.beta.messages.create(
-            model=getattr(settings, setting, DEFAULT_MODEL),
+            model=model,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": prompt()}],
@@ -98,21 +138,42 @@ def call_items(
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
         )
-    except Exception as error:  # the model is an aid; every caller goes on without it
+    except BaseException as error:
+        if not isinstance(error, Exception):
+            # The supervisor's SIGTERM (`StepTerminated`) or an interrupt: the outcome of the
+            # request is unknown. Recorded, then let go on as it was.
+            if rec is not None:
+                rec.finish(error=error, outcome=Outcome.INTERRUPTED)
+            raise
+        # the model is an aid; every caller goes on without it
+        if rec is not None:
+            rec.finish(error=error, outcome=Outcome.FAILED)
         status = getattr(error, "status_code", None)
         return Failure("request", type(error).__name__ + (f" {status}" if status else ""))
     usage.calls += 1
     usage.input_tokens += getattr(response.usage, "input_tokens", 0) or 0
     usage.output_tokens += getattr(response.usage, "output_tokens", 0) or 0
     usage.model = str(getattr(response, "model", "") or usage.model)
+    many = rec is not None and rec.attempts_seen > 1
     if response.stop_reason != "end_turn":
         stop = response.stop_reason
+        if rec is not None:
+            rec.finish(response=response, outcome=Outcome.INCOMPLETE)
         return Failure("stop", f"stop_reason {stop}", stop_reason=stop)
     text = next((block.text for block in response.content if block.type == "text"), "")
     try:
-        return {key(row): row for row in json.loads(text)["items"]}
+        answers = {key(row): row for row in json.loads(text)["items"]}
     except (ValueError, KeyError, TypeError):
+        if rec is not None:
+            rec.finish(response=response, outcome=Outcome.UNREADABLE)
         return Failure("unreadable", UNREADABLE)
+    if rec is not None:
+        rec.finish(
+            response=response,
+            outcome=Outcome.SUCCEEDED_AFTER_RETRY if many else Outcome.SUCCEEDED,
+            classified=len(answers),
+        )
+    return answers
 
 
 def _within(client: Any, timeout: float, left: float) -> Any:

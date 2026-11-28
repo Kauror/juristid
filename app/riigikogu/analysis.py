@@ -107,9 +107,26 @@ class AnthropicModel:
     def answer(
         self, *, system: str, prompt: str, schema: dict[str, Any]
     ) -> tuple[dict[str, Any], int, int]:
+        from app.ai_usage import recorder
+        from app.ai_usage.models import Outcome
         from app.register_watch import ai_call
 
-        client = ai_call.make_client(ai_call.SWEEP_TIMEOUT)
+        # Disabled in production (ADR 0227); when an owner turns it on, its requests
+        # are in the ledger like the others'.
+        rec = recorder.Recorder("riigikogu_documents", self.name)
+        client = ai_call.make_client(ai_call.SWEEP_TIMEOUT, rec)
+        rec.begin()
+        try:
+            return self._ask(client, rec, system, prompt, schema)
+        except Exception as error:
+            rec.finish(error=error, outcome=Outcome.FAILED)
+            raise
+
+    def _ask(
+        self, client: Any, rec: Any, system: str, prompt: str, schema: dict[str, Any]
+    ) -> tuple[dict[str, Any], int, int]:
+        from app.ai_usage.models import Outcome
+
         # The same request shape as the register watch's (`ai_call.call_items`).
         response = client.beta.messages.create(
             model=self.name,
@@ -121,11 +138,21 @@ class AnthropicModel:
             fallbacks="default",
         )
         if response.stop_reason != "end_turn":
+            rec.finish(response=response, outcome=Outcome.INCOMPLETE)
             raise RuntimeError(f"stop_reason {response.stop_reason}")
         text = "".join(getattr(block, "text", "") for block in response.content)
         usage = getattr(response, "usage", None)
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            rec.finish(response=response, outcome=Outcome.UNREADABLE)
+            raise
+        rec.finish(
+            response=response,
+            outcome=Outcome.SUCCEEDED_AFTER_RETRY if rec.attempts_seen > 1 else Outcome.SUCCEEDED,
+        )
         return (
-            json.loads(text),
+            parsed,
             int(getattr(usage, "input_tokens", 0) or 0),
             int(getattr(usage, "output_tokens", 0) or 0),
         )

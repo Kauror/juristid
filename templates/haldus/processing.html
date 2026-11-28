@@ -1,0 +1,46 @@
+{% extends "haldus/base.html" %}
+{% block title %}Dokumentide töötlus · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  r98 (docs/adr/0239): document processing and OneNote coverage, counts and ages only.
+  Mutually exclusive states are listed side by side and never added into one «problems»
+  figure; an intentionally unprocessed file is not a failure.
+{% endcomment %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="proc-title">
+    <h2 class="acctsection__title" id="proc-title">Dokumentide töötlus</h2>
+    <dl class="detailgrid">
+      <div><dt>Ootab töötlemist</dt><dd>{{ health.counts.PENDING }}{% if health.oldest_waiting_age %} · vanim ootab {{ health.oldest_waiting_age.days }} p {{ waiting_hours }} h{% endif %}</dd></div>
+      <div><dt>Töötlemisel</dt><dd>{{ health.counts.PROCESSING }}{% if health.interrupted %} <span class="statechip statechip--problem">{{ health.interrupted }} katkenud (aegunud hõive)</span>{% endif %}</dd></div>
+      <div><dt>Loetud</dt><dd>{{ health.counts.DONE }}</dd></div>
+      <div><dt>Ebaõnnestunud</dt><dd>{{ health.counts.FAILED }}</dd></div>
+      <div><dt>Teadlikult töötlemata</dt><dd>{{ health.intentionally_unprocessed }} allkirjastatud konteinerit · {{ health.unsupported_other }} toetamata vormingut</dd></div>
+      <div><dt>Loetud teema loomisel (püsivat teksti pole)</dt><dd>{{ health.counts.INTAKE_READ }}</dd></div>
+    </dl>
+    {% if failures %}
+      <div class="accttable"><table class="data-table">
+        <thead><tr><th scope="col">Ebaõnnestumise põhjus</th><th scope="col">Faile</th></tr></thead>
+        <tbody>{% for label, n in failures %}<tr><td>{{ label }}</td><td>{{ n }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    {% endif %}
+    <h3 class="chart__title">Teenused</h3>
+    <ul>{% for mark in health.marks %}<li>{{ mark.label }}: {% if mark.state == "ok" %}<span class="statechip statechip--ok">{{ mark.line }}</span>{% elif mark.state == "stale" %}<span class="statechip statechip--problem">{{ mark.line }}</span>{% else %}<span class="statechip">{{ mark.line }}</span>{% endif %}</li>{% endfor %}</ul>
+    {% for line in health.limits %}<p class="regwatch__meta">{{ line }}</p>{% endfor %}
+  </section>
+
+  <section class="panel" aria-labelledby="onenote-title">
+    <h2 class="acctsection__title" id="onenote-title">OneNote'i katvus</h2>
+    <dl class="detailgrid">
+      <div><dt>Imporditud</dt><dd>{{ onenote.rows.imported }}</dd></div>
+      <div><dt>Hõivatud, rakendamata</dt><dd>{{ onenote.rows.captured_not_applied }}</dd></div>
+      <div><dt>Ootab hõivet</dt><dd>{{ onenote.rows.awaiting_capture }}</dd></div>
+      <div><dt>Ootel ülevaatuseks</dt><dd>{% if onenote.rows.held %}<a href="{% url 'haldus:onenote_holds' %}">{{ onenote.rows.held }}</a>{% else %}0{% endif %}</dd></div>
+      <div><dt>Muutunud pärast hõivet</dt><dd>{{ onenote.rows.changed_since_capture }}</dd></div>
+      <div><dt>Ebaõnnestunud</dt><dd>{{ onenote.rows.failed }}</dd></div>
+    </dl>
+    <p class="regwatch__meta">Tegevusse kuuluvaid lehti: {{ onenote.pages }}; täpse lehelingita teemasid: {{ onenote.teemad_without_page_link }}; mitmetähenduslikke linke: {{ onenote.teemad_with_ambiguous_link }}; avatud teemasid, mille leht on hõivamata: {{ onenote.open_teemad_without_capture }}.</p>
+    <p class="regwatch__meta"><span class="statechip">Katvus teadmata</span> {{ onenote.archive_note }} Kogu ajalugu ei ole hõivatud ega väideta olevat.</p>
+    <p><a href="{% url 'haldus:onenote' %}">OneNote'i kontroll ja import</a></p>
+  </section>
+{% endblock %}

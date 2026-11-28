@@ -35,6 +35,84 @@
     <p class="acctnote">Kui viimane edukas käivitus on vanem kui {{ stale_hours }} tundi või viimane katse ebaõnnestus, on hinnang punane.</p>
   </section>
 
+  <section class="panel" aria-labelledby="sunk-diag" data-lovable-diagnostics>
+    <h2 class="acctsection__title" id="sunk-diag">Sünkroonimise diagnostika</h2>
+    <p class="acctnote">Selle jaotise number räägib <strong>protsessist</strong>: mida viimane käivitus tegi. See ei tõenda, et andmed on kooskõlas; kooskõla kontrollib allolev sõltumatu võrdlus.</p>
+    {% if diag.attempt %}
+      <dl class="detailgrid">
+        <dt>Viimane katse (võrdlus ja ohutud uuendused)</dt>
+        <dd>{{ diag.attempt.started_at|date:"j.n.Y H:i" }} · {{ diag.attempt.get_trigger_display }} · {{ diag.attempt.get_status_display }}{% if diag.attempt.error %} · <span class="mono">{{ diag.attempt.error }}</span>{% endif %}</dd>
+        <dt>Viimane edukas</dt>
+        <dd>{% if diag.success %}{{ diag.success.started_at|date:"j.n.Y H:i" }} · {{ diag.success.get_trigger_display }}{% if diag.success.pk != diag.attempt.pk %} <span class="statechip statechip--problem">viimane katse ei olnud edukas</span>{% endif %}{% else %}<span class="statechip statechip--problem">edukat käivitust pole</span>{% endif %}</dd>
+        <dt>Allikas loetud</dt>
+        <dd>{% if diag.attempt.snapshot_taken_at %}{{ diag.attempt.snapshot_taken_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+        <dt>Varukoopia</dt>
+        <dd><span class="mono">{{ diag.backup.0 }}</span> · {% if diag.backup.1 == "ok" %}<span class="statechip statechip--ok">{{ diag.backup.2 }}</span>{% elif diag.backup.1 == "problem" %}<span class="statechip statechip--problem">{{ diag.backup.2 }}</span>{% else %}<span class="statechip">{{ diag.backup.2 }}</span>{% endif %}</dd>
+      </dl>
+      {% if diag.scheduled_compare_only %}<p class="acctnote"><span class="statechip">Viimane öine käivitus oli ainult võrdlus</span> ohutuid uuendusi ei kirjutatud.</p>{% endif %}
+      <h3 class="dsync__subtitle">Populatsioonid</h3>
+      <dl class="detailgrid">{% for label, value in diag.populations %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+      <h3 class="dsync__subtitle">Muutused</h3>
+      <dl class="detailgrid">{% for label, value in diag.changes %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+      <h3 class="dsync__subtitle">Ootel, vastuolud ja vead</h3>
+      <dl class="detailgrid">{% for label, value in diag.problems %}<dt>{{ label }}</dt><dd>{{ value }}{% if value %} <span class="statechip statechip--problem">!</span>{% endif %}</dd>{% endfor %}</dl>
+      <h3 class="dsync__subtitle">Piirid (kasutatud / lubatud)</h3>
+      <dl class="detailgrid">{% for limit in diag.limits %}<dt>{{ limit.label }}</dt><dd>{{ limit.used }} / {{ limit.limit|default:"—" }}{% if limit.level == "over" %} <span class="statechip statechip--problem">ületatud</span>{% elif limit.level == "near" %} <span class="statechip statechip--waiting">lähedal</span>{% endif %}</dd>{% endfor %}</dl>
+      <p class="acctnote">Käsitsi ülevaatus: <a href="{% url 'haldus:data_sync_history' %}">käivituste ajalugu</a> · <a href="{% url 'haldus:data_sync_differences' %}">vaata erinevusi</a>.</p>
+    {% else %}
+      <p>Sünkroonimise käivitust (võrdlus ja ohutud uuendused) pole veel tehtud.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="sunk-parity" data-lovable-parity>
+    <h2 class="acctsection__title" id="sunk-parity">Sõltumatu võrdlus (kooskõla Lovable'iga)</h2>
+    <p class="acctnote">Sõltumatu kontroll võrdleb Lovable'i väärtusi Juristide omadega ega kasuta sünkroonimise plaanijat. Sünkroonimise õnnestumine ei ole kooskõla tõend. Võrdlus ei muuda Juristide teemasid ega kirjuta Lovable'isse. Uue lugemisega võrdluse käivitab ainult operaator käsuga <span class="mono">manage.py lovable_parity --fresh</span>; leht ei tee Lovable'ile ühtegi päringut.</p>
+    {% for p in diag.parity %}
+      <article data-parity-source="{{ p.report.source }}" data-parity-status="{{ p.status }}" data-parity-currency="{{ p.currency }}">
+        <h3 class="dsync__subtitle">{{ p.label }}</h3>
+        <p>
+          {% if p.status == "verified" %}<span class="statechip statechip--ok">{{ p.headline }}</span>
+          {% elif p.status == "mismatch" or p.status == "not_made" or p.status == "empty" %}<span class="statechip statechip--problem">{{ p.headline }}</span>
+          {% elif p.status == "held" or p.status == "unverified" or p.status == "changed" %}<span class="statechip statechip--waiting">{{ p.headline }}</span>
+          {% else %}<span class="statechip">{{ p.headline }}</span>{% endif %}
+          {% if p.currency == "current" %}<span class="statechip statechip--ok">Ajakohane</span>{% elif p.currency == "outdated" %}<span class="statechip statechip--waiting">Vananenud</span>{% else %}<span class="statechip statechip--problem">Mittetäielik</span>{% endif %}
+        </p>
+        {% if p.reasons %}<ul class="linklist">{% for reason in p.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}
+        <dl class="detailgrid">
+          <dt>Lovable'i seis loetud</dt><dd>{% if p.report.snapshot_taken_at %}{{ p.report.snapshot_taken_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+          <dt>Võrreldud lugemine</dt><dd class="mono">{{ p.compared_reading|default:"—" }}</dd>
+          <dt>Võrdlus tehtud</dt><dd>{{ p.report.at|date:"j.n.Y H:i" }}</dd>
+          <dt>Maht</dt><dd>{% if p.report.mode == "full" %}täielik: {{ p.scope }}{% else %}<span class="statechip">valim</span> {{ p.scope }}{% endif %}</dd>
+          <dt>Võrreldud teemasid</dt><dd>{{ p.report.teemad }}</dd>
+          <dt>Kooskõlas (MATCH)</dt><dd>{{ p.counts.MATCH|default:0 }}</dd>
+          <dt>Selgitatud erinevus (EXPLAINED_DIFFERENCE)</dt><dd>{{ p.counts.EXPLAINED_DIFFERENCE|default:0 }}</dd>
+          <dt>Ootel (HELD)</dt><dd>{{ p.counts.HELD|default:0 }}</dd>
+          <dt>Erinevus (MISMATCH)</dt><dd>{{ p.counts.MISMATCH|default:0 }}</dd>
+          <dt>Kinnitamata (UNVERIFIED)</dt><dd>{{ p.counts.UNVERIFIED|default:0 }}</dd>
+          {% if p.report.source == "fresh" %}<dt>Lovable'i muutus pärast sünkroonimist</dt><dd>{{ p.counts.CHANGED_SINCE_SYNC|default:0 }}</dd>{% endif %}
+        </dl>
+        {% if p.source_changes %}<p class="acctnote">Lovable'is on pärast viimast sünkroonimist: {% for label, n in p.source_changes %}{{ n }} × {{ label }}{% if not forloop.last %}; {% endif %}{% endfor %}.</p>{% endif %}
+        {% if p.discrepancies %}
+          <div class="accttable"><table class="data-table">
+            <thead><tr><th scope="col">Teema</th><th scope="col">Väli</th><th scope="col">Liik</th><th scope="col">Tegevus</th></tr></thead>
+            <tbody>{% for d in p.discrepancies %}
+              <tr>
+                <td class="mono">{% if d.matter_url %}<a href="{{ d.matter_url }}">{{ d.reference }}</a>{% else %}{{ d.reference }}{% endif %}</td>
+                <td>{{ d.label }}</td>
+                <td>{% if d.kind == "mismatch" %}erinevus{% elif d.kind == "held" %}ootel{% elif d.kind == "unverified" %}kinnitamata{% else %}muutus allikas{% endif %}</td>
+                <td>{% if d.hold_url %}<a href="{{ d.hold_url }}">Ootel sulgemine…</a> · {% endif %}<a href="{% url 'haldus:data_sync_differences' %}">Erinevused</a></td>
+              </tr>
+            {% endfor %}</tbody>
+          </table></div>
+          {% if p.more %}<p class="acctnote">Veel {{ p.more }} rida ei ole siin näidatud.</p>{% endif %}
+        {% endif %}
+      </article>
+    {% empty %}
+      <p><span class="statechip statechip--waiting">Sõltumatut võrdlust pole veel tehtud</span> Kooskõla ei ole kontrollitud: selle puudumine ei ole kooskõla.</p>
+    {% endfor %}
+    {% if diag.parity|length == 1 %}<p class="acctnote">{% if diag.parity.0.report.source == "snapshot" %}Uue lugemisega (praegune allikas) võrdlust pole tehtud.{% else %}Öösel salvestatud lugemise võrdlust pole tehtud.{% endif %}</p>{% endif %}
+  </section>
+
   {% if summary %}
   <section class="panel" aria-labelledby="sunk-tulemus">
     <h2 class="acctsection__title" id="sunk-tulemus">Viimane tulemus</h2>

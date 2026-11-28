@@ -717,6 +717,12 @@ def _index(transport: Transport) -> list[dict[str, Any]]:
     return _select(transport, "topic", INDEX_COLUMNS, filters={}, order="id")
 
 
+def read_index(transport: Transport) -> list[dict[str, Any]]:
+    """Every live topic's id, number and version (the allowlisted index columns): one paged
+    GET. For a caller that needs to know what exists before choosing what to read."""
+    return _index(transport)
+
+
 def take_snapshot(
     transport: Transport,
     cohort_ids: list[str],

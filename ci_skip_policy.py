@@ -84,6 +84,17 @@ EXPECTED_SKIPS: tuple[ExpectedSkip, ...] = (
         ),
     ),
     ExpectedSkip(
+        node="tests/test_ai_usage_scale.py::*",
+        reason_starts_with="set R98_SCALE=1 to measure",
+        why=(
+            "An opt-in measurement, not a check: it times the AI ledger at one year, ten times "
+            "a year and five years at ten times (docs/adr/0236, «Measured»). What it asks is "
+            "pinned in CI by the smaller fixtures beside it (a flat query count, bounded writes "
+            "per request, one row under concurrent finalization); timing on a shared runner "
+            "would only be noise."
+        ),
+    ),
+    ExpectedSkip(
         node="tests/test_test_isolation.py::*",
         reason_starts_with="symlink creation needs a privilege on Windows",
         why="A platform skip. CI runs on Linux, where it never fires.",
