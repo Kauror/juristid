@@ -3077,6 +3077,15 @@ fieldset.field > legend {
   white-space: nowrap;
 }
 
+/* A page's import chip in Dokumendid can name several states («1 fail imporditud
+ * · 1 fail on veel importimata · 1 fail kopeerimine ebaõnnestus»). Nowrap made it
+ * wider than a 375 px screen and the whole page scrolled sideways; there it wraps
+ * inside its row instead. Short chips look exactly as before. */
+.filelist .statechip {
+  white-space: normal;
+  max-width: 100%;
+}
+
 .statechip--ok {
   color: var(--status-success);
   border-color: var(--status-success-border);
