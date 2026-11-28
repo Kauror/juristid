@@ -125,7 +125,7 @@ def admin_state(world, browser, tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def browser_context_args(browser_context_args, admin_state):  # noqa: F811
+def browser_context_args(browser_context_args, admin_state):
     return {**browser_context_args, "storage_state": str(admin_state)}
 
 
@@ -147,7 +147,9 @@ def test_the_technical_administrator_opens_every_new_page(page, world, label, pa
     _open(page, world, path)
     expect(page.get_by_role("heading", name=heading, exact=True).first).to_be_visible()
     nav = page.get_by_role("navigation", name="Haldus", exact=True)
-    expect(nav.get_by_role("link", name=label, exact=True)).to_have_attribute("aria-current", "page")
+    expect(nav.get_by_role("link", name=label, exact=True)).to_have_attribute(
+        "aria-current", "page"
+    )
 
 
 def test_a_visitor_and_an_ordinary_user_are_refused(world, browser):
@@ -182,7 +184,11 @@ def test_filters_change_the_totals_and_the_totals_equal_the_detail_rows(page, wo
     everything = _number(page, "Füüsilised katsed")
     assert everything > 50
     seen = {}
-    for query in ("&teenus=candidates", "&teenus=watch_findings&tulemus=SUCCEEDED", "&tulemus=FAILED"):
+    for query in (
+        "&teenus=candidates",
+        "&teenus=watch_findings&tulemus=SUCCEEDED",
+        "&tulemus=FAILED",
+    ):
         _open(page, world, f"{AI}{RANGE}{query}")
         attempts = _number(page, "Füüsilised katsed")
         pager = page.locator("nav.pager span")
@@ -326,7 +332,9 @@ def test_every_page_holds_in_both_themes_at_all_four_text_sizes(page, world, the
         page.reload()
         page.wait_for_load_state("networkidle")
         assert page.evaluate("document.documentElement.getAttribute('data-theme')") == theme
-        assert (page.evaluate("document.documentElement.getAttribute('data-text-size')") or None) == size
+        assert (
+            page.evaluate("document.documentElement.getAttribute('data-text-size')") or None
+        ) == size
         assert not document_overflows(page), (path, theme, size)
         expect(page.get_by_role("heading", name=heading, exact=True).first).to_be_visible()
     page.evaluate("localStorage.removeItem('juristid-text-size')")

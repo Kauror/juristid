@@ -37,3 +37,34 @@ Builds on 0213 (Lovable is the source of truth for its owned fields) and the con
   MISMATCH; the page cannot tell them from a failed write without the audit trail.
 * The 2026_13 reopening/commencement-ordering anomaly is **not** assumed resolved: the first scheduled
   verification of r96 is read by the deployment agent, and any defect it confirms is a separate correction.
+
+## Fresh-read mode and the Haldus panel (28.11.2026)
+
+`manage.py lovable_parity --fresh [--sample N --seed S]` takes one new consistent reading of
+Lovable through the synchronisation's own read-only access (`lovable_source`: GET only, fixed
+tables and columns, bounded paging, index-cohort-index-cohort consistency check retried a bounded
+number of times) and compares it with the independent oracle (`app/legacy_import/parity_fresh.py`;
+the oracle and verifier import nothing from the planner). It is started only by an operator: no
+page, schedule or hook calls it, and the page reads no source. Reports say whether they are
+**snapshot** parity (the stored night reading) or **current-source** parity (a fresh reading), the
+reading's time, the sample size and the eligible population, and the five counts. A fresh reading
+is compared with the stored one, so a Teema edited in Lovable since the night is a **source
+change** (changed, new, gone, reopened, closed → `CHANGED_SINCE_SYNC`), not a defect; with an
+unchanged source a difference stays a MISMATCH. A reading that cannot be made consistent, a
+refused source, a synchronisation running or moving Juristid during the comparison leave it
+UNVERIFIED with a code and never green. A clean sample is not register parity; an empty
+comparison is not a success; held and unverified differences are never green.
+
+Not covered, said on the page and here: the oracle states the approved contract's Lovable-owned
+fields and reports `KNOWN_DIVERGENCES` as explained, not matched; Juristid-side edits made by a
+lawyer *during* a comparison are not detected (only synchronisation activity is); a field the
+oracle does not compare (the source's notes) is not verified.
+
+Haldus → Lovable shows, from the run ledger and the report rows: the latest attempt and the latest
+successful APPLY, populations, changes, holds, conflicts, failures, read-back failures, the
+ordinary, restore, handover, new-topic and closure-hold limits (used / allowed), the backup set and
+its level-2 state, and both verifications apart, each with current / outdated / incomplete; every
+listed discrepancy links to the existing differences page (and, for a hold, the release page) and
+to the Teema only for a reader who may already open it. Nothing resolves itself and nothing is
+written to Lovable.
+

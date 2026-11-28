@@ -228,7 +228,8 @@ def seed_browser() -> None:
     # One night with no record at all, between recorded ones (seed() records nights 1..5 back).
     missing = now - dt.timedelta(days=4)
     NightlyStepRecord.objects.filter(
-        cycle_start__gte=missing.replace(hour=0, minute=0), cycle_start__lt=missing.replace(hour=23, minute=59)
+        cycle_start__gte=missing.replace(hour=0, minute=0),
+        cycle_start__lt=missing.replace(hour=23, minute=59),
     ).delete()
     WatchRun.objects.create(
         started_at=now - dt.timedelta(hours=3),
@@ -236,7 +237,9 @@ def seed_browser() -> None:
         targets_checked=9,
         errors=[{"allikas": "riigikogu", "viga": "ajalõpp"}],
     )
-    SweepRun.objects.create(started_at=now - dt.timedelta(hours=3), finished_at=now - dt.timedelta(hours=2))
+    SweepRun.objects.create(
+        started_at=now - dt.timedelta(hours=3), finished_at=now - dt.timedelta(hours=2)
+    )
     AiOperation.objects.create(
         service="candidates",
         requested_model=MODEL,
@@ -285,7 +288,13 @@ def seed_browser() -> None:
     )
     LovableParityReport.objects.update(
         mismatches=[["2099_3", "title"]],
-        counts={"MATCH": 168, "EXPLAINED_DIFFERENCE": 40, "HELD": 2, "MISMATCH": 1, "UNVERIFIED": 0},
+        counts={
+            "MATCH": 168,
+            "EXPLAINED_DIFFERENCE": 40,
+            "HELD": 2,
+            "MISMATCH": 1,
+            "UNVERIFIED": 0,
+        },
         run_key=f"{today.isoformat()}-browser",
         eligible=30,
     )

@@ -105,8 +105,13 @@ def test_scale_page_summary_and_storage(client):
         AiOperation.objects.all().delete()
         rows = _fill(days, per_day)
         params = {"periood": "custom", "alates": "2000-01-01", "kuni": "2099-12-31"}
-        counter = []
-        with connection.execute_wrapper(lambda ex, sql, *a: (counter.append(sql), ex(sql, *a))[1]):
+        counter: list[str] = []
+
+        def count(execute, sql, params, many, context, _seen=counter):
+            _seen.append(sql)
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(count):
             started = time.perf_counter()
             page = client.get(reverse("haldus:ai_usage"), params)
             page_ms = (time.perf_counter() - started) * 1000
@@ -127,7 +132,8 @@ def test_scale_page_summary_and_storage(client):
             f"  {days} days x {per_day}/day = {rows} attempts: page {page_ms:.0f} ms "
             f"({len(counter)} queries), summarise {summarise_ms:.0f} ms, "
             f"csv (<=20000 rows) {csv_ms:.0f} ms [{len(csv_page.content) // 1024} KiB], "
-            f"storage {attempt_bytes / rows:.0f} B/attempt + {operation_bytes / rows:.0f} B/operation"
+            f"storage {attempt_bytes / rows:.0f} B/attempt + "
+            f"{operation_bytes / rows:.0f} B/operation"
         )
         assert summary.totals.attempts == rows
     # annual growth at the expected volume: ~3 operations a night
@@ -159,6 +165,7 @@ def test_scale_overhead_of_the_accounting_per_request():
     ]
     print(
         f"\n  per request, test double (no network): off {timings['ledger off']:.2f} ms, "
-        f"on {timings['ledger on']:.2f} ms -> overhead {timings['ledger on'] - timings['ledger off']:.2f} ms; "
+        f"on {timings['ledger on']:.2f} ms -> overhead "
+        f"{timings['ledger on'] - timings['ledger off']:.2f} ms; "
         f"{len(writes)} writes, {len(captured.captured_queries)} queries"
     )

@@ -48,3 +48,22 @@ its own words, and no page said, for a source, «attempted», «succeeded», «n
 * No threshold is configurable; the 36 h and 9-day figures are constants in `integration_status.py`.
 * The page does not know whether a source was **expected** on a night when its switch was off other than
   through the step's own `SKIPPED_DELIBERATE`.
+
+## Final corrections (28.11.2026)
+
+* **Expected cycles, not only recorded ones.** The history lists every Tallinn midnight from the
+  first record to now. A cycle that left nothing is «Tsükkel puudub täielikult»; one inside its
+  window is «Käib»; one whose steps are all deliberately skipped is «Tahtlikult vahele jäetud»;
+  otherwise «Lõpetatud», «Osaline» or «Ebaõnnestunud» by `nightly_outcome`'s own outcomes. A night
+  before the first record is never reconstructed; before any record the page says so and names the
+  next scheduled start.
+* **A recovery run never replaces the scheduled verdict.** `NightlyStepRecord` is unique on
+  (cycle start, step, manual); a person's run is its own row, shown beside the night.
+* **AI operations per night are an approximation** (a time window; the ledger has no cycle id) and
+  the page says so.
+* **«Completed» is not «fully successful».** `last_success` of the register watch and the new-draft
+  sweep is the last run that finished with **no** source error; the last finished run, errors or
+  not, is `last_completed`. A latest run that finished with read errors is «osaline» (attention),
+  never fresh. Per-source coverage is recorded only as the run's error list and target count; the
+  page says so. The Government agenda keeps its r95 discovery rules unchanged.
+
