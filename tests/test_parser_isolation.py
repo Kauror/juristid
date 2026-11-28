@@ -573,7 +573,15 @@ def test_a_memory_hoard_is_stopped_at_the_address_space_limit(tmp_path):
     with pytest.raises(ExtractionFailed) as refused:
         isolation.interpret(registry.for_mime_type(TEXT), run, ceiling)
     assert refused.value.code == isolation.MEMORY_LIMIT
-    assert run.usage.peak_rss_bytes < 1100 * 1024**2
+    # `wait4`'s ru_maxrss for a child includes the size of the process it was forked from
+    # (the high-water mark survives until exec), so a test process that has already grown
+    # to more than a gibibyte reports at least that. The refusal code above is the proof
+    # the address-space limit held; this bound only says the child did not go beyond its
+    # limit PLUS what it inherited.
+    import resource
+
+    inherited = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+    assert run.usage.peak_rss_bytes < max(1100 * 1024**2, inherited + 100 * 1024**2)
 
 
 @linux_only
